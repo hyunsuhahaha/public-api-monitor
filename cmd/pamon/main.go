@@ -111,7 +111,8 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 		Tracker: incident.NewTracker(2, 2),
 	}
 	if hook := os.Getenv("PAMON_WEBHOOK_URL"); hook != "" {
-		c.Notifier = notify.NewWebhook(hook, os.Getenv("PAMON_PUBLIC_URL"), log)
+		// an agency's APIs failing within 30 s of each other are one page
+		c.Notifier = notify.NewGrouper(notify.NewWebhook(hook, os.Getenv("PAMON_PUBLIC_URL"), log), 30*time.Second)
 	}
 	if err := c.Start(ctx); err != nil {
 		return err
