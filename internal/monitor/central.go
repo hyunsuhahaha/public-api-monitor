@@ -110,7 +110,7 @@ func (c *Central) Record(ctx context.Context, t *config.Target, r probe.Result) 
 // learnShape records the answer's field paths; fields never seen before (after the first
 // answer, which is the baseline) are a schema change.
 func (c *Central) learnShape(ctx context.Context, t *config.Target, r probe.Result) {
-	added, had, err := c.Store.ObservePaths(ctx, t.ID, r.Shape, r.At)
+	added, had, err := c.Store.ObservePaths(ctx, t.ID, r.Shape, r.At, c.Cfg.SchemaWarmup.Duration)
 	if err != nil {
 		mStoreErrors.Inc()
 		c.Log.Error("save shape", "err", err)

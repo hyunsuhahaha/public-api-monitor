@@ -2,6 +2,8 @@
 interval: 10s
 timeout: 3s
 slow_after: 2s
+# learn the fake API's fields for a minute, not a day, so scenario 8 runs in minutes
+schema_warmup: 1m
 targets:
   - id: fake
     name: 가짜 공공 API

@@ -133,7 +133,10 @@ def s2_silent_failure():
     settle()
     mode("error05")
     t_open = wait(lambda: open_incident() is not None, 90)
-    reason = (open_incident() or {}).get("reason", "")
+    # a failure within 10 minutes of scenario 1's recovery reopens that incident (flapping):
+    # what it failed with now is lastReason
+    inc = open_incident() or {}
+    reason = inc.get("lastReason") or inc.get("reason", "")
     mode("ok")
     wait(lambda: open_incident() is None, 90)
     record(2, "조용한 장애 (HTTP 200 + resultCode 05)", "일반 HTTP 체크가 '정상'이라 하는 응답을 장애로 감지", t_open is not None and "05" in reason,

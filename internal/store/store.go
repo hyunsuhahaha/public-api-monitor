@@ -104,6 +104,10 @@ func Open(path string) (*Store, error) {
 	}
 	// incidents.flaps came later: add it to older databases (an error means it is there)
 	db.Exec(`ALTER TABLE incidents ADD COLUMN flaps INTEGER NOT NULL DEFAULT 0`)
+	// field paths learned from the data.go.kr gateway's error envelope (before Shape skipped
+	// it): they are not the API's fields and would come back as "removed"
+	db.Exec(`DELETE FROM schema_paths WHERE path LIKE 'OpenAPI_ServiceResponse%'`)
+	db.Exec(`DELETE FROM schema_events WHERE paths LIKE 'OpenAPI_ServiceResponse%'`)
 	// rows written before the zero-time fix: open incidents stored as year-1 milliseconds
 	if _, err := db.Exec(`UPDATE incidents SET ended=0 WHERE ended<0`); err != nil {
 		db.Close()
@@ -642,16 +646,19 @@ func (s *Store) RecentChecks(ctx context.Context, target string, limit int) ([]p
 }
 
 // ObservePaths records the field paths of one healthy answer. It returns the paths never
-// seen before for that target, and whether the target already had a learned shape (the
-// very first answer is the baseline, not a change).
-func (s *Store) ObservePaths(ctx context.Context, target string, paths []string, at time.Time) (added []string, hadShape bool, err error) {
+// seen before for that target, and whether the target already had a learned shape: one
+// learned at least warmup ago (the first day of answers is the baseline, not change).
+func (s *Store) ObservePaths(ctx context.Context, target string, paths []string, at time.Time, warmup time.Duration) (added []string, hadShape bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, false, err
 	}
 	defer tx.Rollback()
 	var n int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_paths WHERE target=?`, target).Scan(&n); err != nil {
+	// a shape counts once it has been learned for a full day: many APIs answer with
+	// different fields by time of day (a forecast's day-4 fields only in the 06:00 issue,
+	// bus arrivals only while buses run), and those are not changes
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_paths WHERE target=? AND first_seen<=?`, target, ms(at.Add(-warmup))).Scan(&n); err != nil {
 		return nil, false, err
 	}
 	for _, p := range paths {

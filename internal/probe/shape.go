@@ -16,7 +16,9 @@ import (
 // number of items don't matter.
 //
 // Nil when the body carries no data to learn from: an empty item list ("items":"" or
-// totalCount 0, as data.go.kr sends for "no results"), or a body that isn't JSON or XML.
+// totalCount 0, as data.go.kr sends for "no results"), the data.go.kr gateway's error
+// envelope (OpenAPI_ServiceResponse: its fields are the gateway's, not the API's), or a
+// body that isn't JSON or XML.
 func Shape(body []byte) []string {
 	b := bytes.TrimSpace(body)
 	if len(b) == 0 {
@@ -40,6 +42,11 @@ func Shape(body []byte) []string {
 	}
 	if empty || len(set) == 0 {
 		return nil
+	}
+	for p := range set {
+		if strings.HasPrefix(p, "OpenAPI_ServiceResponse") {
+			return nil
+		}
 	}
 	out := make([]string, 0, len(set))
 	for p := range set {

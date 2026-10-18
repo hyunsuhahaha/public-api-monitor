@@ -97,6 +97,9 @@ type Config struct {
 	KeyEnv    string   `yaml:"key_env"`
 	SLO       float64  `yaml:"slo"` // default availability objective (0.99 if unset)
 	Targets   []Target `yaml:"targets"`
+	// SchemaWarmup: how long an API's response fields are learned before new ones count
+	// as a change (default 24h: many APIs answer with different fields by time of day)
+	SchemaWarmup Duration `yaml:"schema_warmup"`
 
 	Maintenance []Maintenance `yaml:"maintenance"`
 }
@@ -124,6 +127,9 @@ func Parse(raw []byte) (*Config, error) {
 	}
 	if c.SlowAfter.Duration == 0 {
 		c.SlowAfter.Duration = 3 * time.Second
+	}
+	if c.SchemaWarmup.Duration == 0 {
+		c.SchemaWarmup.Duration = 24 * time.Hour
 	}
 	if c.KeyEnv == "" {
 		c.KeyEnv = "DATA_GO_KR_KEY"

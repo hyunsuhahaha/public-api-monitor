@@ -45,3 +45,12 @@ func TestShapeNoData(t *testing.T) {
 		}
 	}
 }
+
+// The data.go.kr gateway's error envelope is not the API's shape: learning it made a
+// failing-then-recovering API report the gateway's fields, then its own, as "added".
+func TestShapeSkipsGatewayEnvelope(t *testing.T) {
+	body := `<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE ERROR</errMsg><returnAuthMsg>NO_OPENAPI_SERVICE_ERROR</returnAuthMsg><returnReasonCode>12</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>`
+	if s := Shape([]byte(body)); s != nil {
+		t.Fatalf("envelope learned: %v", s)
+	}
+}
