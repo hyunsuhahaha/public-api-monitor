@@ -176,8 +176,14 @@ func findFirst(patterns []*regexp.Regexp, s string) string {
 
 func httpReason(status int, msg string) string {
 	r := "http " + strconv.Itoa(status)
-	if msg != "" {
+	switch {
+	case msg != "":
 		r += ": " + shorten(msg, 100)
+	case status == 401 || status == 403:
+		// data.go.kr's gateway answers a bare 403 for a key not approved for this API
+		r += ": 이 키로 호출 권한 없음 (활용신청·승인 확인)"
+	case status == 429:
+		r += ": 호출 한도 초과"
 	}
 	return r
 }

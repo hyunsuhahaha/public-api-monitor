@@ -130,6 +130,20 @@ function renderCorrel() {
   const openBy = {};
   for (const i of state.incidents) if (isOpen(i)) openBy[i.target] = i;
   if (wide) box.append(el("div", "cg wide-out", "⚠ 여러 기관 API가 동시에 이상 — 공공데이터포털 게이트웨이 또는 이 모니터 쪽 네트워크 문제일 가능성"));
+  // our side: the key, approval or quota, not the provider; a to-do list for the operator
+  const ours = state.data.targets.filter((t) => t.status === "client");
+  if (ours.length) {
+    box.hidden = false;
+    const r = el("div", "cg ours");
+    r.append(el("span", "dot client"), el("b", "", `조치 필요 · 우리 쪽 문제 ${ours.length}개`),
+      el("span", "cg-why", "기관 장애가 아니라 키·승인·호출 한도 문제 — 가용률·SLO에서 빠져 있음"));
+    const chips = el("span", "cg-chips");
+    for (const t of ours) { const c = el("button", "chip", t.name); c.title = t.reason || ""; c.onclick = () => openDrawer(t.id); chips.append(c); }
+    const why = [...new Set(ours.map((t) => t.reason).filter(Boolean))];
+    r.append(chips);
+    if (why.length) r.append(el("div", "cg-detail", why.join(" · ")));
+    box.append(r);
+  }
   for (const g of groups) {
     const r = el("div", "cg"), worst = Math.max(...g.bad.map((t) => sev(t.status)));
     r.append(el("span", "dot " + (worst >= 2 ? "down" : "slow")),

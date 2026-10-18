@@ -174,3 +174,5 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .burn-tag { margin-left: 6px; font-family: inherit; font-size: 10px; padding: 1px 5px; border-radius: 3px; }
 .burn-tag.page { color: var(--out); border: 1px solid rgba(242,73,92,.5); background: rgba(242,73,92,.1); }
 .burn-tag.ticket { color: var(--warn); border: 1px solid rgba(255,152,48,.45); }
+.cg.ours { border-color: var(--line); border-left-color: var(--dim); }
+.cg-detail { flex-basis: 100%; color: var(--muted); font-size: 11px; padding-left: 17px; }
