@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -50,6 +51,7 @@ func main() {
 		once     = flag.Bool("once", false, "check every target once, print the results and exit")
 		month    = flag.String("report", "", "print the Markdown availability report for YYYY-MM from -db and exit")
 		paths    = flag.Bool("paths", false, "with -once: fail only on endpoints that no longer exist (code 12, 404); for CI with a dummy key")
+		check    = flag.Bool("check", false, "validate the config, print what it monitors and its maintenance windows, and exit")
 		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
 	)
 	flag.Parse()
@@ -59,6 +61,10 @@ func main() {
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
+	}
+	if *check {
+		printCheck(cfg, time.Now())
+		return
 	}
 	prober := probe.New(*location)
 	if *month != "" {
@@ -224,4 +230,26 @@ func runOnce(cfg *config.Config, p *probe.Prober, pathsOnly bool) int {
 		}
 	}
 	return code
+}
+
+// printCheck: the config parsed (validation is in config.Parse); say what it monitors and
+// which maintenance windows are on, coming or already over (stale entries to remove).
+func printCheck(cfg *config.Config, now time.Time) {
+	providers := map[string]bool{}
+	for _, t := range cfg.Targets {
+		providers[t.Provider] = true
+	}
+	fmt.Printf("ok: %d targets, %d providers, every %s, default SLO %.4g\n",
+		len(cfg.Targets), len(providers), cfg.Interval.Duration, cfg.SLO)
+	for _, m := range cfg.Maintenance {
+		state := "upcoming"
+		switch {
+		case !now.Before(m.End):
+			state = "over (remove it)"
+		case !now.Before(m.Start):
+			state = "ACTIVE"
+		}
+		fmt.Printf("maintenance %s ~ %s %v %q: %s\n", m.Start.In(config.KST).Format("2006-01-02 15:04"),
+			m.End.In(config.KST).Format("2006-01-02 15:04"), m.Match, m.Note, state)
+	}
 }
