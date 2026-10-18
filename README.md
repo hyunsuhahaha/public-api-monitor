@@ -65,6 +65,17 @@ docker compose up        # pamon + Prometheus(:9090) + Grafana(:3000, 대시보�
 go run ./cmd/pamon -report 2026-10   # 월간 리포트를 마크다운으로 (블로그·GeekNews 게시용)
 ```
 
+## 내 PC에서 계속 돌리기 (WSL)
+
+```powershell
+deploy\local\start-wsl.ps1   # 백그라운드 시작 (숨은 wsl.exe가 WSL을 살려 둠), http://localhost:8080
+deploy\local\stop-wsl.ps1    # 중지
+```
+
+- DB와 로그는 WSL 리눅스 디스크의 `~/.pamon`에 둡니다(SQLite를 /mnt/c 위에 두면 느리고 잠금이 불안정).
+- 시작할 때마다 저장소에서 다시 빌드하고, 죽으면 10초 뒤 다시 띄우며, 로그가 50MB를 넘으면 한 번 돌립니다.
+- PC가 꺼지거나 절전에 들어가면 멈춥니다. 다시 켠 뒤 `start-wsl.ps1`을 실행하면 같은 DB에 이어서 쌓입니다.
+
 ## 배포 (OCI 무료 서버 + Ansible)
 
 ```bash
