@@ -96,6 +96,14 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	if err := c.Start(ctx); err != nil {
 		return err
 	}
+	// the adaptive slow limit picks up where it left off (this location's last 24 h)
+	if lat, err := st.Latencies(ctx, time.Now().Add(-24*time.Hour), location); err == nil {
+		for id, ls := range lat {
+			for _, l := range ls {
+				prober.Baseline.Add(id, time.Duration(l)*time.Millisecond)
+			}
+		}
+	}
 	m := &monitor.Monitor{Cfg: cfg, Prober: prober, Sink: c, Log: log, MaxParallel: 4}
 	token := os.Getenv("PAMON_INGEST_TOKEN")
 	srv := &http.Server{

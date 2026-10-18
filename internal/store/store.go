@@ -249,10 +249,16 @@ func (s *Store) Days(ctx context.Context, since time.Time) (map[string][]Day, er
 	return out, rows.Err()
 }
 
-// Latencies of healthy checks per target since a time (for percentiles).
-func (s *Store) Latencies(ctx context.Context, since time.Time) (map[string][]int64, error) {
+// Latencies of healthy checks per target since a time (for percentiles), oldest first;
+// location "" for all.
+func (s *Store) Latencies(ctx context.Context, since time.Time, location ...string) (map[string][]int64, error) {
+	loc := ""
+	if len(location) > 0 {
+		loc = location[0]
+	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT target, latency_ms FROM checks WHERE at>=? AND status IN ('ok','slow','stale') ORDER BY target`, ms(since))
+		`SELECT target, latency_ms FROM checks WHERE at>=? AND status IN ('ok','slow','stale') AND (?='' OR location=?) ORDER BY target, at`,
+		ms(since), loc, loc)
 	if err != nil {
 		return nil, err
 	}

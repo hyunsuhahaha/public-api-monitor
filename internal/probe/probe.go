@@ -31,6 +31,7 @@ type Prober struct {
 	Client   *http.Client
 	Location string
 	Now      func() time.Time
+	Baseline *Baseline // nil: only the fixed slow_after limit
 }
 
 // New returns a prober whose client never follows the key into another host's logs:
@@ -39,6 +40,7 @@ func New(location string) *Prober {
 	return &Prober{
 		Location: location,
 		Now:      time.Now,
+		Baseline: NewBaseline(),
 		Client: &http.Client{
 			Transport: &http.Transport{
 				Proxy:               http.ProxyFromEnvironment,
@@ -93,6 +95,16 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		o.Timeout = errors.Is(err, context.DeadlineExceeded) || isTimeout(err)
 	}
 	v := Classify(o, t.SlowAfter.Duration)
+	if v.Status == StatusOK && p.Baseline != nil {
+		// slower than this API usually is (learned per target), though under slow_after
+		if limit, usual, ok := p.Baseline.Limit(t.ID, t.SlowAfter.Duration); ok && o.Latency > limit {
+			v.Status = StatusSlow
+			v.Reason = "slow: " + o.Latency.Round(time.Millisecond).String() + " (usually " + usual.Round(time.Millisecond).String() + ")"
+		}
+		// (answers past the fixed limit or timeouts are not learned: an outage must not
+		// become the normal; a lasting moderate change does, over half the window)
+		p.Baseline.Add(t.ID, o.Latency)
+	}
 	if v.Status.Healthy() && t.Freshness != nil {
 		if stale, why := staleness(o.Body, t.Freshness, p.Now()); stale {
 			v.Status, v.Reason = StatusStale, why
