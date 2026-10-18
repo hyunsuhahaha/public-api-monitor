@@ -52,6 +52,16 @@ function renderTargets() {
     right.append(el("br"), t.checkedAt ? ago(t.checkedAt) + " 확인" : "");
     row.append(right);
     card.append(row);
+    if ((t.locations || []).length > 1) {
+      const locs = el("div", "locs");
+      for (const l of t.locations) {
+        const chip = el("span", "loc");
+        chip.append(el("span", "dot s-" + l.status), l.location + " " + (LABEL[l.status] || l.status) + (l.latencyMs ? " " + l.latencyMs + "ms" : ""));
+        chip.title = l.reason || "";
+        locs.append(chip);
+      }
+      card.append(locs);
+    }
     if (t.status === "client") card.append(el("div", "reason", "모니터 쪽 서비스 키·호출 한도 문제로 확인하지 못했습니다 (" + t.reason + ")"));
     else if (t.status !== "ok" && t.reason) card.append(el("div", "reason", t.reason));
 

@@ -1,5 +1,9 @@
-// pamon: public API monitor. Checks Korean public APIs on a schedule, records results
-// and incidents, and serves a status page.
+// pamon: public API monitor. Checks Korean public APIs on a schedule and serves a status
+// page. Run one central (stores, combines locations, raises incidents, serves the page)
+// and optionally remote probes in other places that push their results to it:
+//
+//	pamon -role central -location oci-chuncheon      (PAMON_INGEST_TOKEN to accept probes)
+//	pamon -role probe -location home-seoul -central https://status.example.com
 package main
 
 import (
@@ -13,11 +17,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/monitor"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/notify"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/push"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/quorum"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/web"
 )
@@ -32,14 +40,16 @@ func env(k, def string) string {
 func main() {
 	var (
 		cfgPath  = flag.String("config", env("PAMON_CONFIG", "targets.yaml"), "targets file")
-		dbPath   = flag.String("db", env("PAMON_DB", "pamon.db"), "SQLite database file")
+		role     = flag.String("role", env("PAMON_ROLE", "central"), "central or probe")
+		dbPath   = flag.String("db", env("PAMON_DB", "pamon.db"), "SQLite database file (central)")
 		addr     = flag.String("addr", env("PAMON_ADDR", ":8080"), "HTTP listen address")
 		location = flag.String("location", env("PAMON_LOCATION", "local"), "name of this probe location")
+		central  = flag.String("central", env("PAMON_CENTRAL_URL", ""), "central base URL (probe)")
 		once     = flag.Bool("once", false, "check every target once, print the results and exit")
-		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks")
+		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
 	)
 	flag.Parse()
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("location", *location)
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -47,49 +57,95 @@ func main() {
 		os.Exit(1)
 	}
 	prober := probe.New(*location)
-
 	if *once {
 		os.Exit(runOnce(cfg, prober))
 	}
-
-	st, err := store.Open(*dbPath)
-	if err != nil {
-		log.Error("db", "err", err)
-		os.Exit(1)
-	}
-	defer st.Close()
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	m := &monitor.Monitor{
-		Cfg: cfg, Prober: prober, Store: st, Log: log,
-		Tracker:     incident.NewTracker(2, 2),
-		MaxParallel: 4,
+	switch *role {
+	case "central":
+		err = runCentral(ctx, log, cfg, prober, *dbPath, *addr, *location, *keep)
+	case "probe":
+		err = runProbe(ctx, log, cfg, prober, *addr, *central)
+	default:
+		err = errors.New("unknown -role " + *role)
+	}
+	if err != nil {
+		log.Error("exit", "err", err)
+		os.Exit(1)
+	}
+	log.Info("stopped")
+}
+
+func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, prober *probe.Prober, dbPath, addr, location string, keep time.Duration) error {
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	c := &monitor.Central{
+		Cfg: cfg, Store: st, Log: log, Location: location,
+		Board:   quorum.NewBoard(),
+		Tracker: incident.NewTracker(2, 2),
 	}
 	if hook := os.Getenv("PAMON_WEBHOOK_URL"); hook != "" {
-		m.Notifier = notify.NewWebhook(hook, os.Getenv("PAMON_PUBLIC_URL"), log)
+		c.Notifier = notify.NewWebhook(hook, os.Getenv("PAMON_PUBLIC_URL"), log)
 	}
+	if err := c.Start(ctx); err != nil {
+		return err
+	}
+	m := &monitor.Monitor{Cfg: cfg, Prober: prober, Sink: c, Log: log, MaxParallel: 4}
+	token := os.Getenv("PAMON_INGEST_TOKEN")
 	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck}).Handler(),
+		Addr: addr,
+		Handler: (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck,
+			Ingest: c.Ingest, IngestToken: token}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,
 	}
+	serve(ctx, log, srv, "central", len(cfg.Targets), token != "")
+	go c.Prune(ctx, keep)
+	m.Run(ctx)
+	return shutdown(srv)
+}
+
+func runProbe(ctx context.Context, log *slog.Logger, cfg *config.Config, prober *probe.Prober, addr, central string) error {
+	token := os.Getenv("PAMON_INGEST_TOKEN")
+	if central == "" || token == "" {
+		return errors.New("probe needs -central (PAMON_CENTRAL_URL) and PAMON_INGEST_TOKEN")
+	}
+	p := push.New(central, token, log)
+	m := &monitor.Monitor{Cfg: cfg, Prober: prober, Sink: p, Log: log, MaxParallel: 4}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	mux.Handle("GET /metrics", promhttp.Handler())
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	serve(ctx, log, srv, "probe", len(cfg.Targets), true)
+	done := make(chan struct{})
 	go func() {
-		log.Info("listening", "addr", *addr, "targets", len(cfg.Targets), "location", *location)
+		p.Run(ctx)
+		close(done)
+	}()
+	m.Run(ctx)
+	<-done
+	return shutdown(srv)
+}
+
+func serve(ctx context.Context, log *slog.Logger, srv *http.Server, role string, targets int, ingest bool) {
+	go func() {
+		log.Info("listening", "addr", srv.Addr, "role", role, "targets", targets, "ingest", ingest)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("http", "err", err)
-			stop()
+			os.Exit(1)
 		}
 	}()
-	go m.Prune(ctx, *keep)
-	m.Run(ctx)
+}
 
-	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func shutdown(srv *http.Server) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv.Shutdown(shutdown)
-	log.Info("stopped")
+	return srv.Shutdown(ctx)
 }
 
 // runOnce is for trying a targets file: one check each, a table on stdout, exit 1 if any
@@ -100,7 +156,7 @@ func runOnce(cfg *config.Config, p *probe.Prober) int {
 	for i := range cfg.Targets {
 		t := &cfg.Targets[i]
 		r := p.Check(ctx, t)
-		line := string(r.Status) + "\t" + t.ID + "\t" + time.Duration(r.LatencyMS*int64(time.Millisecond)).String()
+		line := string(r.Status) + "\t" + t.ID + "\t" + (time.Duration(r.LatencyMS) * time.Millisecond).String()
 		if r.Code != "" {
 			line += "\tcode=" + r.Code
 		}

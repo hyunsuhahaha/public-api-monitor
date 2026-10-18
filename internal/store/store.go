@@ -30,6 +30,18 @@ CREATE TABLE IF NOT EXISTS checks (
 );
 CREATE INDEX IF NOT EXISTS checks_target_at ON checks(target, at);
 CREATE INDEX IF NOT EXISTS checks_at ON checks(at);
+-- one row per target per decision: the combined view of all locations (internal/quorum).
+-- Uptime and the day bars come from here; raw per-location checks stay in checks.
+CREATE TABLE IF NOT EXISTS verdicts (
+	id      INTEGER PRIMARY KEY,
+	target  TEXT    NOT NULL,
+	at      INTEGER NOT NULL,
+	status  TEXT    NOT NULL,
+	reason  TEXT    NOT NULL,
+	voters  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS verdicts_target_at ON verdicts(target, at);
+CREATE INDEX IF NOT EXISTS verdicts_at ON verdicts(at);
 CREATE TABLE IF NOT EXISTS incidents (
 	id          INTEGER PRIMARY KEY,
 	target      TEXT    NOT NULL,
@@ -74,6 +86,45 @@ func (s *Store) SaveCheck(ctx context.Context, r probe.Result) error {
 		`INSERT INTO checks(target, location, at, status, latency_ms, http_status, code, reason) VALUES(?,?,?,?,?,?,?,?)`,
 		r.TargetID, r.Location, ms(r.At), string(r.Status), r.LatencyMS, r.HTTPStatus, r.Code, r.Reason)
 	return err
+}
+
+// Verdict row (see the verdicts table).
+type Verdict struct {
+	TargetID string
+	At       time.Time
+	Status   probe.Status
+	Reason   string
+	Voters   int
+}
+
+func (s *Store) SaveVerdict(ctx context.Context, v Verdict) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO verdicts(target, at, status, reason, voters) VALUES(?,?,?,?,?)`,
+		v.TargetID, ms(v.At), string(v.Status), v.Reason, v.Voters)
+	return err
+}
+
+// LatestVerdicts: the newest verdict per target.
+func (s *Store) LatestVerdicts(ctx context.Context) (map[string]Verdict, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT v.target, v.at, v.status, v.reason, v.voters
+		FROM verdicts v JOIN (SELECT target, MAX(at) AS at FROM verdicts GROUP BY target) m
+		ON v.target=m.target AND v.at=m.at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Verdict{}
+	for rows.Next() {
+		var v Verdict
+		var at int64
+		var status string
+		if err := rows.Scan(&v.TargetID, &at, &status, &v.Reason, &v.Voters); err != nil {
+			return nil, err
+		}
+		v.At, v.Status = fromMS(at), probe.Status(status)
+		out[v.TargetID] = v
+	}
+	return out, rows.Err()
 }
 
 // SaveIncident inserts a new incident (ID 0) or updates an existing one.
@@ -131,17 +182,18 @@ func (s *Store) Incidents(ctx context.Context, target string, since time.Time, l
 	return scanIncidents(rows)
 }
 
-// Latest check per target.
-func (s *Store) Latest(ctx context.Context) (map[string]probe.Result, error) {
+// LatestByLocation: the newest raw check of each target from each location.
+func (s *Store) LatestByLocation(ctx context.Context, since time.Time) (map[string][]probe.Result, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.target, c.location, c.at, c.status, c.latency_ms, c.http_status, c.code, c.reason
-		FROM checks c JOIN (SELECT target, MAX(at) AS at FROM checks GROUP BY target) m
-		ON c.target=m.target AND c.at=m.at`)
+		FROM checks c JOIN (SELECT target, location, MAX(at) AS at FROM checks WHERE at>=? GROUP BY target, location) m
+		ON c.target=m.target AND c.location=m.location AND c.at=m.at
+		ORDER BY c.target, c.location`, ms(since))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]probe.Result{}
+	out := map[string][]probe.Result{}
 	for rows.Next() {
 		var r probe.Result
 		var at int64
@@ -150,7 +202,7 @@ func (s *Store) Latest(ctx context.Context) (map[string]probe.Result, error) {
 			return nil, err
 		}
 		r.At, r.Status = fromMS(at), probe.Status(status)
-		out[r.TargetID] = r
+		out[r.TargetID] = append(out[r.TargetID], r)
 	}
 	return out, rows.Err()
 }
@@ -172,7 +224,7 @@ func (d Day) Uptime() float64 {
 	return float64(d.Healthy) / float64(d.Counted)
 }
 
-// Days returns per-target, per-KST-day aggregates since a time.
+// Days returns per-target, per-KST-day aggregates of verdicts since a time.
 func (s *Store) Days(ctx context.Context, since time.Time) (map[string][]Day, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT target, date(at/1000, 'unixepoch', '+9 hours') AS d,
@@ -180,7 +232,7 @@ func (s *Store) Days(ctx context.Context, since time.Time) (map[string][]Day, er
 		       SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')),
 		       SUM(status IN ('error','down'))
-		FROM checks WHERE at>=? GROUP BY target, d ORDER BY target, d`, ms(since))
+		FROM verdicts WHERE at>=? GROUP BY target, d ORDER BY target, d`, ms(since))
 	if err != nil {
 		return nil, err
 	}
@@ -217,11 +269,16 @@ func (s *Store) Latencies(ctx context.Context, since time.Time) (map[string][]in
 	return out, rows.Err()
 }
 
-// Prune deletes checks older than the retention; incidents are kept.
+// Prune deletes checks and verdicts older than the retention; incidents are kept.
 func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM checks WHERE at<?`, ms(before))
-	if err != nil {
-		return 0, err
+	var n int64
+	for _, q := range []string{`DELETE FROM checks WHERE at<?`, `DELETE FROM verdicts WHERE at<?`} {
+		res, err := s.db.ExecContext(ctx, q, ms(before))
+		if err != nil {
+			return n, err
+		}
+		k, _ := res.RowsAffected()
+		n += k
 	}
-	return res.RowsAffected()
+	return n, nil
 }

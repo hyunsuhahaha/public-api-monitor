@@ -1,8 +1,10 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -44,6 +46,9 @@ targets:
 		if err := st.SaveCheck(ctx, r); err != nil {
 			t.Fatal(err)
 		}
+		if err := st.SaveVerdict(ctx, store.Verdict{TargetID: "a", At: r.At, Status: s, Voters: 1}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	in := &incident.Incident{TargetID: "a", Started: now.Add(-3 * time.Minute), Severity: 2, Status: probe.StatusDown, Reason: "timeout", LastReason: "timeout"}
 	if err := st.SaveIncident(ctx, in); err != nil {
@@ -53,7 +58,19 @@ targets:
 	if err := st.SaveIncident(ctx, in); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Cfg: cfg, Store: st, LastCheck: func() time.Time { return now }}
+	s := &Server{Cfg: cfg, Store: st, LastCheck: func() time.Time { return now },
+		IngestToken: "tok",
+		Ingest: func(ctx context.Context, rs []probe.Result) error {
+			for _, r := range rs {
+				if r.TargetID != "a" && r.TargetID != "b" {
+					return errors.New("unknown target")
+				}
+				if err := st.SaveCheck(ctx, r); err != nil {
+					return err
+				}
+			}
+			return nil
+		}}
 	return st, s.Handler()
 }
 
@@ -80,6 +97,9 @@ func TestStatusAPI(t *testing.T) {
 	a, b := v.Targets[0], v.Targets[1]
 	if a.Status != probe.StatusOK || a.Uptime30d != 0.75 || a.Incident != nil {
 		t.Fatalf("a: %+v", a)
+	}
+	if len(a.Locations) != 1 || a.Locations[0].Location != "t" {
+		t.Fatalf("locations: %+v", a.Locations)
 	}
 	if a.P50Ms == 0 || a.P95Ms < a.P50Ms {
 		t.Fatalf("latency percentiles: %+v", a)
@@ -121,5 +141,42 @@ func TestBadgePageHealth(t *testing.T) {
 	}
 	if w := get(t, h, "/metrics"); w.Code != 200 {
 		t.Fatalf("metrics: %d", w.Code)
+	}
+}
+
+func post(h http.Handler, token, body string) int {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/ingest", bytes.NewBufferString(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	h.ServeHTTP(w, req)
+	return w.Code
+}
+
+func TestIngest(t *testing.T) {
+	_, h := setup(t)
+	at := time.Now().UTC().Format(time.RFC3339)
+	good := `[{"target":"b","location":"home","at":"` + at + `","status":"down","latencyMs":10000,"reason":"timeout"}]`
+	if c := post(h, "", good); c != 401 {
+		t.Fatalf("no token: %d", c)
+	}
+	if c := post(h, "wrong", good); c != 401 {
+		t.Fatalf("bad token: %d", c)
+	}
+	if c := post(h, "tok", `[{"target":"b","location":"home","at":"`+at+`","status":"hacked"}]`); c != 400 {
+		t.Fatalf("bad status: %d", c)
+	}
+	if c := post(h, "tok", `[{"target":"zzz","location":"home","at":"`+at+`","status":"ok"}]`); c != 400 {
+		t.Fatalf("unknown target: %d", c)
+	}
+	if c := post(h, "tok", good); c != 204 {
+		t.Fatalf("good: %d", c)
+	}
+	w := get(t, h, "/api/v1/status")
+	var v StatusView
+	json.Unmarshal(w.Body.Bytes(), &v)
+	if l := v.Targets[1].Locations; len(l) != 1 || l[0].Location != "home" || l[0].Status != probe.StatusDown {
+		t.Fatalf("ingested result not shown: %+v", l)
 	}
 }

@@ -3,6 +3,7 @@ package web
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/push"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 )
 
@@ -28,6 +30,9 @@ type Server struct {
 	Cfg       *config.Config
 	Store     *store.Store
 	LastCheck func() time.Time
+	// Ingest takes remote probes' results; nil or an empty IngestToken disables the endpoint.
+	Ingest      func(ctx context.Context, results []probe.Result) error
+	IngestToken string
 
 	mu       sync.Mutex
 	cached   []byte
@@ -43,6 +48,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /", http.FileServerFS(sub))
 	mux.HandleFunc("GET /api/v1/status", s.status)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
+	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /readyz", s.ready)
@@ -57,6 +63,43 @@ func securityHeaders(h http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
 		h.ServeHTTP(w, r)
 	})
+}
+
+// ingest: POST a JSON array of push.Wire with "Authorization: Bearer <token>".
+func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
+	if s.Ingest == nil || s.IngestToken == "" {
+		http.NotFound(w, r)
+		return
+	}
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(got), []byte(s.IngestToken)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var batch []push.Wire
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
+	if err := dec.Decode(&batch); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	results := make([]probe.Result, 0, len(batch))
+	for _, b := range batch {
+		if b.Location == "" || len(b.Location) > 40 || b.Location == "quorum" || !validStatus[b.Status] {
+			http.Error(w, "bad location or status", http.StatusBadRequest)
+			return
+		}
+		results = append(results, b.Result())
+	}
+	if err := s.Ingest(r.Context(), results); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+var validStatus = map[probe.Status]bool{
+	probe.StatusOK: true, probe.StatusSlow: true, probe.StatusStale: true,
+	probe.StatusError: true, probe.StatusDown: true, probe.StatusClient: true,
 }
 
 // ready: the database answers and a check finished within two intervals.
@@ -93,6 +136,16 @@ type TargetView struct {
 	Uptime90d   float64            `json:"uptime90d"`
 	Days        []store.Day        `json:"days"`
 	Incident    *incident.Incident `json:"incident,omitempty"`
+	Locations   []LocationView     `json:"locations"`
+}
+
+// LocationView is one probe location's latest check of a target.
+type LocationView struct {
+	Location  string       `json:"location"`
+	Status    probe.Status `json:"status"`
+	Reason    string       `json:"reason,omitempty"`
+	LatencyMs int64        `json:"latencyMs"`
+	CheckedAt time.Time    `json:"checkedAt"`
 }
 
 type StatusView struct {
@@ -122,7 +175,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) build(ctx context.Context) (*StatusView, error) {
 	now := time.Now()
-	latest, err := s.Store.Latest(ctx)
+	verdicts, err := s.Store.LatestVerdicts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byLoc, err := s.Store.LatestByLocation(ctx, now.Add(-time.Hour))
 	if err != nil {
 		return nil, err
 	}
@@ -146,9 +203,19 @@ func (s *Server) build(ctx context.Context) (*StatusView, error) {
 	today := now.In(config.KST).Format("2006-01-02")
 	for _, t := range s.Cfg.Targets {
 		tv := TargetView{ID: t.ID, Name: t.Name, Provider: t.Provider, Category: t.Category, Docs: t.Docs, Status: "unknown"}
-		if r, ok := latest[t.ID]; ok {
-			at := r.At
-			tv.Status, tv.Reason, tv.Code, tv.CheckedAt, tv.LatencyMs = r.Status, r.Reason, r.Code, &at, r.LatencyMS
+		if v, ok := verdicts[t.ID]; ok {
+			at := v.At
+			tv.Status, tv.Reason, tv.CheckedAt = v.Status, v.Reason, &at
+		}
+		tv.Locations = []LocationView{}
+		for _, r := range byLoc[t.ID] {
+			tv.Locations = append(tv.Locations, LocationView{r.Location, r.Status, r.Reason, r.LatencyMS, r.At})
+			if r.Code != "" {
+				tv.Code = r.Code
+			}
+			if tv.LatencyMs == 0 || r.LatencyMS < tv.LatencyMs {
+				tv.LatencyMs = r.LatencyMS
+			}
 		}
 		tv.Days = days[t.ID]
 		tv.UptimeToday = uptimeSince(tv.Days, today, 1)

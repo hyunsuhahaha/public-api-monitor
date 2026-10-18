@@ -1,0 +1,167 @@
+package monitor
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/quorum"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
+)
+
+var (
+	mUp = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "pamon_target_up", Help: "Combined verdict: 1 healthy, 0.5 degraded, 0 outage, -1 unknown (our side).",
+	}, []string{"target"})
+	mVoters = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "pamon_target_voters", Help: "Locations that counted in the last verdict.",
+	}, []string{"target"})
+	mOpen = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "pamon_open_incidents", Help: "Incidents currently open.",
+	})
+	mIngested = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "pamon_ingested_results_total", Help: "Results received from remote probes.",
+	}, []string{"location"})
+	mStoreErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "pamon_store_errors_total", Help: "Failed writes to the database.",
+	})
+)
+
+// Notifier is told about incident changes (webhooks etc.).
+type Notifier interface {
+	Notify(ctx context.Context, ev incident.Event, in *incident.Incident, t *config.Target)
+}
+
+// Central stores every check (its own and remote probes'), combines locations into a
+// verdict after each of its own checks, and runs incidents on the verdicts.
+type Central struct {
+	Cfg      *config.Config
+	Store    *store.Store
+	Board    *quorum.Board
+	Tracker  *incident.Tracker
+	Notifier Notifier
+	Log      *slog.Logger
+	Location string // this process's own location: its checks trigger the verdicts
+
+	targets map[string]*config.Target
+}
+
+// Start restores open incidents and indexes the targets. Call before Run.
+func (c *Central) Start(ctx context.Context) error {
+	c.targets = map[string]*config.Target{}
+	for i := range c.Cfg.Targets {
+		c.targets[c.Cfg.Targets[i].ID] = &c.Cfg.Targets[i]
+	}
+	open, err := c.Store.OpenIncidents(ctx)
+	if err != nil {
+		return err
+	}
+	for _, in := range open {
+		c.Tracker.Restore(in)
+	}
+	mOpen.Set(float64(len(open)))
+	return nil
+}
+
+// Record handles one of the central's own checks.
+func (c *Central) Record(ctx context.Context, t *config.Target, r probe.Result) {
+	c.save(ctx, r)
+	c.decide(ctx, t, r.At)
+}
+
+func (c *Central) save(ctx context.Context, r probe.Result) {
+	if err := c.Store.SaveCheck(ctx, r); err != nil {
+		mStoreErrors.Inc()
+		c.Log.Error("save check", "err", err)
+	}
+	c.Board.Update(r)
+}
+
+// ErrUnknownTarget: an ingested result names a target this config does not have.
+var ErrUnknownTarget = errors.New("unknown target")
+
+// Ingest takes results from a remote probe. They count in the next verdict of their
+// target (taken when the central's own check of it finishes).
+func (c *Central) Ingest(ctx context.Context, results []probe.Result) error {
+	now := time.Now()
+	for _, r := range results {
+		if c.targets[r.TargetID] == nil {
+			return fmt.Errorf("%w: %q", ErrUnknownTarget, r.TargetID)
+		}
+		if r.At.After(now.Add(2*time.Minute)) || r.At.Before(now.Add(-time.Hour)) {
+			return fmt.Errorf("result for %q at %s: clock too far off", r.TargetID, r.At.Format(time.RFC3339))
+		}
+	}
+	for _, r := range results {
+		observe(r)
+		mIngested.WithLabelValues(r.Location).Inc()
+		c.save(ctx, r)
+	}
+	return nil
+}
+
+func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
+	// a location counts if it checked within 2.5 intervals (one missed slot is fine)
+	fresh := c.Board.Fresh(t.ID, at, t.Interval.Duration*5/2)
+	v := quorum.Decide(t.ID, at, fresh)
+	if err := c.Store.SaveVerdict(ctx, store.Verdict{TargetID: t.ID, At: v.At, Status: v.Status, Reason: v.Reason, Voters: v.Voters}); err != nil {
+		mStoreErrors.Inc()
+		c.Log.Error("save verdict", "err", err)
+	}
+	mVoters.WithLabelValues(t.ID).Set(float64(v.Voters))
+	switch {
+	case !v.Status.Counts():
+		mUp.WithLabelValues(t.ID).Set(-1)
+	case v.Status.Severity() == 0:
+		mUp.WithLabelValues(t.ID).Set(1)
+	case v.Status.Severity() == 1:
+		mUp.WithLabelValues(t.ID).Set(0.5)
+	default:
+		mUp.WithLabelValues(t.ID).Set(0)
+	}
+	ev, in := c.Tracker.Observe(v.Result())
+	if ev == incident.None {
+		return
+	}
+	if err := c.Store.SaveIncident(ctx, in); err != nil {
+		mStoreErrors.Inc()
+		c.Log.Error("save incident", "err", err)
+	}
+	switch ev {
+	case incident.Opened:
+		mOpen.Inc()
+		c.Log.Warn("incident opened", "target", t.ID, "id", in.ID, "reason", in.Reason)
+	case incident.Closed:
+		mOpen.Dec()
+		c.Log.Info("incident closed", "target", t.ID, "id", in.ID, "duration", in.Ended.Sub(in.Started).Round(time.Second))
+	}
+	if c.Notifier != nil {
+		c.Notifier.Notify(ctx, ev, in, t)
+	}
+}
+
+// Prune deletes old checks and verdicts once a day.
+func (c *Central) Prune(ctx context.Context, keep time.Duration) {
+	tick := time.NewTicker(24 * time.Hour)
+	defer tick.Stop()
+	for {
+		if n, err := c.Store.Prune(ctx, time.Now().Add(-keep)); err != nil {
+			c.Log.Error("prune", "err", err)
+		} else if n > 0 {
+			c.Log.Info("pruned old rows", "rows", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
