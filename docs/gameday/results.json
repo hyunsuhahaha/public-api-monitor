@@ -1,0 +1,70 @@
+{
+  "startedAt": "2026-10-19 00:30",
+  "seconds": 596,
+  "results": [
+    {
+      "no": 1,
+      "name": "하드 장애 (HTTP 503)",
+      "expect": "장애 감지 ≤ 3주기(35초), 복구 시 자동 종료",
+      "pass": true,
+      "measured": "감지 15.2초 · 복구 감지 19.2초",
+      "note": "판정 down"
+    },
+    {
+      "no": 2,
+      "name": "조용한 장애 (HTTP 200 + resultCode 05)",
+      "expect": "일반 HTTP 체크가 '정상'이라 하는 응답을 장애로 감지",
+      "pass": true,
+      "measured": "감지 30.3초",
+      "note": "원인: code 05: SERVICETIMEOUT_ERROR (central, probe)"
+    },
+    {
+      "no": 3,
+      "name": "한 지역만 장애 (probe의 API 경로 차단)",
+      "expect": "장애를 열지 않고 '일부 지역에서만 실패'로 기록",
+      "pass": true,
+      "measured": "probe 실패 관측 28.3초 · 40초 동안 새 장애 0건",
+      "note": "판정 ok, 사유 'failing only from probe'"
+    },
+    {
+      "no": 4,
+      "name": "중앙 서버 45초 중단",
+      "expect": "원격 감시기가 결과를 쌓아 두었다가 유실 없이 전달",
+      "pass": true,
+      "measured": "중단 중 쌓인 결과 5건 · 전송 실패 3회 · 재기동 0.0초 · 큐 비움 1.0초",
+      "note": "전달 5건, 버림 0건"
+    },
+    {
+      "no": 5,
+      "name": "장애 중 중앙 서버 재시작",
+      "expect": "같은 장애가 이어지고 복구 때 그 장애가 닫힘 (중복 없음)",
+      "pass": true,
+      "measured": "재시작 후 장애 #3 유지 · 복구 감지 19.2초",
+      "note": "처음 #3, 중복 0건"
+    },
+    {
+      "no": 6,
+      "name": "데이터 갱신 멈춤 (200 OK, 6시간 전 데이터)",
+      "expect": "응답은 정상이어도 '갱신 멈춤'으로 판정",
+      "pass": true,
+      "measured": "감지 20.3초",
+      "note": "stale: newest data 6h0m0s old"
+    },
+    {
+      "no": 7,
+      "name": "평소보다 느려짐 (600ms, 고정 기준 2초 미만)",
+      "expect": "API별로 학습한 평소 속도 대비 느림으로 판정",
+      "pass": true,
+      "measured": "감지 20.3초",
+      "note": "평소 p50 0ms → slow: 601ms (usually 1ms)"
+    },
+    {
+      "no": 8,
+      "name": "응답 형식 변경 (새 필드 pm25Value)",
+      "expect": "가용성은 정상이어도 필드 추가를 변경 이벤트로 기록",
+      "pass": true,
+      "measured": "감지 10.1초",
+      "note": "added: response.body.items.item[].pm25Value"
+    }
+  ]
+}
