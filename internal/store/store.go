@@ -275,6 +275,67 @@ func (s *Store) Latencies(ctx context.Context, since time.Time, location ...stri
 	return out, rows.Err()
 }
 
+// Counts are a target's verdicts in a period.
+type Counts struct {
+	Counted  int
+	Healthy  int
+	Degraded int
+	Outage   int
+}
+
+// VerdictCounts per target in [from, to).
+func (s *Store) VerdictCounts(ctx context.Context, from, to time.Time) (map[string]Counts, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT target, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
+		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
+		FROM verdicts WHERE at>=? AND at<? GROUP BY target`, ms(from), ms(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Counts{}
+	for rows.Next() {
+		var t string
+		var c Counts
+		if err := rows.Scan(&t, &c.Counted, &c.Healthy, &c.Degraded, &c.Outage); err != nil {
+			return nil, err
+		}
+		out[t] = c
+	}
+	return out, rows.Err()
+}
+
+// IncidentsOverlapping returns incidents that were open at some point in [from, to).
+func (s *Store) IncidentsOverlapping(ctx context.Context, from, to time.Time) ([]*incident.Incident, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+incidentCols+` FROM incidents WHERE started<? AND (ended=0 OR ended>=?) ORDER BY started`,
+		ms(to), ms(from))
+	if err != nil {
+		return nil, err
+	}
+	return scanIncidents(rows)
+}
+
+// LatenciesBetween: healthy response times per target in [from, to).
+func (s *Store) LatenciesBetween(ctx context.Context, from, to time.Time) (map[string][]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT target, latency_ms FROM checks WHERE at>=? AND at<? AND status IN ('ok','slow','stale')`, ms(from), ms(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]int64{}
+	for rows.Next() {
+		var t string
+		var l int64
+		if err := rows.Scan(&t, &l); err != nil {
+			return nil, err
+		}
+		out[t] = append(out[t], l)
+	}
+	return out, rows.Err()
+}
+
 // Prune deletes checks and verdicts older than the retention; incidents are kept.
 func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
 	var n int64

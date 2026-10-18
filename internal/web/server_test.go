@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -178,5 +179,35 @@ func TestIngest(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &v)
 	if l := v.Targets[1].Locations; len(l) != 1 || l[0].Location != "home" || l[0].Status != probe.StatusDown {
 		t.Fatalf("ingested result not shown: %+v", l)
+	}
+}
+
+func TestReportAndFeed(t *testing.T) {
+	_, h := setup(t)
+	month := time.Now().In(config.KST).Format("2006-01")
+	if w := get(t, h, "/report/"+month); w.Code != 200 || !strings.Contains(w.Body.String(), "공공 API 가용성 리포트") || !strings.Contains(w.Body.String(), "API A") {
+		t.Fatalf("report page: %d", w.Code)
+	}
+	if w := get(t, h, "/report/bad"); w.Code != 400 {
+		t.Fatalf("bad month: %d", w.Code)
+	}
+	if w := get(t, h, "/report"); w.Code != 302 || !strings.HasSuffix(w.Header().Get("Location"), month) {
+		t.Fatalf("redirect: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	w := get(t, h, "/api/v1/report/"+month)
+	var rep struct {
+		Rows []struct{ ID string } `json:"rows"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil || len(rep.Rows) != 2 {
+		t.Fatalf("report json: %v %s", err, w.Body.String())
+	}
+	w = get(t, h, "/feed.xml")
+	var feed struct {
+		Entries []struct {
+			Title string `xml:"title"`
+		} `xml:"entry"`
+	}
+	if err := xml.Unmarshal(w.Body.Bytes(), &feed); err != nil || len(feed.Entries) != 1 || !strings.Contains(feed.Entries[0].Title, "[장애] API A (복구") {
+		t.Fatalf("feed: %v %s", err, w.Body.String())
 	}
 }

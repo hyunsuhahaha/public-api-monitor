@@ -26,6 +26,7 @@ import (
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/push"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/quorum"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/report"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/web"
 )
@@ -46,6 +47,7 @@ func main() {
 		location = flag.String("location", env("PAMON_LOCATION", "local"), "name of this probe location")
 		central  = flag.String("central", env("PAMON_CENTRAL_URL", ""), "central base URL (probe)")
 		once     = flag.Bool("once", false, "check every target once, print the results and exit")
+		month    = flag.String("report", "", "print the Markdown availability report for YYYY-MM from -db and exit")
 		paths    = flag.Bool("paths", false, "with -once: fail only on endpoints that no longer exist (code 12, 404); for CI with a dummy key")
 		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
 	)
@@ -58,6 +60,9 @@ func main() {
 		os.Exit(1)
 	}
 	prober := probe.New(*location)
+	if *month != "" {
+		os.Exit(printReport(cfg, *dbPath, *month))
+	}
 	if *once {
 		os.Exit(runOnce(cfg, prober, *paths))
 	}
@@ -109,7 +114,7 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	srv := &http.Server{
 		Addr: addr,
 		Handler: (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck,
-			Ingest: c.Ingest, IngestToken: token}).Handler(),
+			Ingest: c.Ingest, IngestToken: token, PublicURL: os.Getenv("PAMON_PUBLIC_URL")}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,
 	}
@@ -155,6 +160,23 @@ func shutdown(srv *http.Server) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(ctx)
+}
+
+// printReport writes the month's report as Markdown (for a blog post or GeekNews).
+func printReport(cfg *config.Config, dbPath, month string) int {
+	st, err := store.Open(dbPath)
+	if err != nil {
+		os.Stderr.WriteString(err.Error() + "\n")
+		return 1
+	}
+	defer st.Close()
+	rep, err := report.Build(context.Background(), st, cfg, month, time.Now())
+	if err != nil {
+		os.Stderr.WriteString(err.Error() + "\n")
+		return 1
+	}
+	os.Stdout.WriteString(rep.Markdown(os.Getenv("PAMON_PUBLIC_URL")))
+	return 0
 }
 
 // runOnce is for trying a targets file: one check each, a table on stdout, exit 1 if any

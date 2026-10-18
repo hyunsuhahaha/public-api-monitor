@@ -21,6 +21,8 @@
 | 장애 `down` | 응답 없음, 타임아웃, 5xx | 장애 |
 | 확인 불가 `client` | **우리 쪽 문제**: 키 미등록 `30`, 호출 한도 `22`, 잘못된 파라미터 `10` 등 | 제외 |
 
+**느림**은 API마다 다릅니다. 평소 50ms인 API가 800ms가 되면 3초 기준으로는 못 잡으므로, 대상마다 최근 정상 응답 288개(24시간)의 중앙값을 학습해 `min(slow_after, max(4×중앙값, 중앙값+400ms))`를 넘으면 느림으로 봅니다("slow: 812ms (usually 48ms)"). 장애 중 응답은 학습하지 않고, 오래 지속된 변화는 반나절쯤 지나 새 기준이 됩니다.
+
 한 번 실패는 노이즈로 봅니다. 장애는 **연속 2회 실패**에 열리고 **연속 2회 정상**에 닫힙니다.
 
 ## 여러 지역에서 확인하기
@@ -60,6 +62,7 @@ cp .env.example .env     # 키 입력
 go run ./cmd/pamon -once # 대상마다 한 번 호출하고 결과 표 출력 (targets.yaml 수정 후 확인용)
 go run ./cmd/pamon       # http://localhost:8080
 docker compose up        # pamon + Prometheus(:9090) + Grafana(:3000, 대시보드 자동 등록)
+go run ./cmd/pamon -report 2026-10   # 월간 리포트를 마크다운으로 (블로그·GeekNews 게시용)
 ```
 
 ## 배포 (OCI 무료 서버 + Ansible)
@@ -88,6 +91,8 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 |---|---|
 | `GET /api/v1/status` | 대상별 현재 상태, 30·90일 가용률, p50/p95 응답 시간, 일별 기록, 진행 중 장애 |
 | `GET /api/v1/incidents?target=id` | 최근 90일 장애 |
+| `GET /report/YYYY-MM` · `/api/v1/report/YYYY-MM` | 월간 가용성 리포트 (가용률 낮은 API, 최장 장애, 기관별) |
+| `GET /feed.xml` | 장애 Atom 피드 (RSS 리더, 슬랙 RSS 앱으로 구독) |
 | `GET /badge/{id}.svg` | 30일 가용률 배지 |
 | `GET /metrics` | Prometheus 지표 (`pamon_checks_total`, `pamon_check_latency_seconds`, `pamon_target_up`, …) |
 | `POST /api/v1/ingest` | 원격 감시기 결과 수신 (`Authorization: Bearer $PAMON_INGEST_TOKEN`) |
@@ -106,7 +111,7 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 
 `targets.yaml`에 한 항목을 추가하고 `pamon -once`로 확인합니다. 키가 없어도 주소는 확인할 수 있습니다. 가짜 키로 호출하면 살아 있는 data.go.kr 주소는 403(코드 30, 키 미등록), 없거나 폐기된 주소는 400(코드 12)을 줍니다: `DATA_GO_KR_KEY=dummy pamon -once -paths`.
 
-현재 46개: 기상청 8, 에어코리아·환경 6, 부동산 실거래 4, 교통 9(서울 버스·지하철·따릉이·주차장, TAGO, 인천공항), 의료 4(응급실 실시간 병상 포함), 금융·경제 6, 생활·관광 9. URL은 Go 템플릿이라 날짜 파라미터를 자동으로 채울 수 있습니다.
+현재 45개: 기상청 8, 환경 6, 부동산 실거래 4, 교통 9(서울 버스·지하철·따릉이·주차장, TAGO, 인천공항), 의료 4(응급실 실시간 병상 포함), 금융·경제 5, 나라장터 1, 생활·관광 8. URL은 Go 템플릿이라 날짜 파라미터를 자동으로 채울 수 있습니다.
 
 ```yaml
 - id: airkorea-sido

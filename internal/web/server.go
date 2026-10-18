@@ -33,6 +33,7 @@ type Server struct {
 	// Ingest takes remote probes' results; nil or an empty IngestToken disables the endpoint.
 	Ingest      func(ctx context.Context, results []probe.Result) error
 	IngestToken string
+	PublicURL   string // for absolute links in the feed (else taken from the request)
 
 	mu       sync.Mutex
 	cached   []byte
@@ -49,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/status", s.status)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
+	s.reportRoutes(mux)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /readyz", s.ready)
