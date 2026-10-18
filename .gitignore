@@ -14,3 +14,5 @@
 .terraform.lock.hcl
 deploy/ansible/inventory.ini
 deploy/ansible/group_vars/all/vault.yml
+__pycache__/
+*.pyc
