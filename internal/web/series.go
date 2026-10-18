@@ -19,11 +19,15 @@ var ranges = map[string]struct{ span, step time.Duration }{
 	"30d": {30 * 24 * time.Hour, 8 * time.Hour},
 }
 
-func parseRange(r *http.Request) (string, time.Time, time.Time, time.Duration) {
+func (s *Server) parseRange(r *http.Request) (string, time.Time, time.Time, time.Duration) {
 	name := r.URL.Query().Get("range")
 	rg, ok := ranges[name]
 	if !ok {
 		name, rg = "24h", ranges["24h"]
+	}
+	// a bucket is never shorter than the check interval (else every other one is empty)
+	if iv := s.Cfg.Interval.Duration; rg.step < iv {
+		rg.step = iv
 	}
 	to := time.Now()
 	// buckets aligned to the step, so a refresh doesn't shift them
@@ -92,7 +96,7 @@ type locState struct {
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
-	name, from, to, step := parseRange(r)
+	name, from, to, step := s.parseRange(r)
 	ctx := r.Context()
 	buckets, err := s.Store.VerdictBuckets(ctx, from, to, step)
 	if err != nil {
@@ -223,7 +227,7 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	name, from, to, step := parseRange(r)
+	name, from, to, step := s.parseRange(r)
 	ctx := r.Context()
 	samples, err := s.Store.Samples(ctx, id, from, to)
 	if err != nil {

@@ -62,7 +62,8 @@ def mode(m, ms=0):
 
 
 def target():
-    for t in get_json(CENTRAL + "/api/v1/status")["targets"]:
+    # /api/v1/overview is uncached (/api/v1/status is cached 30 s for the public page)
+    for t in get_json(CENTRAL + "/api/v1/overview?range=1h")["targets"]:
         if t["id"] == "fake":
             return t
     raise RuntimeError("fake target missing")

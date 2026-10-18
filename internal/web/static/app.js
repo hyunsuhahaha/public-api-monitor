@@ -13,6 +13,8 @@ const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const pct = (v, d = 3) => (v == null || v < 0 ? "–" : v >= 1 ? "100%" : (v * 100).toFixed(d) + "%");
 const ms = (v) => (v ? (v >= 1000 ? (v / 1000).toFixed(2) + "s" : v + "ms") : "–");
+// error budget left: overspent shows how far ("−22%")
+const budgetText = (v) => (v == null ? "–" : v < 0 ? (v < -9 ? "소진" : "−" + Math.round(-v * 100) + "%") : Math.round(v * 100) + "%");
 const sev = (s) => (s === "down" || s === "error" ? 2 : s === "slow" || s === "stale" ? 1 : s === "ok" ? 0 : -1);
 const kst = (d, o) => new Date(d).toLocaleString("ko-KR", Object.assign({ timeZone: "Asia/Seoul", hour12: false }, o));
 const dpr = () => window.devicePixelRatio || 1;
@@ -73,7 +75,7 @@ function renderStats(d) {
   const bCls = budget >= 0.5 ? "c-ok-t" : budget >= 0 ? "c-deg-t" : "c-out-t";
   box.append(
     statPanel("가용률 · " + RANGE_LABEL[d.range], pct(f.availability), "목표(SLO) " + pct(f.slo, 1), avCls),
-    statPanel("에러 버짓 잔여", budget < -9 ? "소진" : pct(budget, 1), "목표 대비 남은 실패 허용치", bCls, budget * 100, budget >= 0.5 ? C.ok : budget >= 0 ? C.deg : C.out),
+    statPanel("에러 버짓 잔여", f.availability < 0 ? "–" : budgetText(budget), budget < 0 ? "목표를 넘겨 실패함 (버짓 초과)" : "목표 대비 남은 실패 허용치", bCls, Math.max(0, budget) * 100, budget >= 0.5 ? C.ok : budget >= 0 ? C.deg : C.out),
     statPanel("장애", String(c.down || 0), "진행 중 장애 " + f.openIncidents + "건", c.down ? "c-out-t" : "c-ok-t"),
     statPanel("성능 저하", String(c.degraded || 0), "느림·갱신 멈춤", c.degraded ? "c-deg-t" : "c-ok-t"),
     statPanel("응답 시간 p95", ms(f.p95), "p50 " + ms(f.p50) + " · p99 " + ms(f.p99), "c-blue-t"),
@@ -90,7 +92,7 @@ function budgetCell(t) {
   const v = t.availability < 0 ? null : t.budgetLeft;
   f.style.width = (v == null ? 0 : Math.max(0, Math.min(1, v)) * 100) + "%";
   f.style.background = v == null ? C.none : v >= 0.5 ? C.ok : v >= 0 ? C.deg : C.out;
-  tr.append(f); w.append(tr, el("span", "n", v == null ? "–" : v < -9 ? "소진" : Math.round(v * 100) + "%"));
+  tr.append(f); w.append(tr, el("span", "n", budgetText(v)));
   w.title = `SLO ${pct(t.slo, 1)} 기준 남은 에러 버짓`;
   return w;
 }
@@ -250,7 +252,7 @@ async function openDrawer(id) {
   $("d-sub").textContent = `${t.provider} · ${t.category || ""} · ${LABEL[t.status] || t.status}${t.reason ? " — " + t.reason : ""}`;
   $("d-stats").replaceChildren(
     statPanel("가용률 · " + RANGE_LABEL[state.range], pct(t.availability), "SLO " + pct(t.slo, 1), t.availability < 0 ? "" : t.availability >= t.slo ? "c-ok-t" : "c-out-t"),
-    statPanel("에러 버짓 잔여", t.availability < 0 ? "–" : t.budgetLeft < -9 ? "소진" : pct(t.budgetLeft, 1), "", t.budgetLeft >= 0.5 ? "c-ok-t" : t.budgetLeft >= 0 ? "c-deg-t" : "c-out-t"),
+    statPanel("에러 버짓 잔여", t.availability < 0 ? "–" : budgetText(t.budgetLeft), "", t.budgetLeft >= 0.5 ? "c-ok-t" : t.budgetLeft >= 0 ? "c-deg-t" : "c-out-t"),
     statPanel("p50", ms(t.p50), "", "c-blue-t"), statPanel("p95", ms(t.p95), "", "c-blue-t"),
     statPanel("판정 수", String(t.checks), "지역 " + t.locations.length + "곳", ""));
   const s = await fetch(`/api/v1/series?target=${encodeURIComponent(id)}&range=${state.range}`).then((r) => r.json());
