@@ -97,6 +97,44 @@ function budgetCell(t) {
   return w;
 }
 
+// ── correlated failures ───────────────────────────────────────────────────────
+// Several APIs of one agency failing together is one agency-side problem, not N separate
+// ones; many agencies at once points at the shared data.go.kr gateway (or our network).
+function correlate(targets) {
+  const by = {};
+  for (const t of targets) if (sev(t.status) >= 0) (by[t.provider] = by[t.provider] || []).push(t);
+  const groups = [];
+  for (const [provider, ts] of Object.entries(by)) {
+    const bad = ts.filter((t) => sev(t.status) >= 1);
+    if (bad.length >= 2 && bad.length * 2 >= ts.length) groups.push({ provider, bad, total: ts.length });
+  }
+  groups.sort((a, b) => b.bad.length - a.bad.length);
+  const badProviders = Object.values(by).filter((ts) => ts.some((t) => sev(t.status) >= 1)).length;
+  return { groups, wide: badProviders >= 4 && badProviders * 2 >= Object.keys(by).length };
+}
+
+function renderCorrel() {
+  const { groups, wide } = correlate(state.data.targets), box = $("correl");
+  box.replaceChildren(); box.hidden = !groups.length && !wide;
+  const openBy = {};
+  for (const i of state.incidents) if (isOpen(i)) openBy[i.target] = i;
+  if (wide) box.append(el("div", "cg wide-out", "⚠ 여러 기관 API가 동시에 이상 — 공공데이터포털 게이트웨이 또는 이 모니터 쪽 네트워크 문제일 가능성"));
+  for (const g of groups) {
+    const r = el("div", "cg"), worst = Math.max(...g.bad.map((t) => sev(t.status)));
+    r.append(el("span", "dot " + (worst >= 2 ? "down" : "slow")),
+      el("b", "", g.provider), el("span", "cg-n", ` API ${g.bad.length}/${g.total}개 동시 이상`),
+      el("span", "cg-why", "개별 API가 아니라 기관 쪽 문제일 가능성 — 하나의 원인으로 보세요"));
+    const chips = el("span", "cg-chips");
+    for (const t of g.bad) {
+      const c = el("button", "chip " + (sev(t.status) >= 2 ? "out" : "deg"), t.name + (openBy[t.id] ? ` #${openBy[t.id].id}` : ""));
+      c.title = `${LABEL[t.status]} — ${t.reason || ""}`; c.onclick = () => openDrawer(t.id); chips.append(c);
+    }
+    const only = el("button", "chip", "이 기관만 보기");
+    only.onclick = () => { $("q").value = state.q = g.provider; renderTable(); renderHeat(); };
+    r.append(chips, only); box.append(r);
+  }
+}
+
 function visibleRows() {
   const rows = state.data.targets.filter((t) =>
     (state.cat === "전체" || t.category === state.cat) &&
@@ -364,7 +402,7 @@ async function load() {
     fetch("/api/v1/schema-events").then((r) => r.json()),
   ]);
   state.data = d; state.incidents = inc; state.schema = sch; state.loadedAt = Date.now();
-  renderStats(d); renderCats(); renderTable(); renderHeat(); renderIncidents(); renderSchema();
+  renderStats(d); renderCorrel(); renderCats(); renderTable(); renderHeat(); renderIncidents(); renderSchema();
 }
 
 function renderRanges() {
