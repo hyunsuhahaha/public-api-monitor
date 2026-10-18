@@ -414,13 +414,41 @@ async function openDrawer(id) {
   let spent = 0;
   const remaining = s.counted.map((c, i) => { spent += s.bad[i]; return c || spent ? Math.round((allowed ? 1 - spent / allowed : 1) * 1000) / 10 : null; });
   $("d-budget").replaceChildren();
-  $("d-budget-hint").textContent = `SLO ${pct(s.slo, 1)} · 허용 실패 ${allowed.toFixed(1)}회 중 ${spent}회 사용 (${RANGE_LABEL[state.range]})${s.estimated ? " · 응답 시간은 히스토그램 추정치" : ""}`;
+  // when it ran out, or when it will at the last hour's pace
+  const hhmm = (sec) => kst(sec * 1000, { hour: "2-digit", minute: "2-digit" });
+  const idx = remaining.map((x, i) => (x == null ? -1 : i)).filter((i) => i >= 0);
+  const outAt = idx.find((i) => remaining[i] < 0);
+  let when = "";
+  if (outAt != null) when = ` · ${hhmm(s.t[outAt])}에 버짓 소진`;
+  else if (idx.length >= 2) {
+    const k = idx[idx.length - 1], j = idx.find((i) => s.t[k] - s.t[i] <= 3600) ?? idx[idx.length - 2];
+    const drop = (remaining[j] - remaining[k]) / Math.max(1, s.t[k] - s.t[j]); // % per second
+    if (drop > 0 && k > j) {
+      const eta = s.t[k] + remaining[k] / drop;
+      when = eta - s.t[k] < 30 * 86400 ? ` · 최근 1시간 속도면 ${kst(eta * 1000, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 소진 예상` : "";
+    }
+  }
+  $("d-budget-hint").textContent = `SLO ${pct(s.slo, 1)} · 허용 실패 ${allowed.toFixed(1)}회 중 ${spent}회 사용 (${RANGE_LABEL[state.range]})${when}${s.estimated ? " · 응답 시간은 히스토그램 추정치" : ""}`;
+  // past -100% the line only says "far over"; clip it so the start of the fall stays readable
+  const shown = remaining.map((x) => (x == null ? null : Math.max(-100, x)));
+  const exhaustMark = { hooks: { draw: [(u) => {
+    if (outAt == null) return;
+    const g = u.ctx, x = u.valToPos(s.t[outAt], "x", true);
+    g.save(); g.strokeStyle = C.out; g.lineWidth = dpr(); g.setLineDash([3 * dpr(), 3 * dpr()]);
+    g.beginPath(); g.moveTo(x, u.bbox.top); g.lineTo(x, u.bbox.top + u.bbox.height); g.stroke();
+    g.font = `${10 * dpr()}px ui-monospace, monospace`; g.fillStyle = C.out; g.textBaseline = "top";
+    const label = "소진 " + hhmm(s.t[outAt]), w = g.measureText(label).width;
+    g.textAlign = x + w + 8 * dpr() > u.bbox.left + u.bbox.width ? "right" : "left";
+    g.fillText(label, x + (g.textAlign === "left" ? 4 : -4) * dpr(), u.bbox.top + 2 * dpr());
+    g.restore();
+  }] } };
   plots.push(new uPlot({
     width: W, height: 140, scales: { x: { time: true }, y: { range: (u, mn, mx) => [Math.min(-10, mn), 100] } }, tzDate: tz, padding: [8, 8, 0, 0],
     axes: [axes()[0], Object.assign({}, axes()[1], { values: (u, v) => v.map((x) => x + "%") })],
-    series: [{}, { label: "버짓 남음", stroke: remaining.filter((x) => x != null).slice(-1)[0] < 0 ? C.out : C.ok, width: 2, fill: "rgba(115,191,105,.07)", spanGaps: true }],
-    plugins: [{ hooks: { drawClear: [(u) => { const y = u.valToPos(0, "y", true); u.ctx.fillStyle = "rgba(242,73,92,.08)"; u.ctx.fillRect(u.bbox.left, y, u.bbox.width, u.bbox.top + u.bbox.height - y); }] } }],
-  }, [s.t, remaining], $("d-budget")));
+    series: [{}, { label: "버짓 남음", stroke: remaining.filter((x) => x != null).slice(-1)[0] < 0 ? C.out : C.ok, width: 2, fill: "rgba(115,191,105,.07)", spanGaps: true,
+      value: (u, v, si, i) => (i == null || remaining[i] == null ? "--" : remaining[i] + "%") }],
+    plugins: [{ hooks: { drawClear: [(u) => { const y = u.valToPos(0, "y", true); u.ctx.fillStyle = "rgba(242,73,92,.08)"; u.ctx.fillRect(u.bbox.left, y, u.bbox.width, u.bbox.top + u.bbox.height - y); }] } }, exhaustMark],
+  }, [s.t, shown], $("d-budget")));
   const locNames = Object.keys(s.byLocation).sort();
   if (locNames.length) {
     plots.push(new uPlot({
