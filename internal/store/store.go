@@ -102,6 +102,8 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// incidents.flaps came later: add it to older databases (an error means it is there)
+	db.Exec(`ALTER TABLE incidents ADD COLUMN flaps INTEGER NOT NULL DEFAULT 0`)
 	// rows written before the zero-time fix: open incidents stored as year-1 milliseconds
 	if _, err := db.Exec(`UPDATE incidents SET ended=0 WHERE ended<0`); err != nil {
 		db.Close()
@@ -263,8 +265,8 @@ func (s *Store) LatestVerdicts(ctx context.Context) (map[string]Verdict, error) 
 func (s *Store) SaveIncident(ctx context.Context, in *incident.Incident) error {
 	if in.ID == 0 {
 		res, err := s.db.ExecContext(ctx,
-			`INSERT INTO incidents(target, started, ended, severity, status, reason, last_reason) VALUES(?,?,?,?,?,?,?)`,
-			in.TargetID, ms(in.Started), ms(in.Ended), in.Severity, string(in.Status), in.Reason, in.LastReason)
+			`INSERT INTO incidents(target, started, ended, severity, status, reason, last_reason, flaps) VALUES(?,?,?,?,?,?,?,?)`,
+			in.TargetID, ms(in.Started), ms(in.Ended), in.Severity, string(in.Status), in.Reason, in.LastReason, in.Flaps)
 		if err != nil {
 			return err
 		}
@@ -272,8 +274,8 @@ func (s *Store) SaveIncident(ctx context.Context, in *incident.Incident) error {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE incidents SET ended=?, severity=?, status=?, last_reason=? WHERE id=?`,
-		ms(in.Ended), in.Severity, string(in.Status), in.LastReason, in.ID)
+		`UPDATE incidents SET ended=?, severity=?, status=?, last_reason=?, flaps=? WHERE id=?`,
+		ms(in.Ended), in.Severity, string(in.Status), in.LastReason, in.Flaps, in.ID)
 	return err
 }
 
@@ -284,7 +286,7 @@ func scanIncidents(rows *sql.Rows) ([]*incident.Incident, error) {
 		var in incident.Incident
 		var started, ended int64
 		var status string
-		if err := rows.Scan(&in.ID, &in.TargetID, &started, &ended, &in.Severity, &status, &in.Reason, &in.LastReason); err != nil {
+		if err := rows.Scan(&in.ID, &in.TargetID, &started, &ended, &in.Severity, &status, &in.Reason, &in.LastReason, &in.Flaps); err != nil {
 			return nil, err
 		}
 		in.Started, in.Ended, in.Status = fromMS(started), fromMS(ended), probe.Status(status)
@@ -293,7 +295,7 @@ func scanIncidents(rows *sql.Rows) ([]*incident.Incident, error) {
 	return out, rows.Err()
 }
 
-const incidentCols = `id, target, started, ended, severity, status, reason, last_reason`
+const incidentCols = `id, target, started, ended, severity, status, reason, last_reason, flaps`
 
 func (s *Store) OpenIncidents(ctx context.Context) ([]*incident.Incident, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+incidentCols+` FROM incidents WHERE ended=0 ORDER BY started`)

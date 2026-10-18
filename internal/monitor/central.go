@@ -226,6 +226,9 @@ func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
 	case incident.Opened:
 		mOpen.Inc()
 		c.Log.Warn("incident opened", "target", t.ID, "id", in.ID, "reason", in.Reason)
+	case incident.Reopened:
+		mOpen.Inc()
+		c.Log.Warn("incident reopened", "target", t.ID, "id", in.ID, "flaps", in.Flaps, "reason", in.LastReason)
 	case incident.Closed:
 		mOpen.Dec()
 		c.Log.Info("incident closed", "target", t.ID, "id", in.ID, "duration", in.Ended.Sub(in.Started).Round(time.Second))

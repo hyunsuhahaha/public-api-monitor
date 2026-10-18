@@ -40,6 +40,8 @@ func Message(ev incident.Event, in *incident.Incident, t *config.Target, publicU
 		fmt.Fprintf(&b, "🔴 [%s] %s (%s) — %s", label, t.Name, t.Provider, in.Reason)
 	case incident.Updated:
 		fmt.Fprintf(&b, "🟠 [진행 중] %s — %s", t.Name, in.LastReason)
+	case incident.Reopened:
+		fmt.Fprintf(&b, "🔴 [다시 발생 · 불안정 %d회] %s — %s", in.Flaps, t.Name, in.LastReason)
 	case incident.Closed:
 		fmt.Fprintf(&b, "🟢 [복구] %s — %s 동안", t.Name, humanDuration(in.Ended.Sub(in.Started)))
 	default:

@@ -22,6 +22,9 @@ type Incident struct {
 	Status     probe.Status `json:"status"`
 	Reason     string       `json:"reason"` // the first bad check's reason
 	LastReason string       `json:"lastReason"`
+	// Flaps counts the times it looked recovered and failed again: while open (a good
+	// check, then a bad one) and by reopening soon after closing.
+	Flaps int `json:"flaps"`
 }
 
 // Open reports whether the incident is still going.
@@ -35,25 +38,31 @@ const (
 	Opened
 	Updated // still open, got worse or a new reason
 	Closed
+	Reopened // failed again within ReopenWithin of closing: the same incident, not a new one
+	Flapped  // still open, looked recovered for a check and failed again: saved, not announced
 )
 
 type state struct {
-	bad, good int
-	firstBad  probe.Result
-	open      *Incident
+	bad, good  int
+	firstBad   probe.Result
+	open       *Incident
+	lastClosed *Incident
 }
 
 // Tracker keeps per-target state. Safe for concurrent use.
 type Tracker struct {
 	OpenAfter  int
 	CloseAfter int
+	// ReopenWithin: a failure this soon after an incident closed reopens it. A flapping
+	// API (timeout, ok, ok, timeout...) would otherwise page for a "new" outage each time.
+	ReopenWithin time.Duration
 
 	mu     sync.Mutex
 	states map[string]*state
 }
 
 func NewTracker(openAfter, closeAfter int) *Tracker {
-	return &Tracker{OpenAfter: openAfter, CloseAfter: closeAfter, states: map[string]*state{}}
+	return &Tracker{OpenAfter: openAfter, CloseAfter: closeAfter, ReopenWithin: 10 * time.Minute, states: map[string]*state{}}
 }
 
 // Restore puts an incident that was still open at the last shutdown back.
@@ -88,10 +97,12 @@ func (t *Tracker) Observe(r probe.Result) (Event, *Incident) {
 			in := s.open
 			in.Ended = r.At
 			s.open = nil
+			s.lastClosed = in
 			return Closed, in
 		}
 		return None, nil
 	}
+	recovering := s.good > 0
 	s.good = 0
 	s.bad++
 	if s.bad == 1 {
@@ -100,6 +111,9 @@ func (t *Tracker) Observe(r probe.Result) (Event, *Incident) {
 	if s.open != nil {
 		changed := r.Reason != s.open.LastReason
 		s.open.LastReason = r.Reason
+		if recovering {
+			s.open.Flaps++
+		}
 		if sev > s.open.Severity {
 			s.open.Severity, s.open.Status = sev, r.Status
 			changed = true
@@ -107,7 +121,21 @@ func (t *Tracker) Observe(r probe.Result) (Event, *Incident) {
 		if changed {
 			return Updated, s.open
 		}
+		if recovering {
+			return Flapped, s.open
+		}
 		return None, nil
+	}
+	if s.bad >= t.OpenAfter && s.lastClosed != nil && r.At.Sub(s.lastClosed.Ended) <= t.ReopenWithin {
+		in := s.lastClosed
+		in.Ended = time.Time{}
+		in.Flaps++
+		in.LastReason = r.Reason
+		if sev > in.Severity {
+			in.Severity, in.Status = sev, r.Status
+		}
+		s.open, s.lastClosed = in, nil
+		return Reopened, in
 	}
 	if s.bad >= t.OpenAfter {
 		worst := r

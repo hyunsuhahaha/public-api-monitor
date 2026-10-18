@@ -183,7 +183,9 @@ const dur = (a, b) => { const m = Math.round((Date.parse(b) - Date.parse(a)) / 6
 
 function incRow(i, title) {
   const r = el("div", "inc"); r.append(el("span", "dot " + (isOpen(i) ? "down" : "ok")));
-  const m = el("div"); m.append(el("div", "", title), el("div", "t", short(i.started) + (isOpen(i) ? " ~ 진행 중" : " ~ " + kst(i.ended, { hour: "2-digit", minute: "2-digit" }))));
+  const m = el("div"), h = el("div", "", title);
+  if (i.flaps) { const f = el("span", "flap", "불안정 ×" + i.flaps); f.title = `복구된 것처럼 보였다가 다시 실패 ${i.flaps}회 — 한 장애로 묶음`; h.append(" ", f); }
+  m.append(h, el("div", "t", short(i.started) + (isOpen(i) ? " ~ 진행 중" : " ~ " + kst(i.ended, { hour: "2-digit", minute: "2-digit" }))));
   r.append(m, el("span", "t", isOpen(i) ? "진행 중" : dur(i.started, i.ended)));
   return r;
 }
@@ -206,7 +208,8 @@ function renderIncidents() {
       const b = el("div", "g-bar");
       b.style.left = ((s - from) / (to - from) * 100) + "%"; b.style.width = Math.max(0.3, (e - s) / (to - from) * 100) + "%";
       b.style.background = i.severity >= 2 ? C.out : C.deg;
-      b.title = `${names[id] || id}: ${i.reason} (${short(i.started)}${isOpen(i) ? " ~ 진행 중" : ""}) — 눌러서 상세`;
+      if (i.flaps) b.classList.add("flapping");
+      b.title = `${names[id] || id}: ${i.reason}${i.flaps ? ` · 불안정 ×${i.flaps}` : ""} (${short(i.started)}${isOpen(i) ? " ~ 진행 중" : ""}) — 눌러서 상세`;
       b.onclick = (ev) => { ev.stopPropagation(); openIncident(i.id); };
       track.append(b);
     }

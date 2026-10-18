@@ -36,7 +36,7 @@ async function openIncident(id) {
     statPanel("지속 시간", dur(i.started, end.toISOString()), open ? "아직 진행 중" : "복구됨", open ? "c-out-t" : "c-ok-t"),
     statPanel("실패한 확인", `${failing.length} / ${inWin.length}`, "장애 구간 안의 원시 확인", failing.length ? "c-out-t" : ""),
     statPanel("영향 지역", `${failingLocs.size} / ${locs.length}`, [...failingLocs].join(", ") || "–", failingLocs.size === locs.length ? "c-out-t" : "c-deg-t"),
-    statPanel("처음 원인", i.reason.split(" (")[0], "", ""),
+    i.flaps ? statPanel("불안정", `×${i.flaps}`, "복구된 듯하다 다시 실패", "c-deg-t") : statPanel("처음 원인", i.reason.split(" (")[0], "", ""),
     statPanel("응답 시간 p50", ms(lat[Math.floor(lat.length / 2)] || 0), "장애 구간, 응답 온 것만", "c-blue-t"));
 
   // matrix: one row per location, one cell per check, the incident window shaded
@@ -102,6 +102,7 @@ function postmortemMarkdown(d) {
     `| 심각도 | ${sevLabel(i)} |`,
     `| 처음 증상 | ${i.reason} |`,
     `| 마지막 증상 | ${i.lastReason || i.reason} |`,
+    `| 불안정(flapping) | ${i.flaps ? i.flaps + "회 — 복구된 듯하다 다시 실패, 한 장애로 묶음" : "없음"} |`,
     `| 실패한 확인 | ${failing.length} / ${inWin.length} |`,
     `| 영향 지역 | ${flocs.join(", ") || "-"} (전체 ${locs.join(", ")}) |`,
     `| 상태판 | ${location.origin}/#i=${i.id} |`, "",
