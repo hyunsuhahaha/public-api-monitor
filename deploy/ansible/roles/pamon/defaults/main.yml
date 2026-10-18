@@ -1,0 +1,5 @@
+pamon_role: central
+pamon_location: "{{ inventory_hostname }}"
+pamon_prometheus_image: prom/prometheus:v3.5.0
+pamon_grafana_image: grafana/grafana:12.1.0
+pamon_caddy_image: caddy:2.10

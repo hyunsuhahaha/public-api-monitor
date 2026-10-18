@@ -1,0 +1,7 @@
+# cp vault.yml.example vault.yml && ansible-vault encrypt vault.yml
+# (vault.yml is git-ignored unless encrypted; commit only the encrypted file)
+vault_data_go_kr_key: ""
+vault_seoul_openapi_key: "sample"
+vault_seoul_subway_key: "sample"
+vault_ingest_token: "change-me: openssl rand -hex 32"
+vault_webhook_url: ""

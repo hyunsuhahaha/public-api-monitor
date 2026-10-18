@@ -1,0 +1,8 @@
+- name: Reload ssh
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded
+
+- name: Save iptables
+  ansible.builtin.shell: if command -v netfilter-persistent >/dev/null; then netfilter-persistent save; fi
+  changed_when: true

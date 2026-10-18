@@ -5,3 +5,12 @@
 *.db-wal
 .env
 /dist/
+# deploy: state, credentials and generated inventory stay local
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+deploy/ansible/inventory.ini
+deploy/ansible/group_vars/all/vault.yml

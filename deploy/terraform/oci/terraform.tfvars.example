@@ -1,0 +1,9 @@
+# cp terraform.tfvars.example terraform.tfvars (git-ignored), fill in from the OCI console:
+# Profile > API keys > Add API key shows the config snippet.
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxx"
+user_ocid        = "ocid1.user.oc1..xxxx"
+fingerprint      = "aa:bb:cc:..."
+private_key_path = "~/.oci/oci_api_key.pem"
+region           = "ap-chuncheon-1"
+compartment_ocid = "ocid1.tenancy.oc1..xxxx"
+admin_cidr       = "203.0.113.7/32"

@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+services:
+  pamon:
+    image: {{ pamon_image }}
+    env_file: .env
+    volumes: ["pamon-data:/data"]
+    ports: ["127.0.0.1:8080:8080"]
+    restart: unless-stopped
+  caddy:
+    image: {{ pamon_caddy_image }}
+    ports: ["80:80", "443:443"]
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy-data:/data"]
+    restart: unless-stopped
+  prometheus:
+    image: {{ pamon_prometheus_image }}
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=90d"]
+    volumes: ["./prometheus:/etc/prometheus:ro", "prom-data:/prometheus"]
+    ports: ["127.0.0.1:9090:9090"]
+    restart: unless-stopped
+  grafana:
+    image: {{ pamon_grafana_image }}
+    environment:
+      GF_SERVER_ROOT_URL: "{{ pamon_central_url }}/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["127.0.0.1:3000:3000"]
+    restart: unless-stopped
+volumes:
+  pamon-data:
+  caddy-data:
+  prom-data:
+  grafana-data:

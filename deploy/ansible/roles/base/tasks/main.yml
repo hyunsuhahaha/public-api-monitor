@@ -1,0 +1,46 @@
+- name: Packages
+  ansible.builtin.apt:
+    name: [unattended-upgrades, chrony, curl, ca-certificates, sqlite3]
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Security updates install themselves
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"
+
+# Results from remote probes are rejected when the clocks disagree by minutes.
+- name: Clock is synced
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+
+- name: SSH takes keys only
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-pamon.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+    mode: "0644"
+  notify: Reload ssh
+
+# Oracle's Ubuntu images ship iptables rules that reject everything but SSH, on top of
+# the VCN security list. Open the web ports ahead of their REJECT rule.
+- name: Web ports open in the host firewall (OCI images)
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    ctstate: [NEW]
+    jump: ACCEPT
+    action: insert
+    rule_num: "5"
+    comment: pamon
+  loop: ["80", "443"]
+  when: "'central' in group_names"
+  notify: Save iptables

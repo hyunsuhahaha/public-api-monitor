@@ -1,0 +1,5 @@
+- name: Restart pamon
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate --remove-orphans
+    chdir: "{{ pamon_dir }}"
+  changed_when: true

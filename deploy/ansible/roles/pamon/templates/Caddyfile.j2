@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+{{ pamon_domain if pamon_domain else ':80' }} {
+	encode zstd gzip
+	# /metrics stays inside (Prometheus scrapes the container directly)
+	@metrics path /metrics
+	respond @metrics 404
+	handle /grafana* {
+		reverse_proxy grafana:3000
+	}
+	reverse_proxy pamon:8080
+}

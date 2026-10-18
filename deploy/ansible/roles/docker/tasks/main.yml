@@ -1,0 +1,29 @@
+# Docker Engine from Docker's apt repository (Ubuntu's docker.io lags behind compose v2).
+- name: Docker apt repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: [deb]
+    uris: https://download.docker.com/linux/ubuntu
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [stable]
+    architectures: ["{{ 'arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64'] else 'amd64' }}"]
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
+
+- name: Docker Engine and compose
+  ansible.builtin.apt:
+    name: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
+    update_cache: true
+
+- name: Container logs rotate
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {"log-driver": "json-file", "log-opts": {"max-size": "20m", "max-file": "3"}}
+    mode: "0644"
+  notify: Restart docker
+
+- name: Docker runs
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true

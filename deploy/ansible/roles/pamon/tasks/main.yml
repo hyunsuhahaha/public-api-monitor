@@ -1,0 +1,72 @@
+- name: Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ pamon_dir }}"
+    - "{{ pamon_dir }}/prometheus"
+    - "{{ pamon_dir }}/grafana/provisioning/datasources"
+    - "{{ pamon_dir }}/grafana/provisioning/dashboards"
+    - "{{ pamon_dir }}/grafana/dashboards"
+
+- name: Secrets (.env, root only)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ pamon_dir }}/.env"
+    mode: "0600"
+  notify: Restart pamon
+
+- name: Compose file
+  ansible.builtin.template:
+    src: "compose.{{ pamon_role }}.yml.j2"
+    dest: "{{ pamon_dir }}/compose.yml"
+    mode: "0644"
+  notify: Restart pamon
+
+- name: Central config (Caddy, Prometheus, Grafana)
+  when: pamon_role == 'central'
+  block:
+    - name: Caddyfile
+      ansible.builtin.template:
+        src: Caddyfile.j2
+        dest: "{{ pamon_dir }}/Caddyfile"
+        mode: "0644"
+      notify: Restart pamon
+
+    - name: Prometheus config and alert rules
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../{{ item }}"
+        dest: "{{ pamon_dir }}/prometheus/{{ item | basename }}"
+        mode: "0644"
+      loop: [prometheus.yml, alerts.yml]
+      notify: Restart pamon
+
+    - name: Grafana provisioning
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../grafana/provisioning/{{ item }}"
+        dest: "{{ pamon_dir }}/grafana/provisioning/{{ item }}"
+        mode: "0644"
+      loop: [datasources/prometheus.yml, dashboards/pamon.yml]
+      notify: Restart pamon
+
+    - name: Grafana dashboard
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../grafana/dashboards/pamon.json"
+        dest: "{{ pamon_dir }}/grafana/dashboards/pamon.json"
+        mode: "0644"
+
+- name: Running (pulls the newest image)
+  ansible.builtin.command:
+    cmd: docker compose up -d --pull always --remove-orphans
+    chdir: "{{ pamon_dir }}"
+  register: pamon_up
+  changed_when: "'Started' in pamon_up.stderr or 'Recreated' in pamon_up.stderr or 'Pulled' in pamon_up.stderr"
+
+- name: Healthy
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8080/{{ 'readyz' if pamon_role == 'central' else 'healthz' }}"
+  register: pamon_health
+  retries: 20
+  delay: 6
+  until: pamon_health.status == 200

@@ -1,4 +1,5 @@
-# Local stack: the monitor, Prometheus scraping it (with alert rules on our own SLOs) and Grafana.
+# Local stack: the monitor, Prometheus (with the self-SLO alert rules) and Grafana with
+# the pamon dashboard provisioned. http://localhost:8080 page, :9090 Prometheus, :3000 Grafana.
 services:
   pamon:
     build: .
@@ -19,6 +20,9 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
     restart: unless-stopped
 volumes:
   pamon-data:

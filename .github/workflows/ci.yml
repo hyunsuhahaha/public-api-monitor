@@ -13,15 +13,30 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: {go-version-file: go.mod}
+      - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
       - run: go test -race ./...
       - run: CGO_ENABLED=0 go build ./cmd/pamon
-  image:
+
+  deploy-code:
+    # Terraform and Ansible are checked without any cloud account: syntax, types, lint.
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t pamon:ci .
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=deploy/terraform/oci fmt -check -recursive
+      - run: terraform -chdir=deploy/terraform/oci init -backend=false -input=false
+      - run: terraform -chdir=deploy/terraform/oci validate
+      - run: pipx install ansible-core && ansible-galaxy collection install ansible.posix community.general
+      - name: ansible syntax check
+        working-directory: deploy/ansible
+        run: |
+          cp inventory.example.ini inventory.ini
+          echo 'vault_ingest_token: ci' > group_vars/all/vault.yml
+          ansible-playbook site.yml --syntax-check
+      - name: grafana dashboard is valid JSON
+        run: python3 -m json.tool deploy/grafana/dashboards/pamon.json > /dev/null
+
   endpoints:
     # Every target is called once with a dummy key: a live data.go.kr path answers "key not
     # registered", a retired or mistyped one "no such service" (code 12). Seoul APIs take
@@ -36,3 +51,31 @@ jobs:
           DATA_GO_KR_KEY: dummy-not-a-key
           SEOUL_OPENAPI_KEY: sample
           SEOUL_SUBWAY_KEY: sample
+
+  image:
+    # amd64 + arm64 (the OCI Always Free central is ARM). Pushed to GHCR from main only.
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

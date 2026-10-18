@@ -1,0 +1,18 @@
+# Deploys pamon: the central (status page, DB, Prometheus, Grafana) and remote probes.
+#   ansible-playbook site.yml --ask-vault-pass
+- name: Base hosts
+  hosts: all
+  become: true
+  roles: [base, docker]
+
+- name: Central
+  hosts: central
+  become: true
+  vars: {pamon_role: central}
+  roles: [pamon]
+
+- name: Remote probes
+  hosts: probes
+  become: true
+  vars: {pamon_role: probe}
+  roles: [pamon]
