@@ -70,3 +70,26 @@ func TestCheckAdaptiveSlow(t *testing.T) {
 		t.Fatalf("want adaptive slow, got %+v", r)
 	}
 }
+
+// An API whose answers always swing (here 40 ms to 1 s, like molit-rh-trade) must not page
+// on its ordinary slow tail; only well beyond it.
+func TestBaselineNoisyAPI(t *testing.T) {
+	b := NewBaseline()
+	for i := 0; i < 100; i++ {
+		d := 40 * time.Millisecond
+		switch {
+		case i%10 == 0:
+			d = 1000 * time.Millisecond
+		case i%2 == 0:
+			d = 400 * time.Millisecond
+		}
+		b.Add("noisy", d)
+	}
+	limit, usual, _ := b.Limit("noisy", 3*time.Second)
+	if limit < 1200*time.Millisecond {
+		t.Fatalf("usual %v: limit %v would page on the normal 1 s tail", usual, limit)
+	}
+	if limit > 1600*time.Millisecond {
+		t.Fatalf("limit %v too loose", limit)
+	}
+}
