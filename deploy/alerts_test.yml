@@ -1,0 +1,52 @@
+# promtool test rules deploy/alerts_test.yml
+# Synthetic verdict counters (one verdict a minute) prove the burn-rate alerts fire on a
+# real outage and stay quiet for a healthy API and for our own key problems.
+rule_files: [alerts.yml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # "a": healthy for an hour, then down for an hour
+      - series: 'pamon_target_slo{target="a"}'
+        values: '0.99x120'
+      - series: 'pamon_verdicts_total{target="a",status="ok"}'
+        values: '0+1x60 60x60'
+      - series: 'pamon_verdicts_total{target="a",status="down"}'
+        values: '0x60 0+1x60'
+      - series: 'pamon_verdicts_total{target="a",status="client"}'
+        values: '0x120'
+      # "b": healthy the whole time
+      - series: 'pamon_target_slo{target="b"}'
+        values: '0.99x120'
+      - series: 'pamon_verdicts_total{target="b",status="ok"}'
+        values: '0+1x120'
+      - series: 'pamon_verdicts_total{target="b",status="down"}'
+        values: '0x120'
+      # "c": our service key broke (client) for the second hour: not the API's fault
+      - series: 'pamon_target_slo{target="c"}'
+        values: '0.99x120'
+      - series: 'pamon_verdicts_total{target="c",status="ok"}'
+        values: '0+1x60 60x60'
+      - series: 'pamon_verdicts_total{target="c",status="client"}'
+        values: '0x60 0+1x60'
+      - series: 'pamon_verdicts_total{target="c",status="down"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: PublicAPIErrorBudgetFastBurn
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: PublicAPIErrorBudgetFastBurn
+        exp_alerts:
+          - exp_labels: {severity: page, target: a}
+            exp_annotations:
+              summary: "a burns its error budget 14.4x+ (1h and 5m windows)"
+              runbook: docs/runbooks/README.md#공공-api-장애-대응
+    promql_expr_test:
+      - expr: pamon:error_budget_burn:rate1h{target="a"}
+        eval_time: 100m
+        exp_samples:
+          # last hour: 20 ok + 40 down -> about 2/3 errors against a 1% budget, so ~67x
+          # (rate() extrapolates at the window edges: 66.87, not exactly 66.67)
+          - labels: 'pamon:error_budget_burn:rate1h{target="a"}'
+            value: 66.87009590235392

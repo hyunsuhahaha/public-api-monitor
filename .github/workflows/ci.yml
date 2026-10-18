@@ -34,6 +34,10 @@ jobs:
           cp inventory.example.ini inventory.ini
           echo 'vault_ingest_token: ci' > group_vars/all/vault.yml
           ansible-playbook site.yml --syntax-check
+      - name: prometheus rules check and unit tests
+        run: |
+          docker run --rm -v "$PWD/deploy:/rules" -w /rules --entrypoint promtool prom/prometheus:v3.5.0 check rules alerts.yml
+          docker run --rm -v "$PWD/deploy:/rules" -w /rules --entrypoint promtool prom/prometheus:v3.5.0 test rules alerts_test.yml
       - name: grafana dashboard is valid JSON
         run: python3 -m json.tool deploy/grafana/dashboards/pamon.json > /dev/null
 

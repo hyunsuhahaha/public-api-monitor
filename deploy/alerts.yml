@@ -34,3 +34,42 @@ groups:
       - alert: PamonStoreErrors
         expr: increase(pamon_store_errors_total[10m]) > 0
         labels: {severity: ticket}
+
+  # ── Public APIs: per-target SLO (targets.yaml `slo`, default 99%) ────────────────
+  # SLI = healthy verdicts / verdicts that count (our own key/quota problems excluded).
+  - name: pamon-sli
+    rules:
+      - record: pamon:sli_errors:ratio_rate5m
+        expr: 1 - sum by (target) (rate(pamon_verdicts_total{status=~"ok|slow|stale"}[5m])) / sum by (target) (rate(pamon_verdicts_total{status!="client"}[5m]))
+      - record: pamon:sli_errors:ratio_rate30m
+        expr: 1 - sum by (target) (rate(pamon_verdicts_total{status=~"ok|slow|stale"}[30m])) / sum by (target) (rate(pamon_verdicts_total{status!="client"}[30m]))
+      - record: pamon:sli_errors:ratio_rate1h
+        expr: 1 - sum by (target) (rate(pamon_verdicts_total{status=~"ok|slow|stale"}[1h])) / sum by (target) (rate(pamon_verdicts_total{status!="client"}[1h]))
+      - record: pamon:sli_errors:ratio_rate6h
+        expr: 1 - sum by (target) (rate(pamon_verdicts_total{status=~"ok|slow|stale"}[6h])) / sum by (target) (rate(pamon_verdicts_total{status!="client"}[6h]))
+      - record: pamon:error_budget_burn:rate1h
+        expr: pamon:sli_errors:ratio_rate1h / on (target) (1 - pamon_target_slo)
+
+  # Multi-window, multi-burn-rate (Google SRE Workbook ch. 5): page when the last hour burns
+  # the 30-day budget 14.4x (2% of it in an hour) and the last 5 minutes still do; ticket
+  # at 6x over 6 h confirmed by 30 m. The short window makes the alert stop soon after recovery.
+  - name: pamon-public-apis
+    rules:
+      - alert: PublicAPIErrorBudgetFastBurn
+        expr: |
+          pamon:sli_errors:ratio_rate1h > on (target) (14.4 * (1 - pamon_target_slo))
+          and pamon:sli_errors:ratio_rate5m > on (target) (14.4 * (1 - pamon_target_slo))
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $labels.target }} burns its error budget 14.4x+ (1h and 5m windows)"
+          runbook: docs/runbooks/README.md#공공-api-장애-대응
+      - alert: PublicAPIErrorBudgetSlowBurn
+        expr: |
+          pamon:sli_errors:ratio_rate6h > on (target) (6 * (1 - pamon_target_slo))
+          and pamon:sli_errors:ratio_rate30m > on (target) (6 * (1 - pamon_target_slo))
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $labels.target }} burns its error budget 6x+ (6h and 30m windows)"
+          runbook: docs/runbooks/README.md#공공-api-장애-대응

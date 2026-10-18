@@ -21,6 +21,13 @@ var (
 	mUp = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "pamon_target_up", Help: "Combined verdict: 1 healthy, 0.5 degraded, 0 outage, -1 unknown (our side).",
 	}, []string{"target"})
+	// verdicts per target and status: the SLI the per-API burn-rate rules are built on
+	mVerdicts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "pamon_verdicts_total", Help: "Combined verdicts by target and status.",
+	}, []string{"target", "status"})
+	mSLO = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "pamon_target_slo", Help: "Availability objective of each target (targets.yaml slo).",
+	}, []string{"target"})
 	mVoters = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "pamon_target_voters", Help: "Locations that counted in the last verdict.",
 	}, []string{"target"})
@@ -58,7 +65,13 @@ type Central struct {
 func (c *Central) Start(ctx context.Context) error {
 	c.targets = map[string]*config.Target{}
 	for i := range c.Cfg.Targets {
-		c.targets[c.Cfg.Targets[i].ID] = &c.Cfg.Targets[i]
+		t := &c.Cfg.Targets[i]
+		c.targets[t.ID] = t
+		mSLO.WithLabelValues(t.ID).Set(t.SLO)
+		// start every status series at 0 so rate() works from the first verdict
+		for _, st := range []probe.Status{probe.StatusOK, probe.StatusSlow, probe.StatusStale, probe.StatusError, probe.StatusDown, probe.StatusClient} {
+			mVerdicts.WithLabelValues(t.ID, string(st))
+		}
 	}
 	open, err := c.Store.OpenIncidents(ctx)
 	if err != nil {
@@ -117,6 +130,7 @@ func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
 		c.Log.Error("save verdict", "err", err)
 	}
 	mVoters.WithLabelValues(t.ID).Set(float64(v.Voters))
+	mVerdicts.WithLabelValues(t.ID, string(v.Status)).Inc()
 	switch {
 	case !v.Status.Counts():
 		mUp.WithLabelValues(t.ID).Set(-1)
