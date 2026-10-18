@@ -128,6 +128,64 @@ async function copy(text, btn) {
   } catch (e) { window.prompt("복사하세요", text); }
 }
 
+// ── shift handoff ─────────────────────────────────────────────────────────────
+// What the next on-call needs: what is wrong now, what happened on this shift, and the
+// things that are easy to forget (our-side problems, maintenance, schema changes).
+let hoHours = 12;
+function handoffMarkdown(hours) {
+  const d = state.data, now = Date.now(), from = now - hours * 3600e3;
+  const names = Object.fromEntries(d.targets.map((t) => [t.id, t.name]));
+  const nm = (id) => names[id] || id;
+  const at = (t) => kst(t, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const L = [`# 교대 인수인계 · ${at(now)} KST · 지난 ${hours}시간`, ""];
+  L.push("## 지금 상태", "");
+  const open = state.incidents.filter(isOpen);
+  L.push(open.length ? `- **진행 중 장애 ${open.length}건**` : "- 진행 중 장애 없음");
+  for (const i of open) L.push(`  - #${i.id} ${nm(i.target)} — ${i.lastReason || i.reason} (${at(i.started)}부터, ${dur(i.started, new Date().toISOString())}${i.flaps ? `, 불안정 ×${i.flaps}` : ""})`);
+  const deg = d.targets.filter((t) => sev(t.status) === 1);
+  if (deg.length) L.push(`- 성능 저하 ${deg.length}개: ` + deg.map((t) => `${t.name} (${t.reason || LABEL[t.status]})`).join(", "));
+  const burning = d.targets.filter((t) => t.burn1h >= 14.4 && t.burn5m >= 14.4 || t.burn6h >= 6 && t.burn30m >= 6);
+  if (burning.length) L.push(`- 에러 버짓 소진 경보 ${burning.length}개: ` + burning.map((t) => `${t.name} 1h ${burnText(t.burn1h)} · 6h ${burnText(t.burn6h)}`).join(", "));
+  const ours = d.targets.filter((t) => t.status === "client");
+  if (ours.length) L.push(`- 조치 필요 (우리 쪽) ${ours.length}개: ` + ours.map((t) => t.name).join(", ") + ` — ${[...new Set(ours.map((t) => t.reason))].join(" / ")}`);
+  for (const m of d.maintenance || []) if (m.active || Date.parse(m.start) > now)
+    L.push(`- ${m.active ? "점검 중" : "점검 예정"}: ${m.note || "계획 점검"} ${at(m.start)} ~ ${at(m.end)} (${m.targets.map(nm).join(", ")})`);
+  const f = d.fleet;
+  L.push(`- 전체 가용률 ${pct(f.availability)} (${RANGE_LABEL[state.range]}, 목표 ${pct(f.slo, 1)}) · 에러 버짓 ${budgetText(f.budgetLeft)}`, "");
+  const shift = state.incidents.filter((i) => (isOpen(i) ? now : Date.parse(i.ended)) >= from).sort((a, b) => Date.parse(a.started) - Date.parse(b.started));
+  L.push(`## 이번 교대의 장애 (${shift.length}건)`, "");
+  if (shift.length) {
+    L.push("| # | API | 시작 | 지속 | 원인 | 비고 |", "|---|---|---|---|---|---|");
+    for (const i of shift) L.push(`| ${i.id} | ${nm(i.target)} | ${at(i.started)} | ${isOpen(i) ? "진행 중" : dur(i.started, i.ended)} | ${i.reason} | ${[i.severity >= 2 ? "장애" : "성능 저하", i.flaps ? `불안정 ×${i.flaps}` : ""].filter(Boolean).join(", ")} |`);
+    const byProv = {};
+    for (const i of shift) { const p = (d.targets.find((t) => t.id === i.target) || {}).provider || "?"; byProv[p] = (byProv[p] || 0) + 1; }
+    const top = Object.entries(byProv).sort((a, b) => b[1] - a[1])[0];
+    if (top && top[1] >= 2) L.push("", `- 장애가 몰린 기관: **${top[0]}** (${top[1]}건) — 개별 API보다 기관 쪽 원인을 먼저 보세요`);
+  } else L.push("- 없음");
+  L.push("");
+  const sch = state.schema.filter((e) => Date.parse(e.at) >= from);
+  if (sch.length) {
+    L.push(`## 응답 형식 변경 (${sch.length}건)`, "");
+    for (const e of sch) L.push(`- ${at(e.at)} ${nm(e.target)}: ${e.kind === "removed" ? "필드 사라짐" : "필드 추가"} ${e.paths.join(", ")}`);
+    L.push("");
+  }
+  L.push("## 다음 당번에게", "", "- ", "", `상태판: ${location.origin}/`);
+  return L.join("\n");
+}
+function openHandoff() {
+  $("handoff").hidden = false;
+  const box = $("ho-hours"); box.replaceChildren();
+  for (const h of [8, 12, 24]) {
+    const b = el("button", h === hoHours ? "on" : "", h + "시간");
+    b.onclick = () => { hoHours = h; openHandoff(); }; box.append(b);
+  }
+  $("ho-text").textContent = handoffMarkdown(hoHours);
+}
+$("open-handoff").onclick = openHandoff;
+$("ho-close").onclick = () => ($("handoff").hidden = true);
+$("handoff").onclick = (e) => { if (e.target.id === "handoff") $("handoff").hidden = true; };
+$("ho-copy").onclick = (e) => copy(handoffMarkdown(hoHours), e.target);
+
 $("im-close").onclick = closeIncident;
 $("inc-modal").onclick = (e) => { if (e.target.id === "inc-modal") closeIncident(); };
 $("im-copy-md").onclick = (e) => currentIncident && copy(postmortemMarkdown(currentIncident), e.target);
@@ -140,7 +198,8 @@ function paletteCommands() {
   const cmds = RANGES.map((r) => ({ label: `기간: ${RANGE_LABEL[r]}`, hint: "명령", run: () => document.querySelectorAll("#ranges button")[RANGES.indexOf(r)].click() }));
   cmds.push({ label: "월간 가용성 리포트 열기", hint: "명령", run: () => (location.href = "/report") },
     { label: "장애 피드(Atom) 열기", hint: "명령", run: () => (location.href = "/feed.xml") },
-    { label: "키보드 단축키 보기", hint: "?", run: () => ($("help").hidden = false) });
+    { label: "키보드 단축키 보기", hint: "?", run: () => ($("help").hidden = false) },
+    { label: "교대 인수인계 요약 (Markdown)", hint: "h", run: openHandoff });
   const apis = (state.data ? state.data.targets : []).map((t) => ({
     label: t.name, hint: `${t.provider} · ${LABEL[t.status] || t.status}`, status: t.status, run: () => openDrawer(t.id), q: (t.name + t.provider + t.id + t.category).toLowerCase(),
   }));
@@ -200,6 +259,7 @@ document.addEventListener("keydown", (e) => {
     // close the topmost layer only
     if (!$("palette").hidden) closePalette();
     else if (!$("help").hidden) $("help").hidden = true;
+    else if (!$("handoff").hidden) $("handoff").hidden = true;
     else if (!$("inc-modal").hidden) closeIncident();
     else if (!$("drawer").hidden) closeDrawer();
     else if (typing) document.activeElement.blur();
@@ -212,6 +272,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "k") selectRow(selRow - 1);
   else if (e.key === "Enter" && selRow >= 0) { const r = document.querySelectorAll("#rows tr[data-id]")[selRow]; if (r) openDrawer(r.dataset.id); }
   else if (e.key === "r") load();
+  else if (e.key === "h") openHandoff();
   else if (/^[1-5]$/.test(e.key)) document.querySelectorAll("#ranges button")[+e.key - 1].click();
 });
 

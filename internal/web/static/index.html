@@ -16,6 +16,7 @@
   <div class="spacer"></div>
   <div class="ranges" id="ranges"></div>
   <button class="btn" id="open-palette" title="명령 팔레트 (Ctrl+K)">⌘ 이동 <kbd>Ctrl K</kbd></button>
+  <button class="btn" id="open-handoff" title="교대 인수인계 요약 (h)">인수인계</button>
   <button class="btn" id="refresh" title="새로고침 (r)">⟳ <span id="age">–</span></button>
   <nav class="links"><a href="/report">월간 리포트</a><a href="/feed.xml">피드</a><a href="/api/v1/overview">API</a></nav>
 </header>
@@ -101,6 +102,16 @@
   </div>
 </div>
 
+<div class="modal" id="handoff" hidden>
+  <div class="modal-box">
+    <div class="drawer-h">
+      <div><div class="d-title">교대 인수인계</div><div class="d-sub">지금 상태와 지난 몇 시간의 장애를 다음 당번에게 넘길 Markdown으로</div></div>
+      <div class="tools"><span class="chips" id="ho-hours"></span><button class="btn" id="ho-copy">Markdown 복사</button><button class="btn" id="ho-close">✕</button></div>
+    </div>
+    <pre class="handoff" id="ho-text"></pre>
+  </div>
+</div>
+
 <div class="modal" id="help" hidden>
   <div class="modal-box small">
     <div class="drawer-h"><div class="d-title">키보드 단축키</div><button class="btn" id="help-close">✕</button></div>
@@ -111,6 +122,7 @@
       <tr><td><kbd>Enter</kbd></td><td>선택한 API 상세</td></tr>
       <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>기간 1시간 · 6시간 · 24시간 · 7일 · 30일</td></tr>
       <tr><td><kbd>r</kbd></td><td>새로고침</td></tr>
+      <tr><td><kbd>h</kbd></td><td>교대 인수인계 요약</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>닫기</td></tr>
       <tr><td><kbd>?</kbd></td><td>이 도움말</td></tr>
     </table>
