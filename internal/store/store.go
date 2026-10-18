@@ -43,6 +43,26 @@ CREATE TABLE IF NOT EXISTS verdicts (
 );
 CREATE INDEX IF NOT EXISTS verdicts_target_at ON verdicts(target, at);
 CREATE INDEX IF NOT EXISTS verdicts_at ON verdicts(at);
+-- newest check per target and location, newest verdict per target: kept on write so the
+-- dashboard reads a row instead of a MAX over the history
+CREATE TABLE IF NOT EXISTS latest_checks (
+	target      TEXT    NOT NULL,
+	location    TEXT    NOT NULL,
+	at          INTEGER NOT NULL,
+	status      TEXT    NOT NULL,
+	latency_ms  INTEGER NOT NULL,
+	http_status INTEGER NOT NULL,
+	code        TEXT    NOT NULL,
+	reason      TEXT    NOT NULL,
+	PRIMARY KEY (target, location)
+);
+CREATE TABLE IF NOT EXISTS latest_verdicts (
+	target TEXT    PRIMARY KEY,
+	at     INTEGER NOT NULL,
+	status TEXT    NOT NULL,
+	reason TEXT    NOT NULL,
+	voters INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS incidents (
 	id          INTEGER PRIMARY KEY,
 	target      TEXT    NOT NULL,
@@ -78,7 +98,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // one writer; SQLite serialises anyway
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + rollupSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -87,10 +107,39 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	st := &Store{db: db}
+	if err := st.backfillLatest(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := st.backfillRollups(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return st, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// backfillLatest fills the latest_* tables once, for a database from before them.
+func (s *Store) backfillLatest(ctx context.Context) error {
+	var n int
+	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM latest_checks`).Scan(&n)
+	if n > 0 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO latest_checks
+		SELECT c.target, c.location, c.at, c.status, c.latency_ms, c.http_status, c.code, c.reason
+		FROM checks c JOIN (SELECT target, location, MAX(at) AS at FROM checks GROUP BY target, location) m
+		ON c.target=m.target AND c.location=m.location AND c.at=m.at`); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO latest_verdicts
+		SELECT v.target, v.at, v.status, v.reason, v.voters
+		FROM verdicts v JOIN (SELECT target, MAX(at) AS at FROM verdicts GROUP BY target) m
+		ON v.target=m.target AND v.at=m.at`)
+	return err
+}
 
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
@@ -113,10 +162,46 @@ func fromMS(v int64) time.Time {
 }
 
 func (s *Store) SaveCheck(ctx context.Context, r probe.Result) error {
-	_, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO checks(target, location, at, status, latency_ms, http_status, code, reason) VALUES(?,?,?,?,?,?,?,?)`,
-		r.TargetID, r.Location, ms(r.At), string(r.Status), r.LatencyMS, r.HTTPStatus, r.Code, r.Reason)
-	return err
+		r.TargetID, r.Location, ms(r.At), string(r.Status), r.LatencyMS, r.HTTPStatus, r.Code, r.Reason); err != nil {
+		return err
+	}
+	// (a remote probe's result can arrive after a newer one: keep the newest)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO latest_checks(target, location, at, status, latency_ms, http_status, code, reason)
+		VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(target, location) DO UPDATE SET at=excluded.at, status=excluded.status,
+		latency_ms=excluded.latency_ms, http_status=excluded.http_status, code=excluded.code, reason=excluded.reason
+		WHERE excluded.at >= latest_checks.at`,
+		r.TargetID, r.Location, ms(r.At), string(r.Status), r.LatencyMS, r.HTTPStatus, r.Code, r.Reason); err != nil {
+		return err
+	}
+	c, h, d, o := counts(r.Status)
+	if err := rollCheck(ctx, tx, r.TargetID, r.Location, r.At, c, h, d, o, r.LatencyMS); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// counts: a status as (counted, healthy, degraded, outage) increments.
+func counts(st probe.Status) (c, h, d, o int) {
+	if st.Counts() {
+		c = 1
+	}
+	if st.Healthy() {
+		h = 1
+	}
+	switch st.Severity() {
+	case 1:
+		d = 1
+	case 2:
+		o = 1
+	}
+	return
 }
 
 // Verdict row (see the verdicts table).
@@ -129,17 +214,33 @@ type Verdict struct {
 }
 
 func (s *Store) SaveVerdict(ctx context.Context, v Verdict) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO verdicts(target, at, status, reason, voters) VALUES(?,?,?,?,?)`,
-		v.TargetID, ms(v.At), string(v.Status), v.Reason, v.Voters)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO verdicts(target, at, status, reason, voters) VALUES(?,?,?,?,?)`,
+		v.TargetID, ms(v.At), string(v.Status), v.Reason, v.Voters); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO latest_verdicts(target, at, status, reason, voters) VALUES(?,?,?,?,?)
+		ON CONFLICT(target) DO UPDATE SET at=excluded.at, status=excluded.status, reason=excluded.reason, voters=excluded.voters
+		WHERE excluded.at >= latest_verdicts.at`, v.TargetID, ms(v.At), string(v.Status), v.Reason, v.Voters); err != nil {
+		return err
+	}
+	c, h, d, o := counts(v.Status)
+	if err := rollVerdict(ctx, tx, v.TargetID, v.At, c, h, d, o); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
-// LatestVerdicts: the newest verdict per target.
+// LatestVerdicts: the newest verdict per target within the last day (a target with none
+// is "unknown"). Read from latest_verdicts, kept on write: a MAX/GROUP BY over the verdicts
+// table cost ~30 ms per dashboard request on a month of data (and ~140 ms unbounded).
 func (s *Store) LatestVerdicts(ctx context.Context) (map[string]Verdict, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT v.target, v.at, v.status, v.reason, v.voters
-		FROM verdicts v JOIN (SELECT target, MAX(at) AS at FROM verdicts GROUP BY target) m
-		ON v.target=m.target AND v.at=m.at`)
+	rows, err := s.db.QueryContext(ctx, `SELECT target, at, status, reason, voters FROM latest_verdicts WHERE at>=?`,
+		ms(time.Now().Add(-24*time.Hour)))
 	if err != nil {
 		return nil, err
 	}
@@ -213,13 +314,12 @@ func (s *Store) Incidents(ctx context.Context, target string, since time.Time, l
 	return scanIncidents(rows)
 }
 
-// LatestByLocation: the newest raw check of each target from each location.
+// LatestByLocation: the newest raw check of each target from each location since a time.
+// From latest_checks, kept on write (the MAX/GROUP BY over checks was ~90 ms a request).
 func (s *Store) LatestByLocation(ctx context.Context, since time.Time) (map[string][]probe.Result, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.target, c.location, c.at, c.status, c.latency_ms, c.http_status, c.code, c.reason
-		FROM checks c JOIN (SELECT target, location, MAX(at) AS at FROM checks WHERE at>=? GROUP BY target, location) m
-		ON c.target=m.target AND c.location=m.location AND c.at=m.at
-		ORDER BY c.target, c.location`, ms(since))
+		SELECT target, location, at, status, latency_ms, http_status, code, reason FROM latest_checks
+		WHERE at>=? ORDER BY target, location`, ms(since))
 	if err != nil {
 		return nil, err
 	}
@@ -558,6 +658,11 @@ func (s *Store) SchemaEvents(ctx context.Context, target string, since time.Time
 // Prune deletes checks and verdicts older than the retention; incidents are kept.
 func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
 	var n int64
+	// raw rows go after the retention; the hourly rollups (a few KB per API per day) are
+	// kept 4x longer, so months-long trends stay
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM hourly WHERE hour<?`, ms(time.Now().Add(-4*time.Since(before)))); err != nil {
+		return 0, err
+	}
 	for _, q := range []string{`DELETE FROM checks WHERE at<?`, `DELETE FROM verdicts WHERE at<?`} {
 		res, err := s.db.ExecContext(ctx, q, ms(before))
 		if err != nil {

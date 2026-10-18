@@ -14,7 +14,7 @@ import (
 var ranges = map[string]struct{ span, step time.Duration }{
 	"1h":  {time.Hour, time.Minute},
 	"6h":  {6 * time.Hour, 5 * time.Minute},
-	"24h": {24 * time.Hour, 20 * time.Minute},
+	"24h": {24 * time.Hour, time.Hour}, // hour buckets: served from the rollups
 	"7d":  {7 * 24 * time.Hour, 2 * time.Hour},
 	"30d": {30 * 24 * time.Hour, 8 * time.Hour},
 }
@@ -89,6 +89,45 @@ type overviewTarget struct {
 	Locations    []locState `json:"locations"`
 }
 
+type overviewResponse struct {
+	Range  string           `json:"range"`
+	From   int64            `json:"from"`
+	To     int64            `json:"to"`
+	Step   int64            `json:"stepSec"`
+	Fleet  map[string]any   `json:"fleet"`
+	Counts map[string]int   `json:"counts"`
+	Rows   []overviewTarget `json:"targets"`
+}
+
+func fleetSummary(sumAvail, sloSum float64, withData int, p50, p95, p99 int64, perMin float64, open, verdicts int) map[string]any {
+	avail, slo := -1.0, 0.99
+	if withData > 0 {
+		avail, slo = sumAvail/float64(withData), sloSum/float64(withData)
+	}
+	return map[string]any{
+		"availability": avail, "slo": slo, "budgetLeft": budgetLeft(avail, slo),
+		"p50": p50, "p95": p95, "p99": p99, "checksPerMin": perMin, "openIncidents": open, "verdicts": verdicts,
+	}
+}
+
+type checkView struct {
+	At        time.Time `json:"at"`
+	Location  string    `json:"location"`
+	Status    string    `json:"status"`
+	LatencyMs int64     `json:"latencyMs"`
+	HTTP      int       `json:"http"`
+	Code      string    `json:"code,omitempty"`
+	Reason    string    `json:"reason,omitempty"`
+}
+
+func recentChecks(rs []probe.Result) []checkView {
+	out := make([]checkView, 0, len(rs))
+	for _, x := range rs {
+		out = append(out, checkView{x.At, x.Location, string(x.Status), x.LatencyMS, x.HTTPStatus, x.Code, x.Reason})
+	}
+	return out
+}
+
 type locState struct {
 	Location  string `json:"location"`
 	Status    string `json:"status"`
@@ -98,6 +137,10 @@ type locState struct {
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	name, from, to, step := s.parseRange(r)
 	ctx := r.Context()
+	if useRollups(step) {
+		s.overviewRollup(ctx, w, name, from, to, step)
+		return
+	}
 	buckets, err := s.Store.VerdictBuckets(ctx, from, to, step)
 	if err != nil {
 		http.Error(w, "internal error", 500)
@@ -131,15 +174,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		fleetLat = append(fleetLat, x.LatencyMS)
 	}
 
-	out := struct {
-		Range  string           `json:"range"`
-		From   int64            `json:"from"`
-		To     int64            `json:"to"`
-		Step   int64            `json:"stepSec"`
-		Fleet  map[string]any   `json:"fleet"`
-		Counts map[string]int   `json:"counts"`
-		Rows   []overviewTarget `json:"targets"`
-	}{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}}
+	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}}
 
 	var sumAvail float64
 	var withData, checks int
@@ -181,35 +216,11 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		for _, x := range byLoc[t.ID] {
 			row.Locations = append(row.Locations, locState{x.Location, string(x.Status), x.LatencyMS})
 		}
-		switch probe.Status(row.Status).Severity() {
-		case 2:
-			out.Counts["down"]++
-		case 1:
-			out.Counts["degraded"]++
-		default:
-			if row.Status == "ok" {
-				out.Counts["up"]++
-			} else {
-				out.Counts["unknown"]++
-			}
-		}
+		countStatus(out.Counts, row.Status)
 		out.Rows = append(out.Rows, row)
 	}
-	fleetAvail, fleetSLO := -1.0, 0.99
-	if withData > 0 {
-		fleetAvail, fleetSLO = sumAvail/float64(withData), sloSum/float64(withData)
-	}
-	out.Fleet = map[string]any{
-		"availability":  fleetAvail,
-		"slo":           fleetSLO,
-		"budgetLeft":    budgetLeft(fleetAvail, fleetSLO),
-		"p50":           pctl(fleetLat, 0.5),
-		"p95":           pctl(fleetLat, 0.95),
-		"p99":           pctl(fleetLat, 0.99),
-		"checksPerMin":  float64(len(samples)) / to.Sub(from).Minutes(),
-		"openIncidents": len(open),
-		"verdicts":      checks,
-	}
+	out.Fleet = fleetSummary(sumAvail, sloSum, withData, pctl(fleetLat, 0.5), pctl(fleetLat, 0.95), pctl(fleetLat, 0.99),
+		float64(len(samples))/to.Sub(from).Minutes(), len(open), checks)
 	writeJSON(w, out)
 }
 
@@ -229,6 +240,10 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 	}
 	name, from, to, step := s.parseRange(r)
 	ctx := r.Context()
+	if useRollups(step) {
+		s.seriesRollup(ctx, w, id, name, from, to, step)
+		return
+	}
 	samples, err := s.Store.Samples(ctx, id, from, to)
 	if err != nil {
 		http.Error(w, "internal error", 500)
@@ -299,23 +314,10 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 			states[i] = state(b)
 		}
 	}
-	type check struct {
-		At        time.Time `json:"at"`
-		Location  string    `json:"location"`
-		Status    string    `json:"status"`
-		LatencyMs int64     `json:"latencyMs"`
-		HTTP      int       `json:"http"`
-		Code      string    `json:"code,omitempty"`
-		Reason    string    `json:"reason,omitempty"`
-	}
-	rc := make([]check, 0, len(recent))
-	for _, x := range recent {
-		rc = append(rc, check{x.At, x.Location, string(x.Status), x.LatencyMS, x.HTTPStatus, x.Code, x.Reason})
-	}
 	writeJSON(w, map[string]any{
 		"target": id, "range": name, "stepSec": int64(step.Seconds()),
 		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states,
-		"byLocation": byLoc, "locationStates": fails, "recent": rc,
+		"byLocation": byLoc, "locationStates": fails, "recent": recentChecks(recent),
 	})
 }
 

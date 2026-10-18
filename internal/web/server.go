@@ -37,6 +37,7 @@ type Server struct {
 	IngestToken string
 	PublicURL   string // for absolute links in the feed (else taken from the request)
 
+	cache    respCache
 	mu       sync.Mutex
 	cached   []byte
 	cachedAt time.Time
@@ -52,8 +53,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/status", s.status)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
-	mux.HandleFunc("GET /api/v1/overview", s.overview)
-	mux.HandleFunc("GET /api/v1/series", s.series)
+	mux.HandleFunc("GET /api/v1/overview", s.cache.wrap(s.overview))
+	mux.HandleFunc("GET /api/v1/series", s.cache.wrap(s.series))
 	mux.HandleFunc("GET /api/v1/schema-events", s.schemaEvents)
 	s.reportRoutes(mux)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
