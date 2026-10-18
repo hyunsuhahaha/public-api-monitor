@@ -32,3 +32,15 @@ func TestPhases(t *testing.T) {
 		t.Fatalf("second call reuses the connection: %+v", r2.Phases)
 	}
 }
+
+// A reused connection reports no DNS/connect/TLS even if the transport dialed a spare.
+func TestPhasesReusedDropsSpareDial(t *testing.T) {
+	t0 := time.Unix(0, 0)
+	c := &phaseClock{now: func() time.Time { return t0 }}
+	c.dnsStart, c.dnsDone = t0, t0.Add(5*time.Millisecond)
+	c.connStart, c.connDone = t0, t0.Add(30*time.Millisecond)
+	c.reused, c.wrote, c.firstByte = true, t0, t0.Add(100*time.Millisecond)
+	if p := c.phases(); p != (Phases{WaitMs: 100, Reused: true}) {
+		t.Fatalf("%+v", p)
+	}
+}

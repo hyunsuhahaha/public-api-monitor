@@ -63,6 +63,11 @@ func span(a, b time.Time) int64 {
 func (c *phaseClock) phases() Phases {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.reused {
+		// the transport may dial a spare connection while a pooled one frees up and is
+		// used instead: that dial's DNS/connect/TLS are not this request's
+		return Phases{WaitMs: span(c.wrote, c.firstByte), Reused: true}
+	}
 	return Phases{DNSMs: span(c.dnsStart, c.dnsDone), ConnectMs: span(c.connStart, c.connDone),
 		TLSMs: span(c.tlsStart, c.tlsDone), WaitMs: span(c.wrote, c.firstByte), Reused: c.reused}
 }

@@ -393,6 +393,23 @@ async function openDrawer(id) {
     statPanel("판정 수", String(t.checks), "지역 " + t.locations.length + "곳", ""));
   const s = await fetch(`/api/v1/series?target=${encodeURIComponent(id)}&range=${state.range}`).then((r) => r.json());
   if (state.target !== id) return;
+  // where the time goes, from the recent checks' phases: the network (DNS, connect, TLS)
+  // or the provider's server (wait for the first byte); timeouts say where they stalled
+  {
+    const withP = s.recent.filter((c) => c.phases && c.latencyMs && sev(c.status) >= 0 && c.http);
+    const med = (a) => { a = a.slice().sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
+    const fresh = withP.filter((c) => !c.phases.reused);
+    const net = med(fresh.map((c) => (c.phases.dnsMs || 0) + (c.phases.connectMs || 0) + (c.phases.tlsMs || 0)));
+    const wait = med(withP.map((c) => c.phases.waitMs || 0));
+    const share = withP.length ? withP.reduce((a, c) => a + (c.phases.waitMs || 0), 0) / withP.reduce((a, c) => a + c.latencyMs, 0) : 0;
+    const touts = s.recent.filter((c) => (c.reason || "").startsWith("timeout: "));
+    const where = [...new Set(touts.map((c) => c.reason.slice(9)))];
+    const panels = $("d-stats").children;
+    if (withP.length && panels.length) panels[panels.length - 1].replaceWith(statPanel("시간이 쓰인 곳",
+      share >= 0.6 ? `서버 ${Math.round(share * 100)}%` : `네트워크 ${Math.round((1 - share) * 100)}%`,
+      `서버 대기 p50 ${ms(wait)} · 연결 p50 ${fresh.length ? ms(net) : "재사용"}` + (touts.length ? ` · 타임아웃 ${touts.length}회: ${where.join(", ")}` : ""),
+      share >= 0.6 ? "c-warn-t" : "c-blue-t"));
+  }
   plots.forEach((p) => p.destroy()); plots = [];
   $("d-lat").replaceChildren(); $("d-loc").replaceChildren();
   const W = Math.min(880, $("drawer").clientWidth - 54);
