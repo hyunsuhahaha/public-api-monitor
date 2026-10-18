@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,9 +23,13 @@ func target(t *testing.T, yaml string) *config.Target {
 }
 
 func TestCheckAgainstServer(t *testing.T) {
+	// (the timed-out handler is still running when the next request arrives: guard the key)
+	var mu sync.Mutex
 	var gotKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		gotKey = r.URL.Query().Get("serviceKey")
+		mu.Unlock()
 		switch r.URL.Path {
 		case "/ok":
 			fmt.Fprint(w, `{"response":{"header":{"resultCode":"00"}}}`)
@@ -45,8 +50,11 @@ func TestCheckAgainstServer(t *testing.T) {
 	ctx := context.Background()
 
 	r := p.Check(ctx, target(t, "targets:\n  - id: a\n    url: "+srv.URL+"/ok?serviceKey={{.Key}}\n"))
-	if r.Status != StatusOK || gotKey != "se+cret" || r.HTTPStatus != 200 {
-		t.Fatalf("ok: %+v key=%q", r, gotKey)
+	mu.Lock()
+	key := gotKey
+	mu.Unlock()
+	if r.Status != StatusOK || key != "se+cret" || r.HTTPStatus != 200 {
+		t.Fatalf("ok: %+v key=%q", r, key)
 	}
 	r = p.Check(ctx, target(t, "targets:\n  - id: a\n    timeout: 100ms\n    url: "+srv.URL+"/sleep?serviceKey={{.Key}}\n"))
 	if r.Status != StatusDown || r.Reason != "timeout" {
