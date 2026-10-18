@@ -257,3 +257,14 @@ func TestOverviewBurnRates(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicStatusPage(t *testing.T) {
+	_, h := setup(t)
+	w := get(t, h, "/status")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "공공 API 상태") || !strings.Contains(w.Body.String(), "status.js") {
+		t.Fatalf("%d %.200s", w.Code, w.Body.String())
+	}
+	if w := get(t, h, "/status.js"); w.Code != 200 {
+		t.Fatalf("status.js %d", w.Code)
+	}
+}

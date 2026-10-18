@@ -52,6 +52,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	sub, _ := fs.Sub(static, "static")
 	mux.Handle("GET /", http.FileServerFS(sub))
+	// the public page for people who use the APIs (the root is the operator's dashboard)
+	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, sub, "status.html") })
 	mux.HandleFunc("GET /api/v1/status", s.status)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
