@@ -361,7 +361,7 @@ func (d Day) Uptime() float64 {
 func (s *Store) Days(ctx context.Context, since time.Time) (map[string][]Day, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT target, date(at/1000, 'unixepoch', '+9 hours') AS d,
-		       SUM(status!='client'),
+		       SUM(status NOT IN ('client','maint')),
 		       SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')),
 		       SUM(status IN ('error','down'))
@@ -447,7 +447,7 @@ type Counts struct {
 // VerdictCounts per target in [from, to).
 func (s *Store) VerdictCounts(ctx context.Context, from, to time.Time) (map[string]Counts, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT target, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
+		SELECT target, SUM(status NOT IN ('client','maint')), SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
 		FROM verdicts WHERE at>=? AND at<? GROUP BY target`, ms(from), ms(to))
 	if err != nil {
@@ -510,7 +510,7 @@ type Bucket struct {
 func (s *Store) VerdictBuckets(ctx context.Context, from, to time.Time, step time.Duration) (map[string][]Bucket, error) {
 	st := step.Milliseconds()
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT target, (at/?)*? AS b, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
+		SELECT target, (at/?)*? AS b, SUM(status NOT IN ('client','maint')), SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
 		FROM verdicts WHERE at>=? AND at<? GROUP BY target, b ORDER BY target, b`, st, st, ms(from), ms(to))
 	if err != nil {

@@ -164,14 +164,14 @@ func (s *Store) backfillRollups(ctx context.Context) error {
 	}
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO hourly(target, location, hour, counted, healthy, degraded, outage)
-		SELECT target, '*', (at/3600000)*3600000, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
+		SELECT target, '*', (at/3600000)*3600000, SUM(status NOT IN ('client','maint')), SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
 		FROM verdicts GROUP BY target, (at/3600000)*3600000`); err != nil {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO hourly(target, location, hour, counted, healthy, degraded, outage)
-		SELECT target, location, (at/3600000)*3600000, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
+		SELECT target, location, (at/3600000)*3600000, SUM(status NOT IN ('client','maint')), SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
 		FROM checks GROUP BY target, location, (at/3600000)*3600000`); err != nil {
 		return err
@@ -219,7 +219,7 @@ func (s *Store) backfillRollups(ctx context.Context) error {
 	// and waited for itself forever on the first start of an existing database.)
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO hourly(target, location, hour, counted, healthy, degraded, outage)
-		SELECT target, 'ALL', (at/3600000)*3600000, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
+		SELECT target, 'ALL', (at/3600000)*3600000, SUM(status NOT IN ('client','maint')), SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
 		FROM checks GROUP BY target, (at/3600000)*3600000`); err != nil {
 		return err

@@ -20,6 +20,15 @@ timeout: 10s
 slow_after: 3s
 key_env: DATA_GO_KR_KEY
 
+# Announced maintenance (공지된 점검): verdicts inside a window are kept, marked 점검 중,
+# and left out of uptime, SLOs, incidents and alerts. match takes target ids or providers.
+# maintenance:
+#   - match: [한국환경공단]
+#     start: 2026-10-25T02:00:00+09:00
+#     end: 2026-10-25T04:00:00+09:00
+#     note: 에어코리아 정기 점검 (공지 링크)
+maintenance: []
+
 targets:
   # ── 날씨 (기상청) ─────────────────────────────────────────────────────────
   - id: kma-ultra-ncst

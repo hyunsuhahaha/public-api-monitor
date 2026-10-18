@@ -5,7 +5,7 @@
 const C = { ok: "#73bf69", deg: "#fade2a", warn: "#ff9830", out: "#f2495c", blue: "#5794f2", purple: "#b877d9",
   none: "#2b2e36", grid: "#22252b", axis: "#8b8f98", panel: "#16171c" };
 const LOC_COLORS = [C.blue, C.purple, "#ff7383", "#5ab1ef", "#8ab8ff", "#ffb357"];
-const LABEL = { ok: "정상", slow: "느림", stale: "갱신 멈춤", error: "오류", down: "장애", client: "확인 불가", unknown: "측정 전" };
+const LABEL = { ok: "정상", slow: "느림", stale: "갱신 멈춤", error: "오류", down: "장애", client: "확인 불가", maint: "점검 중", unknown: "측정 전" };
 const RANGES = ["1h", "6h", "24h", "7d", "30d"];
 const RANGE_LABEL = { "1h": "1시간", "6h": "6시간", "24h": "24시간", "7d": "7일", "30d": "30일" };
 
@@ -79,7 +79,7 @@ function renderStats(d) {
     statPanel("장애", String(c.down || 0), "진행 중 장애 " + f.openIncidents + "건", c.down ? "c-out-t" : "c-ok-t"),
     statPanel("성능 저하", String(c.degraded || 0), "느림·갱신 멈춤", c.degraded ? "c-deg-t" : "c-ok-t"),
     statPanel("응답 시간 p95", ms(f.p95), "p50 " + ms(f.p50) + " · p99 " + ms(f.p99), "c-blue-t"),
-    statPanel("확인 / 분", f.checksPerMin.toFixed(1), `정상 ${c.up || 0} · 확인 불가 ${c.unknown || 0} / ${d.targets.length}개 API`, ""),
+    statPanel("확인 / 분", f.checksPerMin.toFixed(1), `정상 ${c.up || 0}${c.maint ? " · 점검 " + c.maint : ""} · 확인 불가 ${c.unknown || 0} / ${d.targets.length}개 API`, ""),
   );
   const pill = $("fleet-pill");
   pill.className = "pill " + (c.down ? "out" : c.degraded ? "deg" : "ok");
@@ -115,7 +115,18 @@ function correlate(targets) {
 
 function renderCorrel() {
   const { groups, wide } = correlate(state.data.targets), box = $("correl");
-  box.replaceChildren(); box.hidden = !groups.length && !wide;
+  const maint = state.data.maintenance || [], names = Object.fromEntries(state.data.targets.map((t) => [t.id, t.name]));
+  box.replaceChildren(); box.hidden = !groups.length && !wide && !maint.length;
+  const hm = (t) => kst(t, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  for (const m of maint.filter((m) => m.active || Date.parse(m.start) > Date.now())) {
+    const r = el("div", "cg maint");
+    r.append(el("span", "dot maint"), el("b", "", (m.active ? "점검 중 · " : "점검 예정 · ") + (m.note || "계획 점검")),
+      el("span", "cg-n", ` ${hm(m.start)} ~ ${hm(m.end)}`),
+      el("span", "cg-why", "이 시간의 판정은 가용률·SLO에서 빠지고 장애·알림을 만들지 않음"));
+    const chips = el("span", "cg-chips");
+    for (const id of m.targets) { const c = el("button", "chip", names[id] || id); c.onclick = () => openDrawer(id); chips.append(c); }
+    r.append(chips); box.append(r);
+  }
   const openBy = {};
   for (const i of state.incidents) if (isOpen(i)) openBy[i.target] = i;
   if (wide) box.append(el("div", "cg wide-out", "⚠ 여러 기관 API가 동시에 이상 — 공공데이터포털 게이트웨이 또는 이 모니터 쪽 네트워크 문제일 가능성"));

@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"sort"
 	"time"
 
@@ -97,6 +98,33 @@ type overviewResponse struct {
 	Fleet  map[string]any   `json:"fleet"`
 	Counts map[string]int   `json:"counts"`
 	Rows   []overviewTarget `json:"targets"`
+	// Maintenance: windows in the range, going on now or starting within a week
+	Maintenance []maintView `json:"maintenance"`
+}
+
+type maintView struct {
+	Targets []string  `json:"targets"`
+	Start   time.Time `json:"start"`
+	End     time.Time `json:"end"`
+	Note    string    `json:"note"`
+	Active  bool      `json:"active"`
+}
+
+func (s *Server) maintenance(from, now time.Time) []maintView {
+	out := []maintView{}
+	for _, m := range s.Cfg.Maintenance {
+		if m.End.Before(from) || m.Start.After(now.Add(7*24*time.Hour)) {
+			continue
+		}
+		v := maintView{Start: m.Start, End: m.End, Note: m.Note, Active: !now.Before(m.Start) && now.Before(m.End)}
+		for i := range s.Cfg.Targets {
+			if t := &s.Cfg.Targets[i]; slices.Contains(m.Match, t.ID) || slices.Contains(m.Match, t.Provider) {
+				v.Targets = append(v.Targets, t.ID)
+			}
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 func fleetSummary(sumAvail, sloSum float64, withData int, p50, p95, p99 int64, perMin float64, open, verdicts int) map[string]any {
@@ -174,7 +202,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		fleetLat = append(fleetLat, x.LatencyMS)
 	}
 
-	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}}
+	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now())}
 
 	var sumAvail float64
 	var withData, checks int

@@ -24,6 +24,7 @@ const (
 	StatusError  Status = "error"  // answered, with an error from the provider
 	StatusDown   Status = "down"   // no usable answer: timeout, connection error, 5xx
 	StatusClient Status = "client" // our key, quota or request is the problem
+	StatusMaint  Status = "maint"  // verdict inside an announced maintenance window
 )
 
 // Severity orders statuses for incidents: 0 healthy, 1 degraded, 2 outage.
@@ -38,7 +39,7 @@ func (s Status) Severity() int {
 }
 
 // Counts reports whether the status says anything about the provider (uptime math).
-func (s Status) Counts() bool { return s != StatusClient }
+func (s Status) Counts() bool { return s != StatusClient && s != StatusMaint }
 
 // Healthy is true for statuses that count as "up" in uptime.
 func (s Status) Healthy() bool { return s == StatusOK || s == StatusSlow || s == StatusStale }

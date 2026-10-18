@@ -167,3 +167,5 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .chip { font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 3px; cursor: pointer; background: transparent; color: var(--muted); border: 1px solid var(--line, #2c3235); }
 .chip.out { color: var(--out); border-color: rgba(242,73,92,.5); } .chip.deg { color: var(--deg); border-color: rgba(250,222,42,.4); }
 .chip:hover { background: rgba(255,255,255,.05); }
+.dot.maint { background: var(--purple); box-shadow: 0 0 6px rgba(184,119,217,.5); }
+.cg.maint { border-color: rgba(184,119,217,.4); border-left-color: var(--purple); }

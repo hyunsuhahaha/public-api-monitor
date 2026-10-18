@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -80,7 +81,7 @@ func (c *Central) Start(ctx context.Context) error {
 		c.targets[t.ID] = t
 		mSLO.WithLabelValues(t.ID).Set(t.SLO)
 		// start every status series at 0 so rate() works from the first verdict
-		for _, st := range []probe.Status{probe.StatusOK, probe.StatusSlow, probe.StatusStale, probe.StatusError, probe.StatusDown, probe.StatusClient} {
+		for _, st := range []probe.Status{probe.StatusOK, probe.StatusSlow, probe.StatusStale, probe.StatusError, probe.StatusDown, probe.StatusClient, probe.StatusMaint} {
 			mVerdicts.WithLabelValues(t.ID, string(st))
 		}
 	}
@@ -194,6 +195,17 @@ func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
 	// a location counts if it checked within 2.5 intervals (one missed slot is fine)
 	fresh := c.Board.Fresh(t.ID, at, t.Interval.Duration*5/2)
 	v := quorum.Decide(t.ID, at, fresh)
+	if m := c.Cfg.MaintenanceAt(t, v.At); m != nil {
+		// kept (with what was really seen) but out of uptime, SLOs and incidents
+		reason := "점검 중: " + m.Note
+		if v.Status != probe.StatusOK {
+			reason += " — 실제 " + string(v.Status)
+			if r := strings.TrimSpace(v.Reason); r != "" {
+				reason += " " + r
+			}
+		}
+		v.Status, v.Reason = probe.StatusMaint, reason
+	}
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("pamon.verdict", string(v.Status)),
 		attribute.Int("pamon.voters", v.Voters), attribute.Int("pamon.bad", v.Bad), attribute.String("pamon.reason", v.Reason))
 	if err := c.Store.SaveVerdict(ctx, store.Verdict{TargetID: t.ID, At: v.At, Status: v.Status, Reason: v.Reason, Voters: v.Voters}); err != nil {

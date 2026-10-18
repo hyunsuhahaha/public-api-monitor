@@ -111,3 +111,31 @@ func TestFirstSlotAligned(t *testing.T) {
 		t.Fatalf("slots: %v %v", a, b)
 	}
 }
+
+// An outage inside an announced maintenance window opens nothing, pages nobody and leaves
+// uptime alone; the same outage right after the window is an incident as usual.
+func TestMaintenanceWindow(t *testing.T) {
+	c, ev := newCentral(t)
+	start := time.Now().Add(-40 * time.Minute).Truncate(time.Minute)
+	c.Cfg.Maintenance = []config.Maintenance{{Match: []string{"a"}, Start: start.Add(-time.Minute), End: start.Add(16 * time.Minute), Note: "정기 점검"}}
+	for i := 0; i < 4; i++ { // 0, 5, 10, 15 min: inside
+		slot(t, c, start.Add(time.Duration(i)*5*time.Minute), probe.StatusDown, probe.StatusDown)
+	}
+	if len(ev.got) != 0 {
+		t.Fatalf("maintenance must not page: %v", ev.got)
+	}
+	days, _ := c.Store.Days(context.Background(), start.Add(-time.Hour))
+	if len(days["a"]) != 0 && days["a"][0].Counted != 0 {
+		t.Fatalf("maintenance verdicts must not count: %+v", days["a"])
+	}
+	vs, _ := c.Store.VerdictsBetween(context.Background(), "a", start.Add(-time.Minute), start.Add(time.Minute), 10)
+	if len(vs) != 1 || vs[0].Status != probe.StatusMaint || vs[0].Reason != "점검 중: 정기 점검 — 실제 down (central, remote)" {
+		t.Fatalf("kept with what was seen: %+v", vs)
+	}
+	for i := 4; i < 6; i++ { // 20, 25 min: after
+		slot(t, c, start.Add(time.Duration(i)*5*time.Minute), probe.StatusDown, probe.StatusDown)
+	}
+	if len(ev.got) != 1 || ev.got[0] != incident.Opened {
+		t.Fatalf("after the window, an outage pages: %v", ev.got)
+	}
+}

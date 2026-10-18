@@ -103,3 +103,34 @@ func TestForecastIssueTimes(t *testing.T) {
 		}
 	}
 }
+
+func TestMaintenance(t *testing.T) {
+	c, err := Parse([]byte(`
+targets:
+  - {id: a, provider: 기관A, url: "http://x"}
+  - {id: b, provider: 기관B, url: "http://y"}
+maintenance:
+  - match: [기관A]
+    start: 2026-10-20T02:00:00+09:00
+    end: 2026-10-20T04:00:00+09:00
+    note: 정기 점검
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 20, 3, 0, 0, 0, KST)
+	if c.MaintenanceAt(&c.Targets[0], at) == nil || c.MaintenanceAt(&c.Targets[1], at) != nil {
+		t.Fatal("provider match")
+	}
+	if c.MaintenanceAt(&c.Targets[0], at.Add(time.Hour)) != nil {
+		t.Fatal("end is exclusive")
+	}
+	for _, bad := range []string{
+		"maintenance: [{match: [nope], start: 2026-10-20T02:00:00Z, end: 2026-10-20T03:00:00Z}]",
+		"maintenance: [{match: [a], start: 2026-10-20T02:00:00Z, end: 2026-10-20T01:00:00Z}]",
+	} {
+		if _, err := Parse([]byte("targets:\n  - {id: a, url: \"http://x\"}\n" + bad)); err == nil {
+			t.Fatalf("accepted %s", bad)
+		}
+	}
+}

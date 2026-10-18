@@ -98,7 +98,7 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 	n := int(to.Sub(from)/step) + 1
 	vb, hists, _, _, totals, allCounts := bucketsFromHours(rows, from, step, n)
 
-	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}}
+	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now())}
 	fleet := store.NewHist()
 	var sumAvail, sloSum float64
 	var withData, verdictN int
@@ -207,6 +207,8 @@ func countStatus(c map[string]int, status string) {
 	default:
 		if status == "ok" {
 			c["up"]++
+		} else if status == "maint" {
+			c["maint"]++
 		} else {
 			c["unknown"]++
 		}

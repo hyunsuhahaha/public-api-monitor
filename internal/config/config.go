@@ -57,6 +57,38 @@ type Target struct {
 	tmpl *template.Template
 }
 
+// Maintenance is an announced window (data.go.kr and the agencies post them as notices):
+// verdicts inside it are kept but left out of uptime and SLOs, and open no incidents.
+type Maintenance struct {
+	Match []string  `yaml:"match"` // target ids or provider names
+	Start time.Time `yaml:"start"` // RFC 3339, e.g. 2026-10-20T02:00:00+09:00
+	End   time.Time `yaml:"end"`
+	Note  string    `yaml:"note"`
+}
+
+// Covers reports whether the window applies to a target at a time.
+func (m *Maintenance) Covers(t *Target, at time.Time) bool {
+	if at.Before(m.Start) || !at.Before(m.End) {
+		return false
+	}
+	for _, x := range m.Match {
+		if x == t.ID || x == t.Provider {
+			return true
+		}
+	}
+	return false
+}
+
+// MaintenanceAt is the window covering a target at a time, or nil.
+func (c *Config) MaintenanceAt(t *Target, at time.Time) *Maintenance {
+	for i := range c.Maintenance {
+		if c.Maintenance[i].Covers(t, at) {
+			return &c.Maintenance[i]
+		}
+	}
+	return nil
+}
+
 // Config is the whole file.
 type Config struct {
 	Interval  Duration `yaml:"interval"`
@@ -65,6 +97,8 @@ type Config struct {
 	KeyEnv    string   `yaml:"key_env"`
 	SLO       float64  `yaml:"slo"` // default availability objective (0.99 if unset)
 	Targets   []Target `yaml:"targets"`
+
+	Maintenance []Maintenance `yaml:"maintenance"`
 }
 
 // Load reads and validates a config file, filling per-target defaults.
@@ -136,6 +170,20 @@ func Parse(raw []byte) (*Config, error) {
 			}
 			if f.Layout == "" || f.MaxAge.Duration == 0 {
 				return nil, fmt.Errorf("target %q freshness: layout and max_age are required", t.ID)
+			}
+		}
+	}
+	for i, m := range c.Maintenance {
+		if !m.End.After(m.Start) || len(m.Match) == 0 {
+			return nil, fmt.Errorf("maintenance %d: needs match and an end after its start", i)
+		}
+		for _, x := range m.Match {
+			hit := false
+			for j := range c.Targets {
+				hit = hit || c.Targets[j].ID == x || c.Targets[j].Provider == x
+			}
+			if !hit {
+				return nil, fmt.Errorf("maintenance %d: %q is no target id or provider", i, x)
 			}
 		}
 	}
