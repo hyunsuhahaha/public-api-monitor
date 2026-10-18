@@ -2,20 +2,26 @@
 #   {{.Key}}                  the service key from key_env (query-escaped)
 #   {{.Now}}                  now in KST
 #   {{date .Now "20060102"}}  format a time      {{addHours .Now -1}} / addDays / addMonths
-#   {{baseDate .Now 40}} {{baseTime .Now 40}}    기상청 base_date / base_time (issued ~40 min late)
+#   {{baseDate .Now 40}} {{baseTime .Now 40}}    기상청 초단기 base_date / base_time
+#   {{vilageBaseDate .Now}} {{vilageBaseTime .Now}}  기상청 단기예보 (02, 05, ..., 23시 발표)
+#   {{midTmFc .Now}}                             기상청 중기예보 (06시·18시 발표)
 #   {{yearMonth (addMonths .Now -1)}}            last month as YYYYMM
 #   {{esc "서울"}}             query-escape a literal
 #
 # Keys: DATA_GO_KR_KEY = 공공데이터포털 "일반 인증키(Decoding)". Each API must be 활용신청-ed
 # separately on data.go.kr. SEOUL_OPENAPI_KEY = 서울 열린데이터광장 일반 인증키,
-# SEOUL_SUBWAY_KEY = 서울 열린데이터광장 실시간 지하철 인증키.
-# Try a change with: pamon -once
+# SEOUL_SUBWAY_KEY = 서울 열린데이터광장 실시간 지하철 인증키 (both work with "sample").
+#
+# Every data.go.kr path below was checked to exist on 2026-10-18 (a dummy key gets
+# 403 / code 30 "key not registered"; a wrong or retired path gets 400 / code 12). Query
+# parameters still need a real key to confirm: pamon -once
 interval: 5m
 timeout: 10s
 slow_after: 3s
 key_env: DATA_GO_KR_KEY
 
 targets:
+  # ── 날씨 (기상청) ─────────────────────────────────────────────────────────
   - id: kma-ultra-ncst
     name: 기상청 초단기실황
     provider: 기상청
@@ -30,6 +36,49 @@ targets:
     docs: https://www.data.go.kr/data/15084084/openapi.do
     url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&base_date={{baseDate .Now 45}}&base_time={{baseTime .Now 45}}&nx=60&ny=127
 
+  - id: kma-vilage-fcst
+    name: 기상청 단기예보
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15084084/openapi.do
+    url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&base_date={{vilageBaseDate .Now}}&base_time={{vilageBaseTime .Now}}&nx=60&ny=127
+
+  - id: kma-mid-land
+    name: 기상청 중기육상예보
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15059468/openapi.do
+    url: https://apis.data.go.kr/1360000/MidFcstInfoService/getMidLandFcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&regId=11B00000&tmFc={{midTmFc .Now}}
+
+  - id: kma-mid-ta
+    name: 기상청 중기기온
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15059468/openapi.do
+    url: https://apis.data.go.kr/1360000/MidFcstInfoService/getMidTa?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&regId=11B10101&tmFc={{midTmFc .Now}}
+
+  - id: kma-warning
+    name: 기상청 기상특보 목록
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15000415/openapi.do
+    url: https://apis.data.go.kr/1360000/WthrWrnInfoService/getWthrWrnList?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&stnId=108&fromTmFc={{date (addDays .Now -6) "20060102"}}&toTmFc={{date .Now "20060102"}}
+
+  - id: kma-asos-hourly
+    name: 기상청 종관기상관측(ASOS) 시간자료
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15057210/openapi.do
+    url: https://apis.data.go.kr/1360000/AsosHourlyInfoService/getWthrDataList?serviceKey={{.Key}}&pageNo=1&numOfRows=3&dataType=JSON&dataCd=ASOS&dateCd=HR&startDt={{date (addDays .Now -1) "20060102"}}&startHh=01&endDt={{date (addDays .Now -1) "20060102"}}&endHh=03&stnIds=108
+
+  - id: kma-earthquake
+    name: 기상청 지진정보
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15000420/openapi.do
+    url: https://apis.data.go.kr/1360000/EqkInfoService/getEqkMsg?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&fromTmFc={{date (addDays .Now -2) "20060102"}}&toTmFc={{date .Now "20060102"}}
+
+  # ── 환경 ──────────────────────────────────────────────────────────────────
   - id: airkorea-sido
     name: 에어코리아 시도별 실시간 대기오염
     provider: 한국환경공단
@@ -42,6 +91,40 @@ targets:
       layout: "2006-01-02 15:04"
       max_age: 3h
 
+  - id: airkorea-station
+    name: 에어코리아 측정소별 실시간 대기오염
+    provider: 한국환경공단
+    category: 환경
+    docs: https://www.data.go.kr/data/15073861/openapi.do
+    url: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty?serviceKey={{.Key}}&returnType=json&numOfRows=3&pageNo=1&stationName={{esc "종로구"}}&dataTerm=DAILY&ver=1.3
+    freshness:
+      pattern: '"dataTime"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"'
+      layout: "2006-01-02 15:04"
+      max_age: 3h
+
+  - id: airkorea-forecast
+    name: 에어코리아 대기질 예보통보
+    provider: 한국환경공단
+    category: 환경
+    docs: https://www.data.go.kr/data/15073861/openapi.do
+    url: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMinuDustFrcstDspth?serviceKey={{.Key}}&returnType=json&numOfRows=3&pageNo=1&searchDate={{date .Now "2006-01-02"}}&InformCode=PM10
+
+  - id: airkorea-pm-alarm
+    name: 에어코리아 미세먼지 경보 발령 현황
+    provider: 한국환경공단
+    category: 환경
+    docs: https://www.data.go.kr/data/15073855/openapi.do
+    url: https://apis.data.go.kr/B552584/UlfptcaAlarmInqireSvc/getUlfptcaAlarmInfo?serviceKey={{.Key}}&returnType=json&numOfRows=3&pageNo=1&year={{date .Now "2006"}}
+
+  - id: ev-charger
+    name: 환경부 전기자동차 충전소 정보
+    provider: 한국환경공단
+    category: 환경
+    docs: https://www.data.go.kr/data/15076352/openapi.do
+    url: https://apis.data.go.kr/B552584/EvCharger/getChargerInfo?serviceKey={{.Key}}&pageNo=1&numOfRows=3&zcode=11&dataType=JSON
+    slow_after: 5s
+
+  # ── 부동산 (국토교통부) ───────────────────────────────────────────────────
   - id: molit-apt-trade
     name: 국토교통부 아파트 매매 실거래가
     provider: 국토교통부
@@ -50,20 +133,31 @@ targets:
     url: https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?serviceKey={{.Key}}&LAWD_CD=11110&DEAL_YMD={{yearMonth (addMonths .Now -1)}}&pageNo=1&numOfRows=5
     slow_after: 5s
 
-  - id: kasi-holidays
-    name: 한국천문연구원 공휴일 정보
-    provider: 한국천문연구원
-    category: 생활
-    docs: https://www.data.go.kr/data/15012690/openapi.do
-    url: https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo?serviceKey={{.Key}}&solYear={{date .Now "2006"}}&solMonth={{date .Now "01"}}
+  - id: molit-apt-rent
+    name: 국토교통부 아파트 전월세 실거래가
+    provider: 국토교통부
+    category: 부동산
+    docs: https://www.data.go.kr/data/15126474/openapi.do
+    url: https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent?serviceKey={{.Key}}&LAWD_CD=11110&DEAL_YMD={{yearMonth (addMonths .Now -1)}}&pageNo=1&numOfRows=5
+    slow_after: 5s
 
-  - id: kasi-riseset
-    name: 한국천문연구원 출몰시각
-    provider: 한국천문연구원
-    category: 생활
-    docs: https://www.data.go.kr/data/15012688/openapi.do
-    url: https://apis.data.go.kr/B090041/openapi/service/RiseSetInfoService/getAreaRiseSetInfo?serviceKey={{.Key}}&locdate={{date .Now "20060102"}}&location={{esc "서울"}}
+  - id: molit-offi-trade
+    name: 국토교통부 오피스텔 매매 실거래가
+    provider: 국토교통부
+    category: 부동산
+    docs: https://www.data.go.kr/data/15126464/openapi.do
+    url: https://apis.data.go.kr/1613000/RTMSDataSvcOffiTrade/getRTMSDataSvcOffiTrade?serviceKey={{.Key}}&LAWD_CD=11110&DEAL_YMD={{yearMonth (addMonths .Now -1)}}&pageNo=1&numOfRows=5
+    slow_after: 5s
 
+  - id: molit-rh-trade
+    name: 국토교통부 연립다세대 매매 실거래가
+    provider: 국토교통부
+    category: 부동산
+    docs: https://www.data.go.kr/data/15126467/openapi.do
+    url: https://apis.data.go.kr/1613000/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade?serviceKey={{.Key}}&LAWD_CD=11110&DEAL_YMD={{yearMonth (addMonths .Now -1)}}&pageNo=1&numOfRows=5
+    slow_after: 5s
+
+  # ── 교통 ──────────────────────────────────────────────────────────────────
   - id: seoul-bus-arrival
     name: 서울 버스 노선별 도착정보
     provider: 서울특별시
@@ -71,12 +165,33 @@ targets:
     docs: https://www.data.go.kr/data/15000314/openapi.do
     url: http://ws.bus.go.kr/api/rest/arrive/getArrInfoByRouteAll?serviceKey={{.Key}}&busRouteId=100100118
 
-  - id: tour-area-code
-    name: 한국관광공사 국문 관광정보(지역코드)
-    provider: 한국관광공사
-    category: 관광
-    docs: https://www.data.go.kr/data/15101578/openapi.do
-    url: https://apis.data.go.kr/B551011/KorService2/areaCode2?serviceKey={{.Key}}&numOfRows=5&pageNo=1&MobileOS=ETC&MobileApp=pamon&_type=json
+  - id: tago-bus-arrival
+    name: 국토교통부(TAGO) 정류소별 버스 도착예정
+    provider: 국토교통부
+    category: 교통
+    docs: https://www.data.go.kr/data/15098530/openapi.do
+    url: https://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList?serviceKey={{.Key}}&pageNo=1&numOfRows=5&_type=json&cityCode=25&nodeId=DJB8001793
+
+  - id: tago-bus-route
+    name: 국토교통부(TAGO) 버스 노선 조회
+    provider: 국토교통부
+    category: 교통
+    docs: https://www.data.go.kr/data/15098529/openapi.do
+    url: https://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteNoList?serviceKey={{.Key}}&pageNo=1&numOfRows=5&_type=json&cityCode=25&routeNo=5
+
+  - id: tago-bus-station
+    name: 국토교통부(TAGO) 좌표 기반 근접 정류소
+    provider: 국토교통부
+    category: 교통
+    docs: https://www.data.go.kr/data/15098534/openapi.do
+    url: https://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCrdntPrxmtSttnList?serviceKey={{.Key}}&pageNo=1&numOfRows=5&_type=json&gpsLati=36.3504&gpsLong=127.3845
+
+  - id: incheon-airport-arrivals
+    name: 인천국제공항 여객편 도착 현황
+    provider: 인천국제공항공사
+    category: 교통
+    docs: https://www.data.go.kr/data/15095093/openapi.do
+    url: https://apis.data.go.kr/B551177/StatusOfPassengerFlightsDeOdp/getPassengerArrivalsDeOdp?serviceKey={{.Key}}&type=json&numOfRows=5&pageNo=1
 
   - id: seoul-bike
     name: 서울 공공자전거(따릉이) 대여소 실시간
@@ -93,3 +208,173 @@ targets:
     docs: https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do
     key_env: SEOUL_SUBWAY_KEY
     url: http://swopenapi.seoul.go.kr/api/subway/{{.Key}}/json/realtimeStationArrival/0/5/{{esc "서울"}}
+
+  - id: seoul-subway-position
+    name: 서울 지하철 실시간 열차 위치
+    provider: 서울특별시
+    category: 교통
+    docs: https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do
+    key_env: SEOUL_SUBWAY_KEY
+    url: http://swopenapi.seoul.go.kr/api/subway/{{.Key}}/json/realtimePosition/0/5/{{esc "1호선"}}
+
+  - id: seoul-parking
+    name: 서울 공영주차장 실시간 주차대수
+    provider: 서울특별시
+    category: 교통
+    docs: https://data.seoul.go.kr/dataList/OA-15872/S/1/datasetView.do
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/GetParkingInfo/1/5/
+    # each lot reports its count; the newest update among them should be recent
+    freshness:
+      pattern: '"NOW_PRK_VHCL_UPDT_TM"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"'
+      layout: "2006-01-02 15:04:05"
+      max_age: 1h
+
+  # ── 서울 도시 ──────────────────────────────────────────────────────────────
+  - id: seoul-air
+    name: 서울 실시간 대기환경
+    provider: 서울특별시
+    category: 환경
+    docs: https://data.seoul.go.kr/dataList/OA-2219/S/1/datasetView.do
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/RealtimeCityAir/1/5/
+    freshness:
+      pattern: '"MSRMT_DT"\s*:\s*"(\d{12})"'
+      layout: "200601021504"
+      max_age: 3h
+
+  - id: seoul-citydata
+    name: 서울 실시간 도시데이터(광화문·덕수궁)
+    provider: 서울특별시
+    category: 생활
+    docs: https://data.seoul.go.kr/dataList/OA-21285/F/1/datasetView.do
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/citydata/1/5/{{esc "광화문·덕수궁"}}
+    slow_after: 5s
+
+  # ── 보건·의료 ─────────────────────────────────────────────────────────────
+  - id: nemc-er-beds
+    name: 국립중앙의료원 응급실 실시간 가용병상
+    provider: 국립중앙의료원
+    category: 의료
+    docs: https://www.data.go.kr/data/15000563/openapi.do
+    url: https://apis.data.go.kr/B552657/ErmctInfoInqireService/getEmrrmRltmUsefulSckbdInfoInqire?serviceKey={{.Key}}&STAGE1={{esc "서울특별시"}}&STAGE2={{esc "종로구"}}&pageNo=1&numOfRows=5
+    freshness:
+      pattern: '<hvidate>(\d{14})</hvidate>'
+      layout: "20060102150405"
+      max_age: 1h
+
+  - id: hira-hospital
+    name: 건강보험심사평가원 병원정보
+    provider: 건강보험심사평가원
+    category: 의료
+    docs: https://www.data.go.kr/data/15001698/openapi.do
+    url: https://apis.data.go.kr/B551182/hospInfoServicev2/getHospBasisList?serviceKey={{.Key}}&pageNo=1&numOfRows=3&sidoCd=110000&_type=json
+
+  - id: hira-pharmacy
+    name: 건강보험심사평가원 약국정보
+    provider: 건강보험심사평가원
+    category: 의료
+    docs: https://www.data.go.kr/data/15001673/openapi.do
+    url: https://apis.data.go.kr/B551182/pharmacyInfoService/getParmacyBasisList?serviceKey={{.Key}}&pageNo=1&numOfRows=3&sidoCd=110000&_type=json
+
+  - id: mfds-easy-drug
+    name: 식품의약품안전처 의약품개요정보(e약은요)
+    provider: 식품의약품안전처
+    category: 의료
+    docs: https://www.data.go.kr/data/15075057/openapi.do
+    url: https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList?serviceKey={{.Key}}&pageNo=1&numOfRows=3&type=json&itemName={{esc "타이레놀"}}
+
+  # ── 경제·금융 ─────────────────────────────────────────────────────────────
+  - id: fsc-stock-price
+    name: 금융위원회 주식시세정보
+    provider: 금융위원회
+    category: 금융
+    docs: https://www.data.go.kr/data/15094808/openapi.do
+    url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1&itmsNm={{esc "삼성전자"}}
+
+  - id: fsc-market-index
+    name: 금융위원회 지수시세정보
+    provider: 금융위원회
+    category: 금융
+    docs: https://www.data.go.kr/data/15094807/openapi.do
+    url: https://apis.data.go.kr/1160100/service/GetMarketIndexInfoService/getStockMarketIndex?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1&idxNm={{esc "코스피"}}
+
+  - id: fsc-corp-outline
+    name: 금융위원회 기업기본정보
+    provider: 금융위원회
+    category: 금융
+    docs: https://www.data.go.kr/data/15043184/openapi.do
+    url: https://apis.data.go.kr/1160100/service/GetCorpBasicInfoService_V2/getCorpOutline_V2?serviceKey={{.Key}}&resultType=json&numOfRows=1&pageNo=1&corpNm={{esc "삼성전자"}}
+
+  - id: fsc-oil-price
+    name: 금융위원회 일반상품시세(석유)
+    provider: 금융위원회
+    category: 금융
+    docs: https://www.data.go.kr/data/15094805/openapi.do
+    url: https://apis.data.go.kr/1160100/service/GetGeneralProductInfoService/getOilPriceInfo?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1
+
+  - id: sbiz-stores-radius
+    name: 소상공인시장진흥공단 반경 내 상가업소
+    provider: 소상공인시장진흥공단
+    category: 금융
+    docs: https://www.data.go.kr/data/15012005/openapi.do
+    url: https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInRadius?serviceKey={{.Key}}&pageNo=1&numOfRows=3&radius=300&cx=126.978&cy=37.566&type=json
+
+  - id: g2b-bids
+    name: 조달청 나라장터 입찰공고
+    provider: 조달청
+    category: 공공행정
+    docs: https://www.data.go.kr/data/15129394/openapi.do
+    url: https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServc?serviceKey={{.Key}}&pageNo=1&numOfRows=3&type=json&inqryDiv=1&inqryBgnDt={{date (addDays .Now -1) "20060102"}}0000&inqryEndDt={{date .Now "20060102"}}2359
+    slow_after: 5s
+
+  # ── 생활·관광 ─────────────────────────────────────────────────────────────
+  - id: kasi-holidays
+    name: 한국천문연구원 공휴일 정보
+    provider: 한국천문연구원
+    category: 생활
+    docs: https://www.data.go.kr/data/15012690/openapi.do
+    url: https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo?serviceKey={{.Key}}&solYear={{date .Now "2006"}}&solMonth={{date .Now "01"}}
+
+  - id: kasi-24divisions
+    name: 한국천문연구원 24절기 정보
+    provider: 한국천문연구원
+    category: 생활
+    docs: https://www.data.go.kr/data/15012690/openapi.do
+    url: https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/get24DivisionsInfo?serviceKey={{.Key}}&solYear={{date .Now "2006"}}&solMonth={{date .Now "01"}}
+
+  - id: kasi-riseset
+    name: 한국천문연구원 출몰시각
+    provider: 한국천문연구원
+    category: 생활
+    docs: https://www.data.go.kr/data/15012688/openapi.do
+    url: https://apis.data.go.kr/B090041/openapi/service/RiseSetInfoService/getAreaRiseSetInfo?serviceKey={{.Key}}&locdate={{date .Now "20060102"}}&location={{esc "서울"}}
+
+  - id: kasi-moon-phase
+    name: 한국천문연구원 월령 정보
+    provider: 한국천문연구원
+    category: 생활
+    docs: https://www.data.go.kr/data/15012699/openapi.do
+    url: https://apis.data.go.kr/B090041/openapi/service/LunPhInfoService/getLunPhInfo?serviceKey={{.Key}}&solYear={{date .Now "2006"}}&solMonth={{date .Now "01"}}&solDay={{date .Now "02"}}
+
+  - id: tour-area-code
+    name: 한국관광공사 국문 관광정보(지역코드)
+    provider: 한국관광공사
+    category: 관광
+    docs: https://www.data.go.kr/data/15101578/openapi.do
+    url: https://apis.data.go.kr/B551011/KorService2/areaCode2?serviceKey={{.Key}}&numOfRows=5&pageNo=1&MobileOS=ETC&MobileApp=pamon&_type=json
+
+  - id: tour-keyword
+    name: 한국관광공사 국문 관광정보(키워드 검색)
+    provider: 한국관광공사
+    category: 관광
+    docs: https://www.data.go.kr/data/15101578/openapi.do
+    url: https://apis.data.go.kr/B551011/KorService2/searchKeyword2?serviceKey={{.Key}}&numOfRows=3&pageNo=1&MobileOS=ETC&MobileApp=pamon&_type=json&arrange=A&keyword={{esc "경복궁"}}
+
+  - id: tour-festival
+    name: 한국관광공사 국문 관광정보(행사·축제)
+    provider: 한국관광공사
+    category: 관광
+    docs: https://www.data.go.kr/data/15101578/openapi.do
+    url: https://apis.data.go.kr/B551011/KorService2/searchFestival2?serviceKey={{.Key}}&numOfRows=3&pageNo=1&MobileOS=ETC&MobileApp=pamon&_type=json&arrange=A&eventStartDate={{date .Now "20060102"}}

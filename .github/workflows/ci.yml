@@ -2,6 +2,8 @@ name: ci
 on:
   push: {branches: [main]}
   pull_request:
+  schedule:
+    - cron: "0 0 * * 1" # Monday 09:00 KST: are all monitored endpoints still there?
 permissions:
   contents: read
 jobs:
@@ -20,3 +22,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t pamon:ci .
+  endpoints:
+    # Every target is called once with a dummy key: a live data.go.kr path answers "key not
+    # registered", a retired or mistyped one "no such service" (code 12). Seoul APIs take
+    # the public "sample" key. Fails when an API we monitor has been retired.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version-file: go.mod}
+      - run: go run ./cmd/pamon -once -paths
+        env:
+          DATA_GO_KR_KEY: dummy-not-a-key
+          SEOUL_OPENAPI_KEY: sample
+          SEOUL_SUBWAY_KEY: sample

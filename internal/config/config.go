@@ -155,6 +155,30 @@ var funcs = template.FuncMap{
 	"baseDate": func(t time.Time, delayMin int) string {
 		return t.Add(-time.Duration(delayMin) * time.Minute).Format("20060102")
 	},
+	// 기상청 단기예보: issued at 02, 05, ..., 23 h, available ~10 minutes later.
+	"vilageBaseDate": func(t time.Time) string { return vilageBase(t).Format("20060102") },
+	"vilageBaseTime": func(t time.Time) string { return vilageBase(t).Format("1504") },
+	// 기상청 중기예보 tmFc: 06:00 and 18:00 issues as YYYYMMDDHHMM.
+	"midTmFc": func(t time.Time) string {
+		switch {
+		case t.Hour() >= 18:
+			return t.Format("20060102") + "1800"
+		case t.Hour() >= 6:
+			return t.Format("20060102") + "0600"
+		}
+		return t.AddDate(0, 0, -1).Format("20060102") + "1800"
+	},
+}
+
+func vilageBase(t time.Time) time.Time {
+	t = t.Add(-10 * time.Minute)
+	h := t.Hour()
+	if h < 2 {
+		y := t.AddDate(0, 0, -1)
+		return time.Date(y.Year(), y.Month(), y.Day(), 23, 0, 0, 0, t.Location())
+	}
+	h -= (h - 2) % 3
+	return time.Date(t.Year(), t.Month(), t.Day(), h, 0, 0, 0, t.Location())
 }
 
 // Render builds the request URL for now.

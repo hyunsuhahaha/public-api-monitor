@@ -46,6 +46,7 @@ func main() {
 		location = flag.String("location", env("PAMON_LOCATION", "local"), "name of this probe location")
 		central  = flag.String("central", env("PAMON_CENTRAL_URL", ""), "central base URL (probe)")
 		once     = flag.Bool("once", false, "check every target once, print the results and exit")
+		paths    = flag.Bool("paths", false, "with -once: fail only on endpoints that no longer exist (code 12, 404); for CI with a dummy key")
 		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
 	)
 	flag.Parse()
@@ -58,7 +59,7 @@ func main() {
 	}
 	prober := probe.New(*location)
 	if *once {
-		os.Exit(runOnce(cfg, prober))
+		os.Exit(runOnce(cfg, prober, *paths))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -149,8 +150,10 @@ func shutdown(srv *http.Server) error {
 }
 
 // runOnce is for trying a targets file: one check each, a table on stdout, exit 1 if any
-// target is not ok.
-func runOnce(cfg *config.Config, p *probe.Prober) int {
+// target is not ok. pathsOnly: exit 1 only for endpoints the gateway says are gone (a
+// dummy key gets "not registered" from every live data.go.kr path, "no such service" from
+// a retired or mistyped one).
+func runOnce(cfg *config.Config, p *probe.Prober, pathsOnly bool) int {
 	ctx := context.Background()
 	code := 0
 	for i := range cfg.Targets {
@@ -164,7 +167,8 @@ func runOnce(cfg *config.Config, p *probe.Prober) int {
 			line += "\t" + r.Reason
 		}
 		os.Stdout.WriteString(line + "\n")
-		if r.Status != probe.StatusOK {
+		gone := r.Code == "12" || r.HTTPStatus == http.StatusNotFound
+		if (!pathsOnly && r.Status != probe.StatusOK) || (pathsOnly && gone) {
 			code = 1
 		}
 	}

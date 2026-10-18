@@ -54,6 +54,7 @@ var (
 		{re: regexp.MustCompile(`"resultCode"\s*:\s*"?([^",}\s]+)`)},
 		{re: regexp.MustCompile(`<CODE>\s*([^<\s]+)\s*</CODE>`)},
 		{re: regexp.MustCompile(`"CODE"\s*:\s*"([^"]+)"`)},
+		{re: regexp.MustCompile(`"RESULT\.CODE"\s*:\s*"([^"]+)"`)}, // 서울 실시간 도시데이터
 		{re: regexp.MustCompile(`"code"\s*:\s*"((?:INFO|ERROR)-\d+)"`)},
 		// 서울 버스(ws.bus.go.kr): its own table, so its codes get a prefix.
 		{re: regexp.MustCompile(`<headerCd>\s*(\d+)\s*</headerCd>`), prefix: "BUS-"},
@@ -64,6 +65,7 @@ var (
 		regexp.MustCompile(`"resultMsg"\s*:\s*"([^"]*)"`),
 		regexp.MustCompile(`<MESSAGE>\s*([^<]+?)\s*</MESSAGE>`),
 		regexp.MustCompile(`"MESSAGE"\s*:\s*"([^"]*)"`),
+		regexp.MustCompile(`"RESULT\.MESSAGE"\s*:\s*"([^"]*)"`),
 		regexp.MustCompile(`"message"\s*:\s*"([^"]*)"`),
 		regexp.MustCompile(`<headerMsg>\s*([^<]+?)\s*</headerMsg>`),
 	}

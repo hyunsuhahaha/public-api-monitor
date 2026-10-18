@@ -81,3 +81,25 @@ func TestHasKey(t *testing.T) {
 		t.Fatal("set key")
 	}
 }
+
+func TestForecastIssueTimes(t *testing.T) {
+	cases := []struct {
+		at                    string
+		vDate, vTime, midTmFc string
+	}{
+		{"2026-10-18 00:05", "20261017", "2300", "202610171800"},
+		{"2026-10-18 02:09", "20261017", "2300", "202610171800"},
+		{"2026-10-18 02:10", "20261018", "0200", "202610171800"},
+		{"2026-10-18 06:30", "20261018", "0500", "202610180600"},
+		{"2026-10-18 23:59", "20261018", "2300", "202610181800"},
+	}
+	for _, c := range cases {
+		now, _ := time.ParseInLocation("2006-01-02 15:04", c.at, KST)
+		d := funcs["vilageBaseDate"].(func(time.Time) string)(now)
+		h := funcs["vilageBaseTime"].(func(time.Time) string)(now)
+		m := funcs["midTmFc"].(func(time.Time) string)(now)
+		if d != c.vDate || h != c.vTime || m != c.midTmFc {
+			t.Errorf("%s: got %s %s %s, want %s %s %s", c.at, d, h, m, c.vDate, c.vTime, c.midTmFc)
+		}
+	}
+}
