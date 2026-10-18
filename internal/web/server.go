@@ -56,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/overview", s.cache.wrap(s.overview))
 	mux.HandleFunc("GET /api/v1/series", s.cache.wrap(s.series))
 	mux.HandleFunc("GET /api/v1/schema-events", s.schemaEvents)
+	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incidentDetail)
 	s.reportRoutes(mux)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })

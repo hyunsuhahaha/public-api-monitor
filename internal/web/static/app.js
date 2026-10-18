@@ -114,7 +114,7 @@ function visibleRows() {
 function renderTable() {
   const body = $("rows"); body.replaceChildren();
   for (const t of visibleRows()) {
-    const tr = el("tr"); tr.onclick = () => openDrawer(t.id);
+    const tr = el("tr"); tr.dataset.id = t.id; tr.onclick = () => openDrawer(t.id);
     const td = (child, cls) => { const c = el("td", cls); if (child instanceof Node) c.append(child); else if (child != null) c.textContent = child; tr.append(c); return c; };
     td(el("span", "dot " + t.status)).title = LABEL[t.status] || t.status;
     const nm = el("div"); const prov = el("div", "prov", t.provider);
@@ -206,7 +206,8 @@ function renderIncidents() {
       const b = el("div", "g-bar");
       b.style.left = ((s - from) / (to - from) * 100) + "%"; b.style.width = Math.max(0.3, (e - s) / (to - from) * 100) + "%";
       b.style.background = i.severity >= 2 ? C.out : C.deg;
-      b.title = `${names[id] || id}: ${i.reason} (${short(i.started)}${isOpen(i) ? " ~ 진행 중" : ""})`;
+      b.title = `${names[id] || id}: ${i.reason} (${short(i.started)}${isOpen(i) ? " ~ 진행 중" : ""}) — 눌러서 상세`;
+      b.onclick = (ev) => { ev.stopPropagation(); openIncident(i.id); };
       track.append(b);
     }
     row.append(track); row.style.cursor = "pointer"; row.onclick = () => openDrawer(id); gantt.append(row);
@@ -219,7 +220,7 @@ function renderIncidents() {
   const list = $("inc-list"); list.replaceChildren();
   for (const i of inRange.slice(0, 8)) {
     const r = incRow(i, (names[i.target] || i.target) + " — " + i.reason);
-    r.style.cursor = "pointer"; r.onclick = () => openDrawer(i.target); list.append(r);
+    r.style.cursor = "pointer"; r.title = "장애 상세 보기"; r.onclick = () => openIncident(i.id); list.append(r);
   }
 }
 
@@ -264,6 +265,19 @@ function statesPlugin(states, stepSec) {
   }] } };
 }
 
+// vertical dashed lines at the given unix times (schema changes)
+function markersPlugin(times) {
+  return { hooks: { draw: [(u) => {
+    const g = u.ctx; g.save(); g.strokeStyle = C.blue; g.setLineDash([4 * dpr(), 3 * dpr()]); g.lineWidth = dpr();
+    for (const t of times) {
+      const x = u.valToPos(t, "x", true);
+      if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) continue;
+      g.beginPath(); g.moveTo(x, u.bbox.top); g.lineTo(x, u.bbox.top + u.bbox.height); g.stroke();
+    }
+    g.restore();
+  }] } };
+}
+
 async function openDrawer(id) {
   state.target = id; writeHash();
   const t = state.data.targets.find((x) => x.id === id); if (!t) return;
@@ -285,8 +299,21 @@ async function openDrawer(id) {
     width: W, height: 220, axes: axes(), scales: { x: { time: true } }, tzDate: tz, padding: [8, 8, 10, 0],
     series: [{}, { label: "p50", stroke: C.ok, width: 1.5 }, { label: "p95", stroke: C.blue, width: 1.5, fill: "rgba(87,148,242,.08)" },
       { label: "max", stroke: "rgba(255,152,48,.7)", width: 1, dash: [4, 3] }],
-    plugins: [statesPlugin(s.states, s.stepSec)],
+    plugins: [statesPlugin(s.states, s.stepSec), markersPlugin(state.schema.filter((e) => e.target === id).map((e) => Date.parse(e.at) / 1000))],
   }, [s.t, s.p50, s.p95, s.max], $("d-lat")));
+  // error budget burn-down: what is left of the range's allowance (1 - SLO) x checks,
+  // bucket by bucket; below zero the API is over its budget for this range
+  const total = s.counted.reduce((a, b) => a + b, 0), allowed = (1 - s.slo) * total;
+  let spent = 0;
+  const remaining = s.counted.map((c, i) => { spent += s.bad[i]; return c || spent ? Math.round((allowed ? 1 - spent / allowed : 1) * 1000) / 10 : null; });
+  $("d-budget").replaceChildren();
+  $("d-budget-hint").textContent = `SLO ${pct(s.slo, 1)} · 허용 실패 ${allowed.toFixed(1)}회 중 ${spent}회 사용 (${RANGE_LABEL[state.range]})${s.estimated ? " · 응답 시간은 히스토그램 추정치" : ""}`;
+  plots.push(new uPlot({
+    width: W, height: 140, scales: { x: { time: true }, y: { range: (u, mn, mx) => [Math.min(-10, mn), 100] } }, tzDate: tz, padding: [8, 8, 0, 0],
+    axes: [axes()[0], Object.assign({}, axes()[1], { values: (u, v) => v.map((x) => x + "%") })],
+    series: [{}, { label: "버짓 남음", stroke: remaining.filter((x) => x != null).slice(-1)[0] < 0 ? C.out : C.ok, width: 2, fill: "rgba(115,191,105,.07)", spanGaps: true }],
+    plugins: [{ hooks: { drawClear: [(u) => { const y = u.valToPos(0, "y", true); u.ctx.fillStyle = "rgba(242,73,92,.08)"; u.ctx.fillRect(u.bbox.left, y, u.bbox.width, u.bbox.top + u.bbox.height - y); }] } }],
+  }, [s.t, remaining], $("d-budget")));
   const locNames = Object.keys(s.byLocation).sort();
   if (locNames.length) {
     plots.push(new uPlot({
@@ -306,7 +333,10 @@ async function openDrawer(id) {
   const di = $("d-inc"); di.replaceChildren();
   const inc = state.incidents.filter((i) => i.target === id);
   if (!inc.length) di.append(el("div", "empty", "최근 90일 장애가 없습니다"));
-  for (const i of inc.slice(0, 10)) di.append(incRow(i, i.reason + (i.lastReason && i.lastReason !== i.reason ? " · 마지막: " + i.lastReason : "")));
+  for (const i of inc.slice(0, 10)) {
+    const r = incRow(i, i.reason + (i.lastReason && i.lastReason !== i.reason ? " · 마지막: " + i.lastReason : ""));
+    r.style.cursor = "pointer"; r.title = "장애 상세 보기"; r.onclick = () => openIncident(i.id); di.append(r);
+  }
   const dsch = $("d-schema"); dsch.replaceChildren();
   const sch = state.schema.filter((e) => e.target === id);
   if (!sch.length) dsch.append(el("div", "empty", "응답 필드 변경 기록이 없습니다"));
@@ -347,7 +377,6 @@ readHash(); renderRanges();
 $("q").oninput = (e) => { state.q = e.target.value; renderTable(); renderHeat(); };
 document.querySelectorAll(".svc th[data-sort]").forEach((th) => { th.onclick = () => { state.sort = state.sort === th.dataset.sort ? null : th.dataset.sort; renderTable(); }; });
 $("d-close").onclick = closeDrawer; $("scrim").onclick = closeDrawer;
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
 $("refresh").onclick = () => load();
 window.addEventListener("resize", () => { if (state.data) renderHeat(); });
 setInterval(() => { if (state.loadedAt) $("age").textContent = Math.round((Date.now() - state.loadedAt) / 1000) + "초 전"; }, 1000);

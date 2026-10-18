@@ -120,6 +120,30 @@ canvas.strip { width: 180px; height: 14px; display: block; }
 .log th { color: var(--muted); font-weight: 500; }
 .log td.r { max-width: 380px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 
+/* incident view, palette, help */
+.modal { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow-y: auto; }
+.modal[hidden], .palette[hidden] { display: none; }
+.modal-box { width: min(1100px, 100%); background: #111317; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.modal-box.small { width: min(520px, 100%); }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.sev { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 3px; letter-spacing: .3px; }
+.sev.s2 { background: rgba(242,73,92,.18); color: var(--out); }
+.sev.s1 { background: rgba(250,222,42,.15); color: var(--deg); }
+.sev.open { background: rgba(242,73,92,.9); color: #fff; animation: pulse 1.4s infinite; }
+#im-matrix { width: 100%; display: block; }
+.tl { display: grid; grid-template-columns: 120px 14px 1fr; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line2); font-size: 12px; }
+.tl .t { font-family: var(--mono); color: var(--muted); }
+kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--muted); background: var(--panel); }
+.keys td { padding: 6px 8px; border-bottom: 1px solid var(--line2); }
+.palette { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.5); display: flex; justify-content: center; padding-top: 12vh; }
+.palette-box { width: min(640px, calc(100% - 32px)); background: #15171c; border: 1px solid #3a3f4b; border-radius: 8px; box-shadow: 0 24px 70px rgba(0,0,0,.7); overflow: hidden; height: fit-content; }
+#pal-q { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; font-size: 15px; padding: 14px 16px; outline: none; }
+#pal-list { max-height: 50vh; overflow-y: auto; }
+.pal-item { display: flex; align-items: center; gap: 10px; padding: 8px 16px; cursor: pointer; }
+.pal-item .k { color: var(--muted); font-size: 11px; margin-left: auto; }
+.pal-item.on { background: #24324d; }
+.svc tbody tr.sel { background: #1d2738; box-shadow: inset 3px 0 0 var(--blue); }
+
 /* uPlot on dark */
 .uplot, .u-legend { font-family: var(--mono); color: var(--text); font-size: 11px; }
 .u-legend .u-marker { border-radius: 2px; }

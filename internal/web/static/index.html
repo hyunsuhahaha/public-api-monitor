@@ -15,7 +15,8 @@
   <div id="fleet-pill" class="pill">…</div>
   <div class="spacer"></div>
   <div class="ranges" id="ranges"></div>
-  <button class="btn" id="refresh" title="새로고침">⟳ <span id="age">–</span></button>
+  <button class="btn" id="open-palette" title="명령 팔레트 (Ctrl+K)">⌘ 이동 <kbd>Ctrl K</kbd></button>
+  <button class="btn" id="refresh" title="새로고침 (r)">⟳ <span id="age">–</span></button>
   <nav class="links"><a href="/report">월간 리포트</a><a href="/feed.xml">피드</a><a href="/api/v1/overview">API</a></nav>
 </header>
 
@@ -65,7 +66,8 @@
     <button class="btn" id="d-close">✕</button>
   </div>
   <div class="d-stats" id="d-stats"></div>
-  <div class="d-panel"><h3>응답 시간 (전체 지역, 정상 응답)</h3><div id="d-lat"></div></div>
+  <div class="d-panel"><h3>응답 시간 (전체 지역, 정상 응답) <span class="hint">빨간 음영 = 장애 구간 · 파란 점선 = 응답 형식 변경</span></h3><div id="d-lat"></div></div>
+  <div class="d-panel"><h3>에러 버짓 남은 비율 <span class="hint" id="d-budget-hint"></span></h3><div id="d-budget"></div></div>
   <div class="d-panel"><h3>지역별 p95</h3><div id="d-loc"></div></div>
   <div class="d-panel"><h3>지역별 상태</h3><canvas id="d-strips"></canvas></div>
   <div class="d-panel"><h3>장애</h3><div id="d-inc"></div></div>
@@ -74,11 +76,52 @@
 </aside>
 <div class="scrim" id="scrim" hidden></div>
 
+<div class="modal" id="inc-modal" hidden>
+  <div class="modal-box">
+    <div class="drawer-h">
+      <div><div class="d-title" id="im-title"></div><div class="d-sub" id="im-sub"></div></div>
+      <div class="actions">
+        <button class="btn" id="im-copy-md" title="포스트모템 초안을 마크다운으로 복사">포스트모템 초안 복사</button>
+        <button class="btn" id="im-copy-link">링크 복사</button>
+        <button class="btn" id="im-close">✕</button>
+      </div>
+    </div>
+    <div class="d-stats" id="im-stats"></div>
+    <div class="d-panel"><h3>지역 × 시간 (확인 하나 = 칸 하나)</h3><canvas id="im-matrix"></canvas></div>
+    <div class="d-panel"><h3>판정이 바뀐 순간</h3><div id="im-timeline"></div></div>
+    <div class="d-panel"><h3>원시 확인 <span class="hint" id="im-count"></span></h3><div class="table-wrap"><table class="log" id="im-log"></table></div></div>
+  </div>
+</div>
+
+<div class="palette" id="palette" hidden>
+  <div class="palette-box">
+    <input id="pal-q" type="text" placeholder="API, 기관, 명령 검색…  (Esc 닫기)" autocomplete="off">
+    <div id="pal-list"></div>
+  </div>
+</div>
+
+<div class="modal" id="help" hidden>
+  <div class="modal-box small">
+    <div class="drawer-h"><div class="d-title">키보드 단축키</div><button class="btn" id="help-close">✕</button></div>
+    <table class="keys">
+      <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>명령 팔레트 (API로 이동, 기간 변경, 리포트)</td></tr>
+      <tr><td><kbd>/</kbd></td><td>검색</td></tr>
+      <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>서비스 표에서 위아래로</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>선택한 API 상세</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>기간 1시간 · 6시간 · 24시간 · 7일 · 30일</td></tr>
+      <tr><td><kbd>r</kbd></td><td>새로고침</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>닫기</td></tr>
+      <tr><td><kbd>?</kbd></td><td>이 도움말</td></tr>
+    </table>
+  </div>
+</div>
+
 <footer class="foot">
   응답 본문의 결과 코드까지 읽어 판정합니다. 키·호출 한도 같은 감시 쪽 문제는 가용률에서 제외하고, 여러 지역에서는 과반수가 실패해야 장애입니다.
   <a href="https://github.com/hyunsuhahaha/public-api-monitor">GitHub</a>
 </footer>
 <script src="vendor/uPlot.iife.min.js"></script>
 <script src="app.js"></script>
+<script src="ops.js"></script>
 </body>
 </html>

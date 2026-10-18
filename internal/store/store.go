@@ -206,11 +206,11 @@ func counts(st probe.Status) (c, h, d, o int) {
 
 // Verdict row (see the verdicts table).
 type Verdict struct {
-	TargetID string
-	At       time.Time
-	Status   probe.Status
-	Reason   string
-	Voters   int
+	TargetID string       `json:"target"`
+	At       time.Time    `json:"at"`
+	Status   probe.Status `json:"status"`
+	Reason   string       `json:"reason,omitempty"`
+	Voters   int          `json:"voters"`
 }
 
 func (s *Store) SaveVerdict(ctx context.Context, v Verdict) error {
@@ -526,6 +526,64 @@ func (s *Store) Samples(ctx context.Context, target string, from, to time.Time) 
 		}
 		x.Status = probe.Status(status)
 		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// Incident by id; nil when there is none.
+func (s *Store) Incident(ctx context.Context, id int64) (*incident.Incident, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+incidentCols+` FROM incidents WHERE id=?`, id)
+	if err != nil {
+		return nil, err
+	}
+	list, err := scanIncidents(rows)
+	if err != nil || len(list) == 0 {
+		return nil, err
+	}
+	return list[0], nil
+}
+
+// ChecksBetween: a target's raw checks in [from, to], oldest first.
+func (s *Store) ChecksBetween(ctx context.Context, target string, from, to time.Time, limit int) ([]probe.Result, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT target, location, at, status, latency_ms, http_status, code, reason FROM checks
+		WHERE target=? AND at>=? AND at<=? ORDER BY at LIMIT ?`, target, ms(from), ms(to), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []probe.Result
+	for rows.Next() {
+		var r probe.Result
+		var at int64
+		var status string
+		if err := rows.Scan(&r.TargetID, &r.Location, &at, &status, &r.LatencyMS, &r.HTTPStatus, &r.Code, &r.Reason); err != nil {
+			return nil, err
+		}
+		r.At, r.Status = fromMS(at), probe.Status(status)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// VerdictsBetween: a target's verdicts in [from, to], oldest first.
+func (s *Store) VerdictsBetween(ctx context.Context, target string, from, to time.Time, limit int) ([]Verdict, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT target, at, status, reason, voters FROM verdicts
+		WHERE target=? AND at>=? AND at<=? ORDER BY at LIMIT ?`, target, ms(from), ms(to), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Verdict{}
+	for rows.Next() {
+		var v Verdict
+		var at int64
+		var status string
+		if err := rows.Scan(&v.TargetID, &at, &status, &v.Reason, &v.Voters); err != nil {
+			return nil, err
+		}
+		v.At, v.Status = fromMS(at), probe.Status(status)
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }

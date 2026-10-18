@@ -184,12 +184,14 @@ func (s *Server) seriesRollup(ctx context.Context, w http.ResponseWriter, id, na
 	for i := range states {
 		states[i] = -1
 	}
+	counted, bad := make([]int, n), make([]int, n)
 	for i, b := range vb[id] {
 		states[i] = state(b)
+		counted[i], bad[i] = b.Counted, b.Counted-b.Healthy
 	}
 	writeJSON(w, map[string]any{
-		"target": id, "range": name, "stepSec": int64(step.Seconds()), "estimated": true,
-		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states,
+		"target": id, "range": name, "stepSec": int64(step.Seconds()), "estimated": true, "slo": s.slo(id),
+		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states, "counted": counted, "bad": bad,
 		"byLocation": byLoc, "locationStates": locStates, "recent": recentChecks(recent),
 	})
 }
