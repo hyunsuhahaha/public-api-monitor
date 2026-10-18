@@ -57,7 +57,7 @@ func TestCheckAgainstServer(t *testing.T) {
 		t.Fatalf("ok: %+v key=%q", r, key)
 	}
 	r = p.Check(ctx, target(t, "targets:\n  - id: a\n    timeout: 100ms\n    url: "+srv.URL+"/sleep?serviceKey={{.Key}}\n"))
-	if r.Status != StatusDown || r.Reason != "timeout" {
+	if r.Status != StatusDown || r.Reason != "timeout: 서버 응답 대기 중 (연결은 됨)" {
 		t.Fatalf("timeout: %+v", r)
 	}
 	fresh := "\n    freshness:\n      pattern: '\"dataTime\":\"([^\"]+)\"'\n      layout: '2006-01-02 15:04'\n      max_age: 2h\n"

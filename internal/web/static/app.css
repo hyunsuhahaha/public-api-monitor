@@ -190,3 +190,6 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 @media (max-width: 640px) { .schema { grid-template-columns: 64px minmax(0, 1fr); } .schema .t { grid-column: 2; } }
 .handoff { margin: 0; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line2); border-radius: 4px; font-family: var(--mono); font-size: 12px; line-height: 1.6;
   white-space: pre-wrap; word-break: break-word; max-height: 70vh; overflow: auto; color: var(--text); }
+.phase { display: flex; height: 8px; min-width: 4px; border-radius: 2px; overflow: hidden; background: var(--none); }
+.phase span { display: block; height: 100%; }
+.log td:has(.phase) { width: 120px; min-width: 120px; }

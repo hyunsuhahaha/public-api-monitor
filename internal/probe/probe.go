@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -30,6 +31,7 @@ type Result struct {
 	Code       string
 	Reason     string
 	Shape      []string // field paths of a healthy answer (schema-change detection), not sent to the central
+	Phases     Phases   // where the time went (DNS, connect, TLS, server wait)
 }
 
 // Prober runs checks.
@@ -80,7 +82,8 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	}
 	ctx, cancel := context.WithTimeout(ctx, t.Timeout.Duration)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	clock := &phaseClock{now: p.Now}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, clock.trace()), http.MethodGet, u, nil)
 	if err != nil {
 		r.Status, r.Reason = StatusClient, "bad url"
 		return r
@@ -113,6 +116,10 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		o.Timeout = errors.Is(err, context.DeadlineExceeded) || isTimeout(err)
 	}
 	v := Classify(o, t.SlowAfter.Duration)
+	r.Phases = clock.phases()
+	if o.Timeout {
+		v.Reason = "timeout: " + clock.stalled()
+	}
 	if v.Status == StatusOK && p.Baseline != nil {
 		// slower than this API usually is (learned per target), though under slow_after
 		if limit, usual, ok := p.Baseline.Limit(t.ID, t.SlowAfter.Duration); ok && o.Latency > limit {

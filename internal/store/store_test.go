@@ -40,3 +40,20 @@ func TestOpenIncidentRoundTrip(t *testing.T) {
 		t.Fatalf("old open row not migrated: %d", len(open))
 	}
 }
+
+func TestCheckPhasesRoundTrip(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "p.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	ph := probe.Phases{DNSMs: 3, ConnectMs: 12, TLSMs: 40, WaitMs: 900}
+	if err := st.SaveCheck(ctx, probe.Result{TargetID: "a", Location: "l", At: time.Now(), Status: probe.StatusOK, LatencyMS: 960, HTTPStatus: 200, Phases: ph}); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := st.RecentChecks(ctx, "a", 5)
+	if err != nil || len(rs) != 1 || rs[0].Phases != ph {
+		t.Fatalf("%+v %v", rs, err)
+	}
+}

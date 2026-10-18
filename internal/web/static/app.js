@@ -477,15 +477,36 @@ async function openDrawer(id) {
   if (!sch.length) dsch.append(el("div", "empty", "응답 필드 변경 기록이 없습니다"));
   for (const e of sch.slice(0, 10)) dsch.append(schemaRow(e, false));
   const log = $("d-log"); log.replaceChildren();
-  const hr = el("tr"); ["시각", "지역", "판정", "응답", "HTTP", "코드", "사유"].forEach((h) => hr.append(el("th", "", h))); log.append(hr);
+  const hr = el("tr"); ["시각", "지역", "판정", "응답", "구간", "HTTP", "코드", "사유"].forEach((h) => { const th = el("th", "", h); if (h === "구간") th.title = "보라 DNS · 파랑 TCP 연결 · 청록 TLS · 주황 서버 대기(첫 바이트까지) · 회색 본문 받기"; hr.append(th); }); log.append(hr);
   for (const c of s.recent) {
     const tr = el("tr");
     const st = el("td"); st.append(el("span", "dot " + c.status), document.createTextNode(" " + (LABEL[c.status] || c.status)));
     const rs = el("td", "r", c.reason || ""); rs.title = c.reason || "";
     tr.append(el("td", "mono", kst(c.at, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })), el("td", "", c.location), st,
-      el("td", "num", ms(c.latencyMs)), el("td", "num", c.http || "–"), el("td", "mono", c.code || ""), rs);
+      el("td", "num", ms(c.latencyMs)), phaseCell(c), el("td", "num", c.http || "–"), el("td", "mono", c.code || ""), rs);
     log.append(tr);
   }
+}
+
+// where one request's time went: DNS, connect, TLS, server wait, then the body, as shares
+// of that request (its total is in the column before)
+const PHASES = [["dnsMs", "DNS", "#b877d9"], ["connectMs", "연결", "#5794f2"], ["tlsMs", "TLS", "#38b2ac"], ["waitMs", "서버 대기", "#ff9830"]];
+function phaseCell(c) {
+  const td = el("td"), bar = el("div", "phase");
+  const p = c.phases, total = c.latencyMs || 0;
+  if (!p || !total) { td.textContent = "–"; return td; }
+  let used = 0;
+  const parts = [];
+  for (const [k, name, color] of PHASES) {
+    const v = p[k] || 0; if (!v) continue;
+    used += v; parts.push(`${name} ${ms(v)}`);
+    const seg = el("span"); seg.style.width = (v / total * 100) + "%"; seg.style.background = color; bar.append(seg);
+  }
+  const rest = Math.max(0, total - used);
+  if (rest) { const seg = el("span"); seg.style.width = (rest / total * 100) + "%"; seg.style.background = "#5d616b"; bar.append(seg); parts.push(`나머지 ${ms(rest)}`); }
+  td.title = parts.join(" · ") + (p.reused ? " (연결 재사용: DNS·연결·TLS 없음)" : "");
+  td.append(bar);
+  return td;
 }
 
 // ── load ──────────────────────────────────────────────────────────────────────

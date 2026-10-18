@@ -173,19 +173,25 @@ func fleetSummary(sumAvail, sloSum float64, withData int, p50, p95, p99 int64, p
 }
 
 type checkView struct {
-	At        time.Time `json:"at"`
-	Location  string    `json:"location"`
-	Status    string    `json:"status"`
-	LatencyMs int64     `json:"latencyMs"`
-	HTTP      int       `json:"http"`
-	Code      string    `json:"code,omitempty"`
-	Reason    string    `json:"reason,omitempty"`
+	At        time.Time     `json:"at"`
+	Location  string        `json:"location"`
+	Status    string        `json:"status"`
+	LatencyMs int64         `json:"latencyMs"`
+	HTTP      int           `json:"http"`
+	Code      string        `json:"code,omitempty"`
+	Reason    string        `json:"reason,omitempty"`
+	Phases    *probe.Phases `json:"phases,omitempty"`
 }
 
 func recentChecks(rs []probe.Result) []checkView {
 	out := make([]checkView, 0, len(rs))
 	for _, x := range rs {
-		out = append(out, checkView{x.At, x.Location, string(x.Status), x.LatencyMS, x.HTTPStatus, x.Code, x.Reason})
+		v := checkView{x.At, x.Location, string(x.Status), x.LatencyMS, x.HTTPStatus, x.Code, x.Reason, nil}
+		if x.Phases != (probe.Phases{}) {
+			ph := x.Phases
+			v.Phases = &ph
+		}
+		out = append(out, v)
 	}
 	return out
 }
