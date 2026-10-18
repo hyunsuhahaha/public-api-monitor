@@ -165,12 +165,12 @@ function renderCorrel() {
 const burnText = (x) => (x < 0 ? "–" : x === 0 ? "0" : x < 10 ? x.toFixed(1) + "×" : Math.round(x) + "×");
 function burnCell(t) {
   const w = el("span", "burn");
-  const one = el("b", "", burnText(t.burn1h)), six = el("span", "", burnText(t.burn6h));
+  const one = el("b", "", burnText(t.burn1h)), six = el("span", "b6", burnText(t.burn6h));
   // as the alert rules: long and short window both over (the short one ends it on recovery)
   const page = t.burn1h >= 14.4 && t.burn5m >= 14.4, ticket = !page && t.burn6h >= 6 && t.burn30m >= 6;
   one.style.color = page ? C.out : t.burn1h > 1 ? C.deg : t.burn1h < 0 ? C.axis : C.ok;
   six.style.color = ticket ? C.warn : t.burn6h > 1 ? C.deg : C.axis;
-  w.append(one, el("span", "sep", " · "), six);
+  w.append(one, el("span", "sep b6", " · "), six);
   if (page || ticket) w.append(el("span", "burn-tag " + (page ? "page" : "ticket"), page ? "호출" : "티켓"));
   w.title = `최근 1시간 ${burnText(t.burn1h)}, 6시간 ${burnText(t.burn6h)} — 1×는 SLO ${pct(t.slo, 1)}를 딱 지키는 속도` +
     (page ? "\n1시간 14.4× 이상: 이 속도면 30일 버짓이 약 2일 만에 바닥 (호출 기준)" : ticket ? "\n6시간 6× 이상: 이 속도면 30일 버짓이 5일 만에 바닥 (티켓 기준)" : "");
