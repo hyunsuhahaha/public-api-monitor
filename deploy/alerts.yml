@@ -1,0 +1,31 @@
+# Alerts on the monitor itself (our SLOs), not on the APIs it watches.
+#   SLO 1 (freshness): 99.9% of scheduled checks run on time  -> pamon_late_checks_total
+#   SLO 2 (coverage):  every target checked within 2 intervals -> pamon_last_check_timestamp_seconds
+groups:
+  - name: pamon-self
+    rules:
+      - alert: PamonDown
+        expr: up{job="pamon"} == 0
+        for: 2m
+        labels: {severity: page}
+        annotations: {summary: "pamon is not answering /metrics"}
+      - alert: PamonTargetNotChecked
+        expr: time() - pamon_last_check_timestamp_seconds > 600
+        for: 5m
+        labels: {severity: page}
+        annotations: {summary: "{{ $labels.target }} has not been checked for over 10 minutes"}
+      # Error budget: 0.1% of checks may be late. Page when the last hour burns it 14.4x
+      # faster than allowed (2% of a 30-day budget in an hour), ticket at 6x over 6 hours.
+      - alert: PamonLateChecksFastBurn
+        expr: |
+          sum(rate(pamon_late_checks_total[1h])) / sum(rate(pamon_checks_total[1h])) > 14.4 * 0.001
+        for: 5m
+        labels: {severity: page}
+      - alert: PamonLateChecksSlowBurn
+        expr: |
+          sum(rate(pamon_late_checks_total[6h])) / sum(rate(pamon_checks_total[6h])) > 6 * 0.001
+        for: 30m
+        labels: {severity: ticket}
+      - alert: PamonStoreErrors
+        expr: increase(pamon_store_errors_total[10m]) > 0
+        labels: {severity: ticket}

@@ -1,0 +1,95 @@
+# Monitored APIs. Each url is a Go text/template:
+#   {{.Key}}                  the service key from key_env (query-escaped)
+#   {{.Now}}                  now in KST
+#   {{date .Now "20060102"}}  format a time      {{addHours .Now -1}} / addDays / addMonths
+#   {{baseDate .Now 40}} {{baseTime .Now 40}}    기상청 base_date / base_time (issued ~40 min late)
+#   {{yearMonth (addMonths .Now -1)}}            last month as YYYYMM
+#   {{esc "서울"}}             query-escape a literal
+#
+# Keys: DATA_GO_KR_KEY = 공공데이터포털 "일반 인증키(Decoding)". Each API must be 활용신청-ed
+# separately on data.go.kr. SEOUL_OPENAPI_KEY = 서울 열린데이터광장 일반 인증키,
+# SEOUL_SUBWAY_KEY = 서울 열린데이터광장 실시간 지하철 인증키.
+# Try a change with: pamon -once
+interval: 5m
+timeout: 10s
+slow_after: 3s
+key_env: DATA_GO_KR_KEY
+
+targets:
+  - id: kma-ultra-ncst
+    name: 기상청 초단기실황
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15084084/openapi.do
+    url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&base_date={{baseDate .Now 40}}&base_time={{baseTime .Now 40}}&nx=60&ny=127
+
+  - id: kma-ultra-fcst
+    name: 기상청 초단기예보
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15084084/openapi.do
+    url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&base_date={{baseDate .Now 45}}&base_time={{baseTime .Now 45}}&nx=60&ny=127
+
+  - id: airkorea-sido
+    name: 에어코리아 시도별 실시간 대기오염
+    provider: 한국환경공단
+    category: 환경
+    docs: https://www.data.go.kr/data/15073861/openapi.do
+    url: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey={{.Key}}&returnType=json&numOfRows=10&pageNo=1&sidoName={{esc "서울"}}&ver=1.0
+    # hourly data: the newest measurement should be under 3 hours old
+    freshness:
+      pattern: '"dataTime"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"'
+      layout: "2006-01-02 15:04"
+      max_age: 3h
+
+  - id: molit-apt-trade
+    name: 국토교통부 아파트 매매 실거래가
+    provider: 국토교통부
+    category: 부동산
+    docs: https://www.data.go.kr/data/15126469/openapi.do
+    url: https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?serviceKey={{.Key}}&LAWD_CD=11110&DEAL_YMD={{yearMonth (addMonths .Now -1)}}&pageNo=1&numOfRows=5
+    slow_after: 5s
+
+  - id: kasi-holidays
+    name: 한국천문연구원 공휴일 정보
+    provider: 한국천문연구원
+    category: 생활
+    docs: https://www.data.go.kr/data/15012690/openapi.do
+    url: https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo?serviceKey={{.Key}}&solYear={{date .Now "2006"}}&solMonth={{date .Now "01"}}
+
+  - id: kasi-riseset
+    name: 한국천문연구원 출몰시각
+    provider: 한국천문연구원
+    category: 생활
+    docs: https://www.data.go.kr/data/15012688/openapi.do
+    url: https://apis.data.go.kr/B090041/openapi/service/RiseSetInfoService/getAreaRiseSetInfo?serviceKey={{.Key}}&locdate={{date .Now "20060102"}}&location={{esc "서울"}}
+
+  - id: seoul-bus-arrival
+    name: 서울 버스 노선별 도착정보
+    provider: 서울특별시
+    category: 교통
+    docs: https://www.data.go.kr/data/15000314/openapi.do
+    url: http://ws.bus.go.kr/api/rest/arrive/getArrInfoByRouteAll?serviceKey={{.Key}}&busRouteId=100100118
+
+  - id: tour-area-code
+    name: 한국관광공사 국문 관광정보(지역코드)
+    provider: 한국관광공사
+    category: 관광
+    docs: https://www.data.go.kr/data/15101578/openapi.do
+    url: https://apis.data.go.kr/B551011/KorService2/areaCode2?serviceKey={{.Key}}&numOfRows=5&pageNo=1&MobileOS=ETC&MobileApp=pamon&_type=json
+
+  - id: seoul-bike
+    name: 서울 공공자전거(따릉이) 대여소 실시간
+    provider: 서울특별시
+    category: 교통
+    docs: https://data.seoul.go.kr/dataList/OA-15493/A/1/datasetView.do
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/bikeList/1/5/
+
+  - id: seoul-subway-arrival
+    name: 서울 지하철 실시간 도착
+    provider: 서울특별시
+    category: 교통
+    docs: https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do
+    key_env: SEOUL_SUBWAY_KEY
+    url: http://swopenapi.seoul.go.kr/api/subway/{{.Key}}/json/realtimeStationArrival/0/5/{{esc "서울"}}

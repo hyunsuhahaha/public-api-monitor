@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공공 API 상태판</title>
+<meta name="description" content="공공데이터포털 등 한국 공공 API의 실시간 가용성, 응답 속도, 장애 기록">
+<style>
+:root {
+  --bg: #f6f7f9; --card: #fff; --text: #1b1f24; --muted: #667080; --line: #e3e6ea;
+  --ok: #2da44e; --warn: #d4a72c; --bad: #e5534b; --none: #c9ced6; --client: #8c95a3;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0e1116; --card: #161b22; --text: #e6edf3; --muted: #8b949e; --line: #2a313c; --none: #30363d; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+header h1 { font-size: 22px; margin: 0 0 4px; }
+header p { margin: 0; color: var(--muted); font-size: 13px; }
+.banner { margin: 20px 0; padding: 14px 16px; border-radius: 10px; font-weight: 600; background: var(--card); border: 1px solid var(--line); }
+.banner.ok { border-left: 5px solid var(--ok); } .banner.warn { border-left: 5px solid var(--warn); } .banner.bad { border-left: 5px solid var(--bad); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.filters button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 4px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+.filters button.on { background: var(--text); color: var(--bg); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.name { font-weight: 600; }
+.prov { color: var(--muted); font-size: 13px; }
+.right { margin-left: auto; text-align: right; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.right b { color: var(--text); }
+.reason { margin: 6px 0 0 20px; font-size: 13px; color: var(--muted); word-break: break-all; }
+.bars { display: flex; gap: 2px; margin-top: 10px; height: 26px; }
+.bars span { flex: 1; border-radius: 2px; background: var(--none); min-width: 2px; }
+.legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.s-ok { background: var(--ok); } .s-slow, .s-stale { background: var(--warn); } .s-error, .s-down { background: var(--bad); } .s-client, .s-unknown { background: var(--client); }
+h2 { font-size: 17px; margin: 28px 0 10px; }
+.inc { font-size: 14px; }
+.inc .when { color: var(--muted); font-size: 12px; }
+footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
+footer a { color: inherit; }
+@media (max-width: 560px) { .right { display: none; } .reason { margin-left: 0; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>공공 API 상태판</h1>
+    <p id="meta">불러오는 중…</p>
+  </header>
+  <div id="banner" class="banner">상태를 불러오는 중…</div>
+  <div class="filters" id="filters"></div>
+  <section id="targets"></section>
+  <h2>최근 장애</h2>
+  <section id="incidents"></section>
+  <footer>
+    응답 본문의 결과 코드까지 읽어서 판정합니다(HTTP 200 안의 오류도 장애로 셉니다). 서비스 키·호출 한도 같은 우리 쪽 문제는 가용률에서 뺍니다.
+    · <a href="/api/v1/status">JSON API</a> · <a href="/metrics">metrics</a>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+/pamon
+/pamon.exe
+*.db
+*.db-shm
+*.db-wal
+.env
+/dist/
