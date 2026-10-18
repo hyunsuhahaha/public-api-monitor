@@ -1,0 +1,37 @@
+# Game day: a central and a remote probe watching a fake API whose failure mode the
+# scenarios switch (deploy/gameday/gameday.py). Two networks: "api" (the fake API) and
+# "ctl" (probe -> central), so one location can lose the API while still reporting.
+name: gameday
+services:
+  fakeapi:
+    build: {context: ../.., dockerfile: deploy/gameday/Dockerfile.fakeapi}
+    ports: ["29000:9000"]
+    networks: [api]
+  central:
+    build: {context: ../.., dockerfile: Dockerfile}
+    environment:
+      PAMON_ROLE: central
+      PAMON_LOCATION: central
+      PAMON_CONFIG: /gameday/targets.yaml
+      PAMON_INGEST_TOKEN: gameday
+      FAKE_KEY: gameday-key
+    volumes: ["./targets.yaml:/gameday/targets.yaml:ro", "central-data:/data"]
+    ports: ["28080:8080"]
+    networks: [api, ctl]
+  probe:
+    build: {context: ../.., dockerfile: Dockerfile}
+    environment:
+      PAMON_ROLE: probe
+      PAMON_LOCATION: probe
+      PAMON_CONFIG: /gameday/targets.yaml
+      PAMON_CENTRAL_URL: http://central:8080
+      PAMON_INGEST_TOKEN: gameday
+      FAKE_KEY: gameday-key
+    volumes: ["./targets.yaml:/gameday/targets.yaml:ro"]
+    ports: ["28081:8080"]
+    networks: [api, ctl]
+networks:
+  api:
+  ctl:
+volumes:
+  central-data:

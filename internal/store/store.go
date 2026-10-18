@@ -65,6 +65,11 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// rows written before the zero-time fix: open incidents stored as year-1 milliseconds
+	if _, err := db.Exec(`UPDATE incidents SET ended=0 WHERE ended<0`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
@@ -72,7 +77,16 @@ func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
-func ms(t time.Time) int64 { return t.UnixMilli() }
+// ms stores a time as unix milliseconds; the zero time (an incident still open) is 0.
+// (time.Time{}.UnixMilli() is -62135596800000, which no "ended=0" query matched: open
+// incidents vanished from the list, the feed and the restore after a restart. Found by
+// the game day, deploy/gameday.)
+func ms(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
 
 func fromMS(v int64) time.Time {
 	if v == 0 {
@@ -332,6 +346,92 @@ func (s *Store) LatenciesBetween(ctx context.Context, from, to time.Time) (map[s
 			return nil, err
 		}
 		out[t] = append(out[t], l)
+	}
+	return out, rows.Err()
+}
+
+// Bucket is one target's verdicts in one time bucket.
+type Bucket struct {
+	Start    int64 // unix ms
+	Counted  int
+	Healthy  int
+	Degraded int
+	Outage   int
+}
+
+// VerdictBuckets groups verdicts in [from, to) into buckets of step, per target.
+func (s *Store) VerdictBuckets(ctx context.Context, from, to time.Time, step time.Duration) (map[string][]Bucket, error) {
+	st := step.Milliseconds()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT target, (at/?)*? AS b, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
+		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
+		FROM verdicts WHERE at>=? AND at<? GROUP BY target, b ORDER BY target, b`, st, st, ms(from), ms(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]Bucket{}
+	for rows.Next() {
+		var t string
+		var b Bucket
+		if err := rows.Scan(&t, &b.Start, &b.Counted, &b.Healthy, &b.Degraded, &b.Outage); err != nil {
+			return nil, err
+		}
+		out[t] = append(out[t], b)
+	}
+	return out, rows.Err()
+}
+
+// Sample is one raw check, for latency charts.
+type Sample struct {
+	Target    string
+	Location  string
+	At        int64 // unix ms
+	LatencyMS int64
+	Status    probe.Status
+}
+
+// Samples returns raw checks in [from, to), oldest first; target "" for all.
+func (s *Store) Samples(ctx context.Context, target string, from, to time.Time) ([]Sample, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT target, location, at, latency_ms, status FROM checks
+		WHERE at>=? AND at<? AND (?='' OR target=?) ORDER BY at`, ms(from), ms(to), target, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Sample
+	for rows.Next() {
+		var x Sample
+		var status string
+		if err := rows.Scan(&x.Target, &x.Location, &x.At, &x.LatencyMS, &status); err != nil {
+			return nil, err
+		}
+		x.Status = probe.Status(status)
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// RecentChecks: a target's newest raw checks, newest first.
+func (s *Store) RecentChecks(ctx context.Context, target string, limit int) ([]probe.Result, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT target, location, at, status, latency_ms, http_status, code, reason FROM checks
+		WHERE target=? ORDER BY at DESC LIMIT ?`, target, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []probe.Result
+	for rows.Next() {
+		var r probe.Result
+		var at int64
+		var status string
+		if err := rows.Scan(&r.TargetID, &r.Location, &at, &status, &r.LatencyMS, &r.HTTPStatus, &r.Code, &r.Reason); err != nil {
+			return nil, err
+		}
+		r.At, r.Status = fromMS(at), probe.Status(status)
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

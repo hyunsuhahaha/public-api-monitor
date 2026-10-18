@@ -52,6 +52,7 @@ type Target struct {
 	SlowAfter Duration   `yaml:"slow_after"`
 	Interval  Duration   `yaml:"interval"`
 	Freshness *Freshness `yaml:"freshness"`
+	SLO       float64    `yaml:"slo"` // availability objective, e.g. 0.999
 
 	tmpl *template.Template
 }
@@ -62,6 +63,7 @@ type Config struct {
 	Timeout   Duration `yaml:"timeout"`
 	SlowAfter Duration `yaml:"slow_after"`
 	KeyEnv    string   `yaml:"key_env"`
+	SLO       float64  `yaml:"slo"` // default availability objective (0.99 if unset)
 	Targets   []Target `yaml:"targets"`
 }
 
@@ -92,6 +94,9 @@ func Parse(raw []byte) (*Config, error) {
 	if c.KeyEnv == "" {
 		c.KeyEnv = "DATA_GO_KR_KEY"
 	}
+	if c.SLO <= 0 || c.SLO >= 1 {
+		c.SLO = 0.99 // public APIs: two nines is already a high bar for most of them
+	}
 	seen := map[string]bool{}
 	for i := range c.Targets {
 		t := &c.Targets[i]
@@ -116,6 +121,9 @@ func Parse(raw []byte) (*Config, error) {
 		}
 		if t.Interval.Duration == 0 {
 			t.Interval = c.Interval
+		}
+		if t.SLO <= 0 || t.SLO >= 1 {
+			t.SLO = c.SLO
 		}
 		tmpl, err := template.New(t.ID).Option("missingkey=error").Funcs(funcs).Parse(t.URL)
 		if err != nil {

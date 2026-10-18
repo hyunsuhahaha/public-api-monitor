@@ -1,0 +1,15 @@
+# Game day: one fake API checked every 10 s so scenarios finish in minutes.
+interval: 10s
+timeout: 3s
+slow_after: 2s
+targets:
+  - id: fake
+    name: 가짜 공공 API
+    provider: gameday
+    category: 훈련
+    key_env: FAKE_KEY
+    url: http://fakeapi:9000/api?serviceKey={{.Key}}
+    freshness:
+      pattern: '"dataTime"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"'
+      layout: "2006-01-02 15:04"
+      max_age: 2h
