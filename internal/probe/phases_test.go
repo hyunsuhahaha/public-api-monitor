@@ -44,3 +44,14 @@ func TestPhasesReusedDropsSpareDial(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 }
+
+func TestStalledPhaseRoundTrip(t *testing.T) {
+	for code, text := range stalledText {
+		if got := StalledPhase("timeout: " + text); got != code {
+			t.Fatalf("%q -> %q, want %q", text, got, code)
+		}
+	}
+	if StalledPhase("timeout") != "" || StalledPhase("http 503") != "" {
+		t.Fatal("not a phase")
+	}
+}

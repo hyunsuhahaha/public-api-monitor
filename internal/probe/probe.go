@@ -118,7 +118,7 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	v := Classify(o, t.SlowAfter.Duration)
 	r.Phases = clock.phases()
 	if o.Timeout {
-		v.Reason = "timeout: " + clock.stalled()
+		v.Reason = "timeout: " + stalledText[clock.stalled()]
 	}
 	if v.Status == StatusOK && p.Baseline != nil {
 		// slower than this API usually is (learned per target), though under slow_after

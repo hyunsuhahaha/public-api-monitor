@@ -30,6 +30,15 @@ var (
 		Help:    "Response time of checks that got an answer.",
 		Buckets: []float64{0.1, 0.25, 0.5, 1, 2, 3, 5, 8, 13},
 	}, []string{"target", "location"})
+	// where the time went (probe.Phases): the network's share vs the provider's server
+	mPhase = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "pamon_check_phase_seconds",
+		Help:    "Time per request phase: dns, connect, tls (new connections only) and wait (for the first byte).",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10},
+	}, []string{"target", "phase"})
+	mTimeouts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "pamon_check_timeouts_total", Help: "Timed-out checks by the phase they were stuck in (wait = the provider's server).",
+	}, []string{"target", "stalled"})
 	mLastCheck = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "pamon_last_check_timestamp_seconds", Help: "When each target was last checked from each location.",
 	}, []string{"target", "location"})
@@ -49,6 +58,18 @@ func observe(r probe.Result) {
 	mLastCheck.WithLabelValues(r.TargetID, r.Location).Set(float64(r.At.Unix()))
 	if r.HTTPStatus > 0 {
 		mLatency.WithLabelValues(r.TargetID, r.Location).Observe(float64(r.LatencyMS) / 1000)
+	}
+	p := r.Phases
+	for _, x := range []struct {
+		name string
+		ms   int64
+	}{{"dns", p.DNSMs}, {"connect", p.ConnectMs}, {"tls", p.TLSMs}, {"wait", p.WaitMs}} {
+		if x.ms > 0 {
+			mPhase.WithLabelValues(r.TargetID, x.name).Observe(float64(x.ms) / 1000)
+		}
+	}
+	if code := probe.StalledPhase(r.Reason); code != "" {
+		mTimeouts.WithLabelValues(r.TargetID, code).Inc()
 	}
 }
 

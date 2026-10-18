@@ -72,23 +72,39 @@ func (c *phaseClock) phases() Phases {
 		TLSMs: span(c.tlsStart, c.tlsDone), WaitMs: span(c.wrote, c.firstByte), Reused: c.reused}
 }
 
+// Stalled phases, as metric labels, and how a timeout's reason names them.
+var stalledText = map[string]string{
+	"body": "본문 받는 중", "wait": "서버 응답 대기 중 (연결은 됨)", "send": "요청 보내는 중",
+	"tls": "TLS 연결 중", "connect": "TCP 연결 중", "dns": "DNS 조회 중", "pool": "연결 대기 중",
+}
+
+// StalledPhase is the phase code in a timeout reason ("timeout: <text>"), or "".
+func StalledPhase(reason string) string {
+	for code, text := range stalledText {
+		if reason == "timeout: "+text {
+			return code
+		}
+	}
+	return ""
+}
+
 // stalled names the phase a request that ran out of time was stuck in.
 func (c *phaseClock) stalled() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {
 	case !c.firstByte.IsZero():
-		return "본문 받는 중"
+		return "body"
 	case !c.wrote.IsZero():
-		return "서버 응답 대기 중 (연결은 됨)"
+		return "wait"
 	case !c.gotConn.IsZero():
-		return "요청 보내는 중"
+		return "send"
 	case !c.tlsStart.IsZero() && c.tlsDone.IsZero():
-		return "TLS 연결 중"
+		return "tls"
 	case !c.connStart.IsZero() && c.connDone.IsZero():
-		return "TCP 연결 중"
+		return "connect"
 	case !c.dnsStart.IsZero() && c.dnsDone.IsZero():
-		return "DNS 조회 중"
+		return "dns"
 	}
-	return "연결 대기 중"
+	return "pool"
 }
