@@ -97,6 +97,12 @@ canvas.strip { width: 180px; height: 14px; display: block; }
 .inc { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line2); }
 .inc .t { color: var(--muted); font-size: 11px; }
 .empty { color: var(--muted); padding: 14px 0; text-align: center; }
+.schema { display: grid; grid-template-columns: 90px 1fr auto; gap: 10px; align-items: start; padding: 6px 0; border-top: 1px solid var(--line2); }
+.schema .kind { font-size: 11px; font-weight: 600; border-radius: 3px; padding: 1px 6px; text-align: center; }
+.schema .kind.added { color: var(--blue); background: rgba(87,148,242,.12); }
+.schema .kind.removed { color: var(--warn); background: rgba(255,152,48,.12); }
+.schema code { font-family: var(--mono); font-size: 11px; color: var(--text); background: var(--panel2); padding: 1px 5px; border-radius: 3px; margin: 0 4px 2px 0; display: inline-block; }
+.schema .t { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 /* drawer */
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(920px, 100vw); background: #111317; border-left: 1px solid var(--line);

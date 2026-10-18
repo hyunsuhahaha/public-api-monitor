@@ -13,6 +13,7 @@ import (
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 )
 
 type Webhook struct {
@@ -62,8 +63,29 @@ func humanDuration(d time.Duration) string {
 	return fmt.Sprintf("%d분", m)
 }
 
+// SchemaMessage is the text for a response-field change.
+func SchemaMessage(e store.SchemaEvent, t *config.Target, publicURL string) string {
+	var b strings.Builder
+	label := "필드 추가"
+	if e.Kind == "removed" {
+		label = "필드 사라짐"
+	}
+	fmt.Fprintf(&b, "🧩 [응답 형식 변경: %s] %s — %s", label, t.Name, strings.Join(e.Paths, ", "))
+	if publicURL != "" {
+		fmt.Fprintf(&b, "\n%s/#t=%s", strings.TrimRight(publicURL, "/"), t.ID)
+	}
+	return b.String()
+}
+
+func (w *Webhook) NotifySchema(ctx context.Context, e store.SchemaEvent, t *config.Target) {
+	w.post(ctx, SchemaMessage(e, t, w.PublicURL))
+}
+
 func (w *Webhook) Notify(ctx context.Context, ev incident.Event, in *incident.Incident, t *config.Target) {
-	text := Message(ev, in, t, w.PublicURL)
+	w.post(ctx, Message(ev, in, t, w.PublicURL))
+}
+
+func (w *Webhook) post(ctx context.Context, text string) {
 	if text == "" || w.URL == "" {
 		return
 	}

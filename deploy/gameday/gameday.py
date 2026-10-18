@@ -13,6 +13,7 @@ Scenarios (the fake API is checked every 10 s from two locations, "central" and 
   5 restart mid-incident central restarts      -> the same incident stays open, then closes
   6 stale data         200 OK but 6 h old data  -> "stale" (degraded)
   7 adaptive slow      600 ms on a ~10 ms API   -> "slow (usually …)" under the 2 s limit
+  8 schema change      a new response field     -> recorded as a schema change, still "up"
 """
 import argparse
 import json
@@ -206,13 +207,26 @@ def s7_adaptive_slow(started):
     warm = 24 * INTERVAL + 20 - (time.time() - started)
     if warm > 0:
         time.sleep(warm)
-    usual = target()["p50Ms"]
+    usual = target()["p50"]
     mode("slow", 600)
     t = wait(lambda: target()["status"] == "slow", 60)
     reason = target().get("reason", "")
     mode("ok")
     record(7, "평소보다 느려짐 (600ms, 고정 기준 2초 미만)", "API별로 학습한 평소 속도 대비 느림으로 판정", t is not None and "usually" in reason,
            f"감지 {t}초", f"평소 p50 {usual}ms → {reason}")
+
+
+def s8_schema_change():
+    settle()
+    before = len(get_json(CENTRAL + "/api/v1/schema-events?target=fake"))
+    mode("newfield")
+    t = wait(lambda: len(get_json(CENTRAL + "/api/v1/schema-events?target=fake")) > before, 60)
+    events = get_json(CENTRAL + "/api/v1/schema-events?target=fake")
+    mode("ok")
+    e = events[0] if events else {}
+    ok = t is not None and e.get("kind") == "added" and any(p.endswith("pm25Value") for p in e.get("paths", []))
+    record(8, "응답 형식 변경 (새 필드 pm25Value)", "가용성은 정상이어도 필드 추가를 변경 이벤트로 기록", ok,
+           f"감지 {t}초", f"{e.get('kind')}: {', '.join(e.get('paths', []))}")
 
 
 def write_report(started_at, duration):
@@ -251,7 +265,7 @@ def main():
         sys.exit("stack did not become ready")
     started = time.time()
     scenarios = [s1_hard_outage, s2_silent_failure, s3_regional, s4_central_outage, s5_restart_mid_incident, s6_stale,
-                 lambda: s7_adaptive_slow(started)]
+                 lambda: s7_adaptive_slow(started), s8_schema_change]
     try:
         for i, s in enumerate(scenarios, 1):
             if args.only and i not in args.only:

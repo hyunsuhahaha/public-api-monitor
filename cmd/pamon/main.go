@@ -120,6 +120,7 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	}
 	serve(ctx, log, srv, "central", len(cfg.Targets), token != "")
 	go c.Prune(ctx, keep)
+	go c.Schema(ctx)
 	m.Run(ctx)
 	return shutdown(srv)
 }

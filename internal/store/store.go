@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -53,6 +54,22 @@ CREATE TABLE IF NOT EXISTS incidents (
 	last_reason TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS incidents_target ON incidents(target, started);
+-- schema-change detection: every field path each API has answered with, and the changes
+CREATE TABLE IF NOT EXISTS schema_paths (
+	target     TEXT    NOT NULL,
+	path       TEXT    NOT NULL,
+	first_seen INTEGER NOT NULL,
+	last_seen  INTEGER NOT NULL,
+	PRIMARY KEY (target, path)
+);
+CREATE TABLE IF NOT EXISTS schema_events (
+	id     INTEGER PRIMARY KEY,
+	target TEXT    NOT NULL,
+	at     INTEGER NOT NULL,
+	kind   TEXT    NOT NULL, -- added | removed
+	paths  TEXT    NOT NULL  -- newline-separated
+);
+CREATE INDEX IF NOT EXISTS schema_events_at ON schema_events(at);
 `
 
 func Open(path string) (*Store, error) {
@@ -432,6 +449,108 @@ func (s *Store) RecentChecks(ctx context.Context, target string, limit int) ([]p
 		}
 		r.At, r.Status = fromMS(at), probe.Status(status)
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ObservePaths records the field paths of one healthy answer. It returns the paths never
+// seen before for that target, and whether the target already had a learned shape (the
+// very first answer is the baseline, not a change).
+func (s *Store) ObservePaths(ctx context.Context, target string, paths []string, at time.Time) (added []string, hadShape bool, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_paths WHERE target=?`, target).Scan(&n); err != nil {
+		return nil, false, err
+	}
+	for _, p := range paths {
+		res, err := tx.ExecContext(ctx, `INSERT INTO schema_paths(target, path, first_seen, last_seen) VALUES(?,?,?,?)
+			ON CONFLICT(target, path) DO UPDATE SET last_seen=excluded.last_seen`, target, p, ms(at), ms(at))
+		if err != nil {
+			return nil, false, err
+		}
+		// a new row was inserted when first_seen equals now
+		var first int64
+		if err := tx.QueryRowContext(ctx, `SELECT first_seen FROM schema_paths WHERE target=? AND path=?`, target, p).Scan(&first); err != nil {
+			return nil, false, err
+		}
+		if first == ms(at) && res != nil {
+			added = append(added, p)
+		}
+	}
+	return added, n > 0, tx.Commit()
+}
+
+// StalePaths removes and returns, per target, the paths not seen for `age` although the
+// target answered with a shape since `active` (an API that is down or empty loses nothing).
+func (s *Store) StalePaths(ctx context.Context, now time.Time, age, active time.Duration) (map[string][]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT p.target, p.path FROM schema_paths p
+		WHERE p.last_seen < ? AND EXISTS (SELECT 1 FROM schema_paths q WHERE q.target=p.target AND q.last_seen >= ?)
+		ORDER BY p.target, p.path`, ms(now.Add(-age)), ms(now.Add(-active)))
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]string{}
+	for rows.Next() {
+		var t, p string
+		if err := rows.Scan(&t, &p); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out[t] = append(out[t], p)
+	}
+	rows.Close()
+	for t, ps := range out {
+		for _, p := range ps {
+			if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_paths WHERE target=? AND path=?`, t, p); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
+// SchemaEvent is a detected change in an API's response fields.
+type SchemaEvent struct {
+	ID     int64     `json:"id"`
+	Target string    `json:"target"`
+	At     time.Time `json:"at"`
+	Kind   string    `json:"kind"` // added | removed
+	Paths  []string  `json:"paths"`
+}
+
+func (s *Store) SaveSchemaEvent(ctx context.Context, e *SchemaEvent) error {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO schema_events(target, at, kind, paths) VALUES(?,?,?,?)`,
+		e.Target, ms(e.At), e.Kind, strings.Join(e.Paths, "\n"))
+	if err != nil {
+		return err
+	}
+	e.ID, err = res.LastInsertId()
+	return err
+}
+
+// SchemaEvents since a time, newest first; target "" for all.
+func (s *Store) SchemaEvents(ctx context.Context, target string, since time.Time, limit int) ([]SchemaEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, target, at, kind, paths FROM schema_events
+		WHERE (?='' OR target=?) AND at>=? ORDER BY at DESC LIMIT ?`, target, target, ms(since), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SchemaEvent{}
+	for rows.Next() {
+		var e SchemaEvent
+		var at int64
+		var paths string
+		if err := rows.Scan(&e.ID, &e.Target, &at, &e.Kind, &paths); err != nil {
+			return nil, err
+		}
+		e.At, e.Paths = fromMS(at), strings.Split(paths, "\n")
+		out = append(out, e)
 	}
 	return out, rows.Err()
 }

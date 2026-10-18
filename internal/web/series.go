@@ -318,3 +318,13 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 		"byLocation": byLoc, "locationStates": fails, "recent": rc,
 	})
 }
+
+// schemaEvents: response-field changes in the last 90 days, newest first.
+func (s *Server) schemaEvents(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Store.SchemaEvents(r.Context(), r.URL.Query().Get("target"), time.Now().AddDate(0, 0, -90), 200)
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	writeJSON(w, list)
+}

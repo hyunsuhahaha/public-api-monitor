@@ -34,6 +34,9 @@ var (
 	mOpen = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "pamon_open_incidents", Help: "Incidents currently open.",
 	})
+	mSchemaChanges = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "pamon_schema_changes_total", Help: "Response fields added to or removed from an API.",
+	}, []string{"target", "kind"})
 	mIngested = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "pamon_ingested_results_total", Help: "Results received from remote probes.",
 	}, []string{"location"})
@@ -45,6 +48,11 @@ var (
 // Notifier is told about incident changes (webhooks etc.).
 type Notifier interface {
 	Notify(ctx context.Context, ev incident.Event, in *incident.Incident, t *config.Target)
+}
+
+// SchemaNotifier, if the notifier also implements it, is told about response-field changes.
+type SchemaNotifier interface {
+	NotifySchema(ctx context.Context, e store.SchemaEvent, t *config.Target)
 }
 
 // Central stores every check (its own and remote probes'), combines locations into a
@@ -88,6 +96,60 @@ func (c *Central) Start(ctx context.Context) error {
 func (c *Central) Record(ctx context.Context, t *config.Target, r probe.Result) {
 	c.save(ctx, r)
 	c.decide(ctx, t, r.At)
+	if r.Shape != nil {
+		c.learnShape(ctx, t, r)
+	}
+}
+
+// learnShape records the answer's field paths; fields never seen before (after the first
+// answer, which is the baseline) are a schema change.
+func (c *Central) learnShape(ctx context.Context, t *config.Target, r probe.Result) {
+	added, had, err := c.Store.ObservePaths(ctx, t.ID, r.Shape, r.At)
+	if err != nil {
+		mStoreErrors.Inc()
+		c.Log.Error("save shape", "err", err)
+		return
+	}
+	if had && len(added) > 0 {
+		c.schemaChange(ctx, t, store.SchemaEvent{Target: t.ID, At: r.At, Kind: "added", Paths: added})
+	}
+}
+
+func (c *Central) schemaChange(ctx context.Context, t *config.Target, e store.SchemaEvent) {
+	mSchemaChanges.WithLabelValues(t.ID, e.Kind).Inc()
+	if err := c.Store.SaveSchemaEvent(ctx, &e); err != nil {
+		mStoreErrors.Inc()
+		c.Log.Error("save schema event", "err", err)
+	}
+	c.Log.Warn("schema change", "target", t.ID, "kind", e.Kind, "paths", e.Paths)
+	if n, ok := c.Notifier.(SchemaNotifier); ok {
+		n.NotifySchema(ctx, e, t)
+	}
+}
+
+// Schema sweeps once an hour for fields gone from an API that still answers with data:
+// missing for 24 h is a removal (shorter would flag optional fields that are just absent
+// from the current data).
+func (c *Central) Schema(ctx context.Context) {
+	tick := time.NewTicker(time.Hour)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		gone, err := c.Store.StalePaths(ctx, time.Now(), 24*time.Hour, time.Hour)
+		if err != nil {
+			c.Log.Error("schema sweep", "err", err)
+			continue
+		}
+		for id, paths := range gone {
+			if t := c.targets[id]; t != nil {
+				c.schemaChange(ctx, t, store.SchemaEvent{Target: id, At: time.Now(), Kind: "removed", Paths: paths})
+			}
+		}
+	}
 }
 
 func (c *Central) save(ctx context.Context, r probe.Result) {

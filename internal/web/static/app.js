@@ -19,7 +19,7 @@ const sev = (s) => (s === "down" || s === "error" ? 2 : s === "slow" || s === "s
 const kst = (d, o) => new Date(d).toLocaleString("ko-KR", Object.assign({ timeZone: "Asia/Seoul", hour12: false }, o));
 const dpr = () => window.devicePixelRatio || 1;
 
-const state = { range: "24h", target: null, cat: "전체", q: "", sort: null, data: null, incidents: [], loadedAt: 0 };
+const state = { range: "24h", target: null, cat: "전체", q: "", sort: null, data: null, incidents: [], schema: [], loadedAt: 0 };
 
 function readHash() {
   const h = new URLSearchParams(location.hash.slice(1));
@@ -223,6 +223,26 @@ function renderIncidents() {
   }
 }
 
+// ── schema changes ────────────────────────────────────────────────────────────
+function schemaRow(e, withName) {
+  const names = Object.fromEntries(state.data.targets.map((t) => [t.id, t.name]));
+  const r = el("div", "schema");
+  r.append(el("span", "kind " + e.kind, e.kind === "added" ? "필드 추가" : "필드 사라짐"));
+  const body = el("div");
+  if (withName) { const n = el("div", "", names[e.target] || e.target); n.style.marginBottom = "3px"; body.append(n); }
+  for (const p of e.paths.slice(0, 12)) body.append(el("code", "", p));
+  if (e.paths.length > 12) body.append(el("span", "t", `외 ${e.paths.length - 12}개`));
+  r.append(body, el("span", "t", short(e.at)));
+  if (withName) { r.style.cursor = "pointer"; r.onclick = () => openDrawer(e.target); }
+  return r;
+}
+
+function renderSchema() {
+  const box = $("schema-list"); box.replaceChildren();
+  if (!state.schema.length) { box.append(el("div", "empty", "최근 90일 동안 응답 형식이 바뀐 API가 없습니다 (처음 응답이 기준)")); return; }
+  for (const e of state.schema.slice(0, 15)) box.append(schemaRow(e, true));
+}
+
 // ── drawer ────────────────────────────────────────────────────────────────────
 let plots = [];
 function closeDrawer() { $("drawer").hidden = true; $("scrim").hidden = true; state.target = null; writeHash(); plots.forEach((p) => p.destroy()); plots = []; }
@@ -287,6 +307,10 @@ async function openDrawer(id) {
   const inc = state.incidents.filter((i) => i.target === id);
   if (!inc.length) di.append(el("div", "empty", "최근 90일 장애가 없습니다"));
   for (const i of inc.slice(0, 10)) di.append(incRow(i, i.reason + (i.lastReason && i.lastReason !== i.reason ? " · 마지막: " + i.lastReason : "")));
+  const dsch = $("d-schema"); dsch.replaceChildren();
+  const sch = state.schema.filter((e) => e.target === id);
+  if (!sch.length) dsch.append(el("div", "empty", "응답 필드 변경 기록이 없습니다"));
+  for (const e of sch.slice(0, 10)) dsch.append(schemaRow(e, false));
   const log = $("d-log"); log.replaceChildren();
   const hr = el("tr"); ["시각", "지역", "판정", "응답", "HTTP", "코드", "사유"].forEach((h) => hr.append(el("th", "", h))); log.append(hr);
   for (const c of s.recent) {
@@ -301,12 +325,13 @@ async function openDrawer(id) {
 
 // ── load ──────────────────────────────────────────────────────────────────────
 async function load() {
-  const [d, inc] = await Promise.all([
+  const [d, inc, sch] = await Promise.all([
     fetch("/api/v1/overview?range=" + state.range).then((r) => r.json()),
     fetch("/api/v1/incidents").then((r) => r.json()),
+    fetch("/api/v1/schema-events").then((r) => r.json()),
   ]);
-  state.data = d; state.incidents = inc; state.loadedAt = Date.now();
-  renderStats(d); renderCats(); renderTable(); renderHeat(); renderIncidents();
+  state.data = d; state.incidents = inc; state.schema = sch; state.loadedAt = Date.now();
+  renderStats(d); renderCats(); renderTable(); renderHeat(); renderIncidents(); renderSchema();
 }
 
 function renderRanges() {

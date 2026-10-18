@@ -171,6 +171,23 @@ func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
 			Link: atomLink{Href: base + "/#" + in.TargetID}, Summary: summary,
 		})
 	}
+	if sch, err := s.Store.SchemaEvents(r.Context(), "", time.Now().AddDate(0, 0, -90), 50); err == nil {
+		for _, e := range sch {
+			name := names[e.Target]
+			if name == "" {
+				name = e.Target
+			}
+			label := "필드 추가"
+			if e.Kind == "removed" {
+				label = "필드 사라짐"
+			}
+			f.Entries = append(f.Entries, atomEntry{
+				Title: fmt.Sprintf("[응답 형식 변경: %s] %s", label, name), ID: fmt.Sprintf("%s/schema/%d", base, e.ID),
+				Updated: e.At.UTC().Format(time.RFC3339), Link: atomLink{Href: base + "/#t=" + e.Target},
+				Summary: strings.Join(e.Paths, ", "),
+			})
+		}
+	}
 	w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
 	w.Write([]byte(xml.Header))
 	enc := xml.NewEncoder(w)

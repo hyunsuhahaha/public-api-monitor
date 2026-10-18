@@ -6,7 +6,8 @@
 //
 // Modes: ok, down (HTTP 503), error05 (HTTP 200 with resultCode 05, the failure a plain
 // HTTP check misses), html (HTTP 200 with an error page), slow (adds ms milliseconds),
-// hang (never answers), stale (data timestamp 6 hours old), nokey (code 30).
+// hang (never answers), stale (data timestamp 6 hours old), nokey (code 30), newfield (a
+// healthy answer with one more field: a schema change).
 package main
 
 import (
@@ -60,15 +61,19 @@ func api(w http.ResponseWriter, r *http.Request) {
 		now = now.Add(-6 * time.Hour)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"response":{"header":{"resultCode":"00","resultMsg":"NORMAL SERVICE."},"body":{"items":{"item":[{"dataTime":"%s","value":"42"}]},"totalCount":1}}}`,
-		now.Format("2006-01-02 15:04"))
+	extra := ""
+	if m == "newfield" {
+		extra = `,"pm25Value":"17"` // the provider ships a new field
+	}
+	fmt.Fprintf(w, `{"response":{"header":{"resultCode":"00","resultMsg":"NORMAL SERVICE."},"body":{"items":{"item":[{"dataTime":"%s","value":"42"%s}]},"totalCount":1}}}`,
+		now.Format("2006-01-02 15:04"), extra)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		m := r.URL.Query().Get("m")
 		switch m {
-		case "ok", "down", "error05", "html", "slow", "hang", "stale", "nokey":
+		case "ok", "down", "error05", "html", "slow", "hang", "stale", "nokey", "newfield":
 		default:
 			http.Error(w, "unknown mode", http.StatusBadRequest)
 			return

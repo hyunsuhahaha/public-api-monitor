@@ -24,6 +24,7 @@ type Result struct {
 	HTTPStatus int
 	Code       string
 	Reason     string
+	Shape      []string // field paths of a healthy answer (schema-change detection), not sent to the central
 }
 
 // Prober runs checks.
@@ -111,6 +112,9 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		}
 	}
 	r.Status, r.Code, r.Reason = v.Status, v.Code, v.Reason
+	if v.Status.Healthy() {
+		r.Shape = Shape(o.Body)
+	}
 	r.HTTPStatus = o.HTTPStatus
 	r.LatencyMS = o.Latency.Milliseconds()
 	return r
