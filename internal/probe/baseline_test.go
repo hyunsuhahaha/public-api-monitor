@@ -93,3 +93,24 @@ func TestBaselineNoisyAPI(t *testing.T) {
 		t.Fatalf("limit %v too loose", limit)
 	}
 }
+
+// An hour of slowness (more than 5% of the window) must not lift the limit over itself:
+// slow-judged answers stay out of the p95 spread, so the monitor keeps seeing them.
+func TestBaselineSlownessDoesNotHideItself(t *testing.T) {
+	b := NewBaseline()
+	for i := 0; i < 200; i++ {
+		b.Add("a", 45*time.Millisecond)
+	}
+	before, _, _ := b.Limit("a", 3*time.Second)
+	for i := 0; i < 15; i++ { // 75 minutes of 1 s answers, each judged slow
+		limit, _, _ := b.Limit("a", 3*time.Second)
+		slow := time.Second > limit
+		if !slow {
+			t.Fatalf("answer %d: 1s no longer slow, limit rose to %v", i, limit)
+		}
+		b.Observe("a", time.Second, slow)
+	}
+	if after, _, _ := b.Limit("a", 3*time.Second); after != before {
+		t.Fatalf("limit moved from %v to %v", before, after)
+	}
+}

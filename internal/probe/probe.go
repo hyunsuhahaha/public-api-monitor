@@ -121,7 +121,7 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		}
 		// (answers past the fixed limit or timeouts are not learned: an outage must not
 		// become the normal; a lasting moderate change does, over half the window)
-		p.Baseline.Add(t.ID, o.Latency)
+		p.Baseline.Observe(t.ID, o.Latency, v.Status == StatusSlow)
 	}
 	if v.Status.Healthy() && t.Freshness != nil {
 		if stale, why := staleness(o.Body, t.Freshness, p.Now()); stale {

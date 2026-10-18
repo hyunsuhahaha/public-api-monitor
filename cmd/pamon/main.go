@@ -118,10 +118,13 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 		return err
 	}
 	// the adaptive slow limit picks up where it left off (this location's last 24 h)
-	if lat, err := st.Latencies(ctx, time.Now().Add(-24*time.Hour), location); err == nil {
-		for id, ls := range lat {
-			for _, l := range ls {
-				prober.Baseline.Add(id, time.Duration(l)*time.Millisecond)
+	// (as live: answers past slow_after are not learned, slow-judged ones only move the median)
+	if lat, err := st.LatencySamples(ctx, time.Now().Add(-24*time.Hour), location); err == nil {
+		for _, t := range cfg.Targets {
+			for _, l := range lat[t.ID] {
+				if d := time.Duration(l.Ms) * time.Millisecond; d <= t.SlowAfter.Duration {
+					prober.Baseline.Observe(t.ID, d, l.Slow)
+				}
 			}
 		}
 	}

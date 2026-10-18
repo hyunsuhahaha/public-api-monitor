@@ -408,6 +408,34 @@ func (s *Store) Latencies(ctx context.Context, since time.Time, location ...stri
 	return out, rows.Err()
 }
 
+// LatencySample is one answered check's response time and whether it was judged slow.
+type LatencySample struct {
+	Ms   int64
+	Slow bool
+}
+
+// LatencySamples of one location's answered checks per target since a time, oldest
+// first: what the adaptive slow limit learned before a restart.
+func (s *Store) LatencySamples(ctx context.Context, since time.Time, location string) (map[string][]LatencySample, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT target, latency_ms, status FROM checks WHERE at>=? AND status IN ('ok','slow','stale') AND location=? ORDER BY target, at`,
+		ms(since), location)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]LatencySample{}
+	for rows.Next() {
+		var t, st string
+		var l int64
+		if err := rows.Scan(&t, &l, &st); err != nil {
+			return nil, err
+		}
+		out[t] = append(out[t], LatencySample{l, st == "slow"})
+	}
+	return out, rows.Err()
+}
+
 // Counts are a target's verdicts in a period.
 type Counts struct {
 	Counted  int
