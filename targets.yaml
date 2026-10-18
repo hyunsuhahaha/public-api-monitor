@@ -113,7 +113,7 @@ targets:
     name: 에어코리아 미세먼지 경보 발령 현황
     provider: 한국환경공단
     category: 환경
-    docs: https://www.data.go.kr/data/15073855/openapi.do
+    docs: https://www.data.go.kr/data/15073885/openapi.do
     url: https://apis.data.go.kr/B552584/UlfptcaAlarmInqireSvc/getUlfptcaAlarmInfo?serviceKey={{.Key}}&returnType=json&numOfRows=3&pageNo=1&year={{date .Now "2006"}}
 
   - id: ev-charger
@@ -355,7 +355,7 @@ targets:
     name: 한국천문연구원 월령 정보
     provider: 한국천문연구원
     category: 생활
-    docs: https://www.data.go.kr/data/15012699/openapi.do
+    docs: https://www.data.go.kr/data/15012689/openapi.do
     url: https://apis.data.go.kr/B090041/openapi/service/LunPhInfoService/getLunPhInfo?serviceKey={{.Key}}&solYear={{date .Now "2006"}}&solMonth={{date .Now "01"}}&solDay={{date .Now "02"}}
 
   - id: tour-area-code
