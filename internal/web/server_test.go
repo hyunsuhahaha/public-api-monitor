@@ -61,6 +61,9 @@ targets:
 	}
 	s := &Server{Cfg: cfg, Store: st, LastCheck: func() time.Time { return now },
 		IngestToken: "tok",
+		SlowLimit: func(id string, ceil time.Duration) (time.Duration, time.Duration, bool) {
+			return min(450*time.Millisecond, ceil), 50 * time.Millisecond, id == "a"
+		},
 		Ingest: func(ctx context.Context, rs []probe.Result) error {
 			for _, r := range rs {
 				if r.TargetID != "a" && r.TargetID != "b" {
@@ -209,5 +212,25 @@ func TestReportAndFeed(t *testing.T) {
 	}
 	if err := xml.Unmarshal(w.Body.Bytes(), &feed); err != nil || len(feed.Entries) != 1 || !strings.Contains(feed.Entries[0].Title, "[장애] API A (복구") {
 		t.Fatalf("feed: %v %s", err, w.Body.String())
+	}
+}
+
+func TestSeriesSlowLines(t *testing.T) {
+	_, h := setup(t)
+	var v struct{ SlowAfterMs, SlowLimitMs, UsualMs int64 }
+	for _, rg := range []string{"1h", "24h", "30d"} { // raw and rollup paths
+		v.SlowLimitMs = 0
+		if err := json.Unmarshal(get(t, h, "/api/v1/series?target=a&range="+rg).Body.Bytes(), &v); err != nil {
+			t.Fatal(err)
+		}
+		if v.SlowAfterMs != 3000 || v.SlowLimitMs != 450 || v.UsualMs != 50 {
+			t.Fatalf("a %s: %+v", rg, v)
+		}
+	}
+	if err := json.Unmarshal(get(t, h, "/api/v1/series?target=b&range=1h").Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.SlowLimitMs != 0 {
+		t.Fatalf("b has not learned a limit yet: %+v", v)
 	}
 }

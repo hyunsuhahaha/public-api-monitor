@@ -36,6 +36,8 @@ type Server struct {
 	Ingest      func(ctx context.Context, results []probe.Result) error
 	IngestToken string
 	PublicURL   string // for absolute links in the feed (else taken from the request)
+	// SlowLimit, if set, reports the learned slow limit of a target (probe.Baseline.Limit).
+	SlowLimit func(id string, ceil time.Duration) (limit, usual time.Duration, ok bool)
 
 	cache    respCache
 	mu       sync.Mutex

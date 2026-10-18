@@ -4,7 +4,18 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 )
+
+func (s *Server) target(id string) *config.Target {
+	for i := range s.Cfg.Targets {
+		if s.Cfg.Targets[i].ID == id {
+			return &s.Cfg.Targets[i]
+		}
+	}
+	return nil
+}
 
 func (s *Server) slo(id string) float64 {
 	for _, t := range s.Cfg.Targets {

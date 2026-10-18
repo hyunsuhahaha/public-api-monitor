@@ -316,8 +316,10 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 			counted[i], bad[i] = b.Counted, b.Counted-b.Healthy
 		}
 	}
+	slowAfter, limit, usual := s.slowLines(id)
 	writeJSON(w, map[string]any{
 		"target": id, "range": name, "stepSec": int64(step.Seconds()), "slo": s.slo(id),
+		"slowAfterMs": slowAfter, "slowLimitMs": limit, "usualMs": usual,
 		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states, "counted": counted, "bad": bad,
 		"byLocation": byLoc, "locationStates": fails, "recent": recentChecks(recent),
 	})
@@ -331,4 +333,19 @@ func (s *Server) schemaEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, list)
+}
+
+// slowLines: the latencies (ms) "slow" is judged against for a target: the fixed
+// slow_after and the limit learned from its own recent answers (0 until learned).
+func (s *Server) slowLines(id string) (slowAfter, limit, usual int64) {
+	t := s.target(id)
+	if t == nil {
+		return 0, 0, 0
+	}
+	if s.SlowLimit != nil {
+		if l, u, ok := s.SlowLimit(id, t.SlowAfter.Duration); ok {
+			limit, usual = l.Milliseconds(), u.Milliseconds()
+		}
+	}
+	return t.SlowAfter.Milliseconds(), limit, usual
 }

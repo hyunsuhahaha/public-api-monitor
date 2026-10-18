@@ -189,8 +189,10 @@ func (s *Server) seriesRollup(ctx context.Context, w http.ResponseWriter, id, na
 		states[i] = state(b)
 		counted[i], bad[i] = b.Counted, b.Counted-b.Healthy
 	}
+	slowAfter, limit, usual := s.slowLines(id)
 	writeJSON(w, map[string]any{
 		"target": id, "range": name, "stepSec": int64(step.Seconds()), "estimated": true, "slo": s.slo(id),
+		"slowAfterMs": slowAfter, "slowLimitMs": limit, "usualMs": usual,
 		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states, "counted": counted, "bad": bad,
 		"byLocation": byLoc, "locationStates": locStates, "recent": recentChecks(recent),
 	})

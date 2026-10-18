@@ -307,6 +307,24 @@ function statesPlugin(states, stepSec) {
 }
 
 // vertical dashed lines at the given unix times (schema changes)
+// horizontal lines at the latencies "slow" is judged against, labelled at the right
+function thresholdsPlugin(lines) {
+  return { hooks: { draw: [(u) => {
+    const g = u.ctx; g.save(); g.lineWidth = dpr(); g.font = `${10 * dpr()}px ui-monospace, monospace`; g.textBaseline = "bottom"; g.textAlign = "left";
+    for (const l of lines) {
+      const y = u.valToPos(l.v, "y", true);
+      if (y < u.bbox.top || y > u.bbox.top + u.bbox.height) continue;
+      g.strokeStyle = l.color; g.fillStyle = l.color; g.setLineDash([6 * dpr(), 4 * dpr()]);
+      g.beginPath(); g.moveTo(u.bbox.left, y); g.lineTo(u.bbox.left + u.bbox.width, y); g.stroke();
+      // label at the left (the newest data, at the right, stays clear) on a dark chip
+      const x = u.bbox.left + 6 * dpr(), w = g.measureText(l.label).width, p = 3 * dpr();
+      g.fillStyle = "rgba(22,23,28,.85)"; g.fillRect(x - p, y - 14 * dpr(), w + 2 * p, 13 * dpr());
+      g.fillStyle = l.color; g.fillText(l.label, x, y - 2 * dpr());
+    }
+    g.restore();
+  }] } };
+}
+
 function markersPlugin(times) {
   return { hooks: { draw: [(u) => {
     const g = u.ctx; g.save(); g.strokeStyle = C.blue; g.setLineDash([4 * dpr(), 3 * dpr()]); g.lineWidth = dpr();
@@ -336,11 +354,16 @@ async function openDrawer(id) {
   $("d-lat").replaceChildren(); $("d-loc").replaceChildren();
   const W = Math.min(880, $("drawer").clientWidth - 54);
   const tz = (ts) => uPlot.tzDate(new Date(ts * 1000), "Asia/Seoul");
+  const lines = [];
+  if (s.slowLimitMs && s.slowLimitMs < s.slowAfterMs) lines.push({ v: s.slowLimitMs, color: C.deg, label: `느림 기준 ${ms(s.slowLimitMs)} (평소 ${ms(s.usualMs)}에서 학습)` });
+  if (s.slowAfterMs) lines.push({ v: s.slowAfterMs, color: "rgba(242,73,92,.8)", label: `slow_after ${ms(s.slowAfterMs)}` });
+  // keep the learned limit in view even when every answer is far below it
+  const yTop = Math.max(...s.max.filter((x) => x != null), lines.length ? lines[0].v * 1.15 : 0, 1);
   plots.push(new uPlot({
-    width: W, height: 220, axes: axes(), scales: { x: { time: true } }, tzDate: tz, padding: [8, 8, 10, 0],
+    width: W, height: 220, axes: axes(), scales: { x: { time: true }, y: { range: (u, lo, hi) => [0, Math.max(hi, yTop)] } }, tzDate: tz, padding: [8, 8, 10, 0],
     series: [{}, { label: "p50", stroke: C.ok, width: 1.5 }, { label: "p95", stroke: C.blue, width: 1.5, fill: "rgba(87,148,242,.08)" },
       { label: "max", stroke: "rgba(255,152,48,.7)", width: 1, dash: [4, 3] }],
-    plugins: [statesPlugin(s.states, s.stepSec), markersPlugin(state.schema.filter((e) => e.target === id).map((e) => Date.parse(e.at) / 1000))],
+    plugins: [statesPlugin(s.states, s.stepSec), markersPlugin(state.schema.filter((e) => e.target === id).map((e) => Date.parse(e.at) / 1000)), thresholdsPlugin(lines)],
   }, [s.t, s.p50, s.p95, s.max], $("d-lat")));
   // error budget burn-down: what is left of the range's allowance (1 - SLO) x checks,
   // bucket by bucket; below zero the API is over its budget for this range
