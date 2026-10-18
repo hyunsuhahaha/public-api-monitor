@@ -215,7 +215,9 @@ func (s *Store) backfillRollups(ctx context.Context) error {
 	for k, h := range all {
 		hists[k] = h
 	}
-	if _, err := s.db.ExecContext(ctx, `
+	// (on tx: the store has one connection, and the transaction holds it. This ran on s.db
+	// and waited for itself forever on the first start of an existing database.)
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO hourly(target, location, hour, counted, healthy, degraded, outage)
 		SELECT target, 'ALL', (at/3600000)*3600000, SUM(status!='client'), SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))

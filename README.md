@@ -21,7 +21,7 @@
 ## SRE로서 한 일
 
 - **[게임데이 결과](docs/gameday/RESULTS.md):** 가짜 공공 API와 중앙·원격 감시기를 Docker로 띄운 뒤 장애 7종을 일부러 일으켜, 감지 시간과 유실 여부를 측정한다(`python deploy/gameday/gameday.py`).
-- **[포스트모템: 진행 중 장애가 사라진 버그](docs/postmortems/2026-10-19-open-incidents-invisible.md):** 게임데이 첫 실행이 잡았다. 단위 테스트가 못 본 통합 경로였다.
+- **포스트모템 2건:** [진행 중 장애가 사라진 버그](docs/postmortems/2026-10-19-open-incidents-invisible.md)(게임데이가 잡음), [배포 직후 시작 단계 교착으로 감시 10분 중단](docs/postmortems/2026-10-19-startup-deadlock.md)(내 배포가 낸 장애).
 - **[런북](docs/runbooks/README.md):** 알림마다 확인·조치·종료 조건을 정리했다.
 - **모니터 자체의 SLO:** "예정된 확인의 99.9%가 한 주기 안에 실행"을 기준으로 multi-window burn-rate 알림을 건다(`deploy/alerts.yml`).
 - **API 폐기 감지:** 매주 CI가 가짜 키로 모든 주소를 두드려 폐기된 API를 찾는다(코드 12).
