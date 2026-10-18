@@ -1,0 +1,25 @@
+name: gameday
+# Breaks a fake public API (and the monitor itself) on purpose and measures detection,
+# false alarms and data loss: deploy/gameday/gameday.py. Weekly and on demand.
+on:
+  schedule:
+    - cron: "0 1 * * 1" # Monday 10:00 KST
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gameday:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python deploy/gameday/gameday.py
+      - if: always()
+        run: cat docs/gameday/RESULTS.md >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameday-results
+          path: docs/gameday/

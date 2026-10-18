@@ -1,6 +1,49 @@
-# 공공 API 상태판 (public-api-monitor)
+# pamon: 공공 API 상태판
 
-공공데이터포털(data.go.kr)과 서울 열린데이터광장 같은 한국 공공 API가 **지금 살아 있는지, 느린지, 엉뚱한 값을 주는지**를 5분마다 확인하고 공개 상태 페이지로 보여줍니다.
+[![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml)
+
+공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **실제 공공 API 45개**가 지금 살아 있는지, 느린지, 엉뚱한 값을 주는지를 5분마다 확인합니다(여러 지역 판정 지원, 현재 운영은 집 PC 1곳). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
+
+![dashboard](docs/img/dashboard.png)
+
+## 한눈에
+
+| | |
+|---|---|
+| **감시 대상** | 실제 공공 API 45개 (기상청, 에어코리아, 국토부 실거래가, 응급실 실시간 병상, 서울 지하철·버스, 나라장터 등) |
+| **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
+| **판정** | 6단계(정상·느림·갱신 멈춤·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
+| **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
+| **인프라** | Go 단일 바이너리, SQLite, Prometheus·Grafana, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions |
+| **운영 중 잡은 것** | 에어코리아 시도별 대기오염 API의 자정 무렵 10초 타임아웃 연속 2회 (2026-10-19 00:04) |
+
+## SRE로서 한 일
+
+- **[게임데이 결과](docs/gameday/RESULTS.md):** 가짜 공공 API와 중앙·원격 감시기를 Docker로 띄운 뒤 장애 7종을 일부러 일으켜, 감지 시간과 유실 여부를 측정한다(`python deploy/gameday/gameday.py`).
+- **[포스트모템: 진행 중 장애가 사라진 버그](docs/postmortems/2026-10-19-open-incidents-invisible.md):** 게임데이 첫 실행이 잡았다. 단위 테스트가 못 본 통합 경로였다.
+- **[런북](docs/runbooks/README.md):** 알림마다 확인·조치·종료 조건을 정리했다.
+- **모니터 자체의 SLO:** "예정된 확인의 99.9%가 한 주기 안에 실행"을 기준으로 multi-window burn-rate 알림을 건다(`deploy/alerts.yml`).
+- **API 폐기 감지:** 매주 CI가 가짜 키로 모든 주소를 두드려 폐기된 API를 찾는다(코드 12).
+
+## 구조
+
+```mermaid
+flowchart LR
+  subgraph probes[원격 감시기]
+    P1[pamon -role probe<br/>home-wsl]
+  end
+  subgraph central[중앙 (OCI 춘천 배포 예정)]
+    C[pamon -role central] --> DB[(SQLite)]
+    C --> W[상태판 · API · 피드 · 리포트]
+    C --> M[/metrics/]
+  end
+  APIs[(공공 API 45개<br/>data.go.kr · 서울시)]
+  P1 -- 5분마다 --> APIs
+  C -- 5분마다 --> APIs
+  P1 -- 결과 push<br/>큐·재시도 --> C
+  M --> Prom[Prometheus<br/>자체 SLO 알림] --> G[Grafana]
+  C -- 장애 열림·복구 --> Hook[디스코드·슬랙]
+```
 
 ## 왜 HTTP 체크로는 안 되나
 
@@ -51,6 +94,10 @@ internal/push        원격 감시기 → 중앙 전송 (큐, 재시도)
 internal/store       SQLite (cgo 없는 순수 Go 드라이버)
 internal/web         상태 페이지, JSON API, 배지, /healthz /readyz /metrics
 internal/notify      디스코드·슬랙 웹훅 알림
+internal/report      월간 가용성 리포트 (웹·마크다운)
+cmd/fakeapi          게임데이용 가짜 공공 API (장애 모드 전환)
+deploy/gameday       게임데이: 중앙 + 원격 감시기 + 가짜 API, 시나리오 실행기
+docs/                게임데이 결과, 포스트모템, 런북
 deploy/              Prometheus 설정, 자체 SLO 알림 규칙, Grafana 대시보드, Terraform(OCI), Ansible
 targets.yaml         감시 대상 API 목록
 ```
@@ -100,7 +147,9 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 
 | 경로 | 내용 |
 |---|---|
-| `GET /api/v1/status` | 대상별 현재 상태, 30·90일 가용률, p50/p95 응답 시간, 일별 기록, 진행 중 장애 |
+| `GET /api/v1/overview?range=1h…30d` | 전체 가용률·에러 버짓·p50/p95/p99, API별 가용률·버짓·스파크라인·구간별 상태 |
+| `GET /api/v1/series?target=id&range=…` | API 하나의 p50/p95/max, 지역별 p95와 상태, 최근 확인 기록 |
+| `GET /api/v1/status` | 대상별 현재 상태, 30·90일 가용률, 일별 기록 (30초 캐시) |
 | `GET /api/v1/incidents?target=id` | 최근 90일 장애 |
 | `GET /report/YYYY-MM` · `/api/v1/report/YYYY-MM` | 월간 가용성 리포트 (가용률 낮은 API, 최장 장애, 기관별) |
 | `GET /feed.xml` | 장애 Atom 피드 (RSS 리더, 슬랙 RSS 앱으로 구독) |
