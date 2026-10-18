@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -88,6 +89,39 @@ type overviewTarget struct {
 	States       []int      `json:"states"` // per bucket
 	Checks       int        `json:"checks"`
 	Locations    []locState `json:"locations"`
+	// error-budget burn rate over the last hour and six hours (bad share / (1 - SLO)):
+	// the same windows as the Prometheus page (14.4x) and ticket (6x) rules; -1 without data
+	Burn1h float64 `json:"burn1h"`
+	Burn6h float64 `json:"burn6h"`
+	// the rules' short windows (5 m with 1 h, 30 m with 6 h): an alert fires only while
+	// both are over, so it stops as soon as the API recovers
+	Burn5m  float64 `json:"burn5m"`
+	Burn30m float64 `json:"burn30m"`
+}
+
+// burnRates: per target, the 1 h, 6 h, 5 m and 30 m burn rates up to now.
+func (s *Server) burnRates(ctx context.Context, now time.Time) map[string][4]float64 {
+	out := map[string][4]float64{}
+	var ws [4]map[string]store.Counts
+	for i, span := range []time.Duration{time.Hour, 6 * time.Hour, 5 * time.Minute, 30 * time.Minute} {
+		c, err := s.Store.VerdictCounts(ctx, now.Add(-span), now.Add(time.Second))
+		if err != nil {
+			return out
+		}
+		ws[i] = c
+	}
+	for _, t := range s.Cfg.Targets {
+		var r [4]float64
+		for i := range ws {
+			c := ws[i][t.ID]
+			r[i] = -1
+			if c.Counted > 0 {
+				r[i] = float64(c.Outage) / float64(c.Counted) / (1 - t.SLO)
+			}
+		}
+		out[t.ID] = r
+	}
+	return out
 }
 
 type overviewResponse struct {
@@ -181,6 +215,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	verdicts, _ := s.Store.LatestVerdicts(ctx)
 	byLoc, _ := s.Store.LatestByLocation(ctx, to.Add(-time.Hour))
+	burns := s.burnRates(ctx, time.Now())
 	open, _ := s.Store.OpenIncidents(ctx)
 	n := int(to.Sub(from)/step) + 1
 	idx := func(at int64) int { return int((at - from.UnixMilli()) / step.Milliseconds()) }
@@ -245,6 +280,8 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			row.Locations = append(row.Locations, locState{x.Location, string(x.Status), x.LatencyMS})
 		}
 		countStatus(out.Counts, row.Status)
+		b := burns[t.ID]
+		row.Burn1h, row.Burn6h, row.Burn5m, row.Burn30m = b[0], b[1], b[2], b[3]
 		out.Rows = append(out.Rows, row)
 	}
 	out.Fleet = fleetSummary(sumAvail, sloSum, withData, pctl(fleetLat, 0.5), pctl(fleetLat, 0.95), pctl(fleetLat, 0.99),

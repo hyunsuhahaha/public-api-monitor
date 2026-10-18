@@ -146,6 +146,23 @@ function renderCorrel() {
   }
 }
 
+// burn rate: how many times faster than the SLO allows the error budget is going.
+// Thresholds are the alert rules': 14.4x over 1 h pages, 6x over 6 h opens a ticket.
+const burnText = (x) => (x < 0 ? "–" : x === 0 ? "0" : x < 10 ? x.toFixed(1) + "×" : Math.round(x) + "×");
+function burnCell(t) {
+  const w = el("span", "burn");
+  const one = el("b", "", burnText(t.burn1h)), six = el("span", "", burnText(t.burn6h));
+  // as the alert rules: long and short window both over (the short one ends it on recovery)
+  const page = t.burn1h >= 14.4 && t.burn5m >= 14.4, ticket = !page && t.burn6h >= 6 && t.burn30m >= 6;
+  one.style.color = page ? C.out : t.burn1h > 1 ? C.deg : t.burn1h < 0 ? C.axis : C.ok;
+  six.style.color = ticket ? C.warn : t.burn6h > 1 ? C.deg : C.axis;
+  w.append(one, el("span", "sep", " · "), six);
+  if (page || ticket) w.append(el("span", "burn-tag " + (page ? "page" : "ticket"), page ? "호출" : "티켓"));
+  w.title = `최근 1시간 ${burnText(t.burn1h)}, 6시간 ${burnText(t.burn6h)} — 1×는 SLO ${pct(t.slo, 1)}를 딱 지키는 속도` +
+    (page ? "\n1시간 14.4× 이상: 이 속도면 30일 버짓이 약 2일 만에 바닥 (호출 기준)" : ticket ? "\n6시간 6× 이상: 이 속도면 30일 버짓이 5일 만에 바닥 (티켓 기준)" : "");
+  return w;
+}
+
 function visibleRows() {
   const rows = state.data.targets.filter((t) =>
     (state.cat === "전체" || t.category === state.cat) &&
@@ -153,7 +170,7 @@ function visibleRows() {
   const key = state.sort;
   const av = (x) => (x < 0 ? 9 : x);
   return rows.slice().sort((a, b) => {
-    if (key === "p50" || key === "p95") return (b[key] || 0) - (a[key] || 0);
+    if (key === "p50" || key === "p95" || key === "burn1h") return (b[key] || 0) - (a[key] || 0);
     if (key === "availability" || key === "budgetLeft") return av(a[key]) - av(b[key]);
     // default: worst first, then lowest availability
     return sev(b.status) - sev(a.status) || av(a.availability) - av(b.availability) || a.name.localeCompare(b.name);
@@ -173,6 +190,7 @@ function renderTable() {
     const av = td(pct(t.availability), "num");
     av.style.color = t.availability < 0 ? C.axis : t.availability >= t.slo ? C.ok : t.availability >= t.slo - 0.01 ? C.deg : C.out;
     td(budgetCell(t));
+    td(burnCell(t), "num");
     td(ms(t.p50), "num"); td(ms(t.p95), "num");
     td(spark(t.spark, t.status === "ok" ? C.blue : stateColor(sev(t.status))));
     td(strip(t.states));
@@ -181,7 +199,7 @@ function renderTable() {
     td(lc);
     body.append(tr);
   }
-  if (!body.children.length) { const tr = el("tr"); const c = el("td", "empty", "조건에 맞는 API가 없습니다"); c.colSpan = 9; tr.append(c); body.append(tr); }
+  if (!body.children.length) { const tr = el("tr"); const c = el("td", "empty", "조건에 맞는 API가 없습니다"); c.colSpan = 10; tr.append(c); body.append(tr); }
   document.querySelectorAll(".svc th[data-sort]").forEach((th) => th.classList.toggle("sorted", th.dataset.sort === state.sort));
 }
 

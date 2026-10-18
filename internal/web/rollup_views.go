@@ -94,6 +94,7 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 	}
 	verdicts, _ := s.Store.LatestVerdicts(ctx)
 	byLoc, _ := s.Store.LatestByLocation(ctx, to.Add(-time.Hour))
+	burns := s.burnRates(ctx, time.Now())
 	open, _ := s.Store.OpenIncidents(ctx)
 	n := int(to.Sub(from)/step) + 1
 	vb, hists, _, _, totals, allCounts := bucketsFromHours(rows, from, step, n)
@@ -142,6 +143,8 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 			row.Locations = append(row.Locations, locState{x.Location, string(x.Status), x.LatencyMS})
 		}
 		countStatus(out.Counts, row.Status)
+		b := burns[t.ID]
+		row.Burn1h, row.Burn6h, row.Burn5m, row.Burn30m = b[0], b[1], b[2], b[3]
 		out.Rows = append(out.Rows, row)
 	}
 	out.Fleet = fleetSummary(sumAvail, sloSum, withData, fleet.Quantile(0.5), fleet.Quantile(0.95), fleet.Quantile(0.99),

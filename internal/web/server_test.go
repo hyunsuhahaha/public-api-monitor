@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -232,5 +233,27 @@ func TestSeriesSlowLines(t *testing.T) {
 	}
 	if v.SlowLimitMs != 0 {
 		t.Fatalf("b has not learned a limit yet: %+v", v)
+	}
+}
+
+// a: 1 outage in 4 counted verdicts within the hour, SLO 99%: 25% bad / 1% allowed = 25x
+func TestOverviewBurnRates(t *testing.T) {
+	_, h := setup(t)
+	var v struct {
+		Targets []struct {
+			ID             string
+			Burn1h, Burn6h float64
+		}
+	}
+	for _, rg := range []string{"1h", "24h"} { // raw and rollup paths
+		if err := json.Unmarshal(get(t, h, "/api/v1/overview?range="+rg).Body.Bytes(), &v); err != nil {
+			t.Fatal(err)
+		}
+		for _, x := range v.Targets {
+			want := map[string]float64{"a": 25, "b": -1}[x.ID]
+			if math.Abs(x.Burn1h-want) > 1e-9 || math.Abs(x.Burn6h-want) > 1e-9 {
+				t.Fatalf("%s %s: burn %v/%v, want %v", rg, x.ID, x.Burn1h, x.Burn6h, want)
+			}
+		}
 	}
 }

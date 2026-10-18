@@ -169,3 +169,8 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .chip:hover { background: rgba(255,255,255,.05); }
 .dot.maint { background: var(--purple); box-shadow: 0 0 6px rgba(184,119,217,.5); }
 .cg.maint { border-color: rgba(184,119,217,.4); border-left-color: var(--purple); }
+.burn { white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; }
+.burn .sep { color: var(--dim); }
+.burn-tag { margin-left: 6px; font-family: inherit; font-size: 10px; padding: 1px 5px; border-radius: 3px; }
+.burn-tag.page { color: var(--out); border: 1px solid rgba(242,73,92,.5); background: rgba(242,73,92,.1); }
+.burn-tag.ticket { color: var(--warn); border: 1px solid rgba(255,152,48,.45); }
