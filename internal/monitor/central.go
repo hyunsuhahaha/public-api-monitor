@@ -9,12 +9,15 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/quorum"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/telemetry"
 )
 
 var (
@@ -95,7 +98,9 @@ func (c *Central) Start(ctx context.Context) error {
 // Record handles one of the central's own checks.
 func (c *Central) Record(ctx context.Context, t *config.Target, r probe.Result) {
 	c.save(ctx, r)
-	c.decide(ctx, t, r.At)
+	dctx, span := telemetry.Tracer().Start(ctx, "decide "+t.ID)
+	c.decide(dctx, t, r.At)
+	span.End()
 	if r.Shape != nil {
 		c.learnShape(ctx, t, r)
 	}
@@ -166,6 +171,8 @@ var ErrUnknownTarget = errors.New("unknown target")
 // Ingest takes results from a remote probe. They count in the next verdict of their
 // target (taken when the central's own check of it finishes).
 func (c *Central) Ingest(ctx context.Context, results []probe.Result) error {
+	ctx, span := telemetry.Tracer().Start(ctx, "ingest", trace.WithAttributes(attribute.Int("pamon.results", len(results))))
+	defer span.End()
 	now := time.Now()
 	for _, r := range results {
 		if c.targets[r.TargetID] == nil {
@@ -187,6 +194,8 @@ func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
 	// a location counts if it checked within 2.5 intervals (one missed slot is fine)
 	fresh := c.Board.Fresh(t.ID, at, t.Interval.Duration*5/2)
 	v := quorum.Decide(t.ID, at, fresh)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("pamon.verdict", string(v.Status)),
+		attribute.Int("pamon.voters", v.Voters), attribute.Int("pamon.bad", v.Bad), attribute.String("pamon.reason", v.Reason))
 	if err := c.Store.SaveVerdict(ctx, store.Verdict{TargetID: t.ID, At: v.At, Status: v.Status, Reason: v.Reason, Voters: v.Voters}); err != nil {
 		mStoreErrors.Inc()
 		c.Log.Error("save verdict", "err", err)
@@ -207,6 +216,8 @@ func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
 	if ev == incident.None {
 		return
 	}
+	trace.SpanFromContext(ctx).AddEvent("incident", trace.WithAttributes(
+		attribute.Int("pamon.event", int(ev)), attribute.String("pamon.reason", in.Reason)))
 	if err := c.Store.SaveIncident(ctx, in); err != nil {
 		mStoreErrors.Inc()
 		c.Log.Error("save incident", "err", err)

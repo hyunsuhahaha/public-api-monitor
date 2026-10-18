@@ -12,9 +12,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/telemetry"
 )
 
 var (
@@ -131,23 +135,37 @@ func (m *Monitor) loop(ctx context.Context, t *config.Target) {
 }
 
 func (m *Monitor) checkOnce(ctx context.Context, t *config.Target, slot time.Time, every time.Duration) {
+	// one trace per check: queue wait, the HTTP call (probe), and the central's decision
+	ctx, span := telemetry.Tracer().Start(ctx, "check "+t.ID, trace.WithAttributes(
+		attribute.String("pamon.target", t.ID), attribute.String("pamon.location", m.Prober.Location)))
+	defer span.End()
 	select {
 	case m.sem <- struct{}{}:
 	case <-ctx.Done():
 		return
 	}
+	span.AddEvent("slot acquired")
 	r := m.Prober.Check(ctx, t)
 	<-m.sem
 	if ctx.Err() != nil {
 		return
 	}
 	mScheduled.Inc()
-	if time.Since(slot) > every {
+	late := time.Since(slot) > every
+	if late {
 		mLate.Inc()
+	}
+	span.SetAttributes(attribute.String("pamon.status", string(r.Status)), attribute.Int64("pamon.latency_ms", r.LatencyMS),
+		attribute.String("pamon.code", r.Code), attribute.Bool("pamon.late", late))
+	if r.Status.Severity() == 2 {
+		span.SetStatus(codes.Error, r.Reason)
 	}
 	m.lastCheck.Store(time.Now().Unix())
 	observe(r)
 	log := m.Log.With("target", t.ID, "status", r.Status, "latency_ms", r.LatencyMS)
+	if sc := span.SpanContext(); sc.IsValid() {
+		log = log.With("trace_id", sc.TraceID().String()) // logs join to traces
+	}
 	if r.Status != probe.StatusOK {
 		log = log.With("code", r.Code, "reason", r.Reason)
 	}

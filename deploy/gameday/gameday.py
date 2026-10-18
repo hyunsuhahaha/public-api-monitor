@@ -201,12 +201,20 @@ def s6_stale():
            f"감지 {t}초", reason)
 
 
+def ok_checks():
+    """Healthy checks of the fake API by the central since its last (re)start."""
+    for line in get(CENTRAL + "/metrics").splitlines():
+        if line.startswith('pamon_checks_total{location="central",status="ok",target="fake"}'):
+            return float(line.rsplit(" ", 1)[1])
+    return 0.0
+
+
 def s7_adaptive_slow(started):
     settle()
-    # the central's baseline needs 24 healthy answers (4 minutes at 10 s)
-    warm = 24 * INTERVAL + 20 - (time.time() - started)
-    if warm > 0:
-        time.sleep(warm)
+    # The central's baseline needs 24 healthy answers. Earlier scenarios restart it and
+    # fill its history with failures, so wait for 24 healthy checks since its last start
+    # (its own counter) rather than for a fixed time.
+    wait(lambda: ok_checks() >= 24, 24 * INTERVAL * 2, poll=5)
     usual = target()["p50"]
     mode("slow", 600)
     t = wait(lambda: target()["status"] == "slow", 60)

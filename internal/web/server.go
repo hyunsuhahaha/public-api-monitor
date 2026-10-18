@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
@@ -95,7 +97,8 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, b.Result())
 	}
-	if err := s.Ingest(r.Context(), results); err != nil {
+	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	if err := s.Ingest(ctx, results); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

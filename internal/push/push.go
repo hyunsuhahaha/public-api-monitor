@@ -19,6 +19,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
@@ -129,7 +131,10 @@ func (p *Pusher) Flush(ctx context.Context) error {
 		if n == 0 {
 			return nil
 		}
-		if err := p.send(ctx, batch); err != nil {
+		sctx, span := otel.Tracer("github.com/hyunsuhahaha/public-api-monitor").Start(ctx, "push")
+		err := p.send(sctx, batch)
+		span.End()
+		if err != nil {
 			return err
 		}
 		p.mu.Lock()
@@ -151,6 +156,7 @@ func (p *Pusher) send(ctx context.Context, batch []Wire) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.Token)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header)) // the central's ingest span joins this trace
 	resp, err := p.Client.Do(req)
 	if err != nil {
 		return err

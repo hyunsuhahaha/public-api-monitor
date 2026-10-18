@@ -1,11 +1,18 @@
-# Local stack: the monitor, Prometheus (with the self-SLO alert rules) and Grafana with
-# the pamon dashboard provisioned. http://localhost:8080 page, :9090 Prometheus, :3000 Grafana.
+# Local stack: the monitor, Prometheus (with the self-SLO alert rules), Grafana with the
+# pamon dashboard provisioned, and Jaeger for traces. http://localhost:8080 page,
+# :9090 Prometheus, :3000 Grafana, :16686 Jaeger.
 services:
   pamon:
     build: .
     env_file: .env
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318 # traces of every check
     ports: ["8080:8080"]
     volumes: ["pamon-data:/data"]
+    restart: unless-stopped
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports: ["16686:16686"] # UI; OTLP/HTTP on 4318 inside the network
     restart: unless-stopped
   prometheus:
     image: prom/prometheus:v3.5.0

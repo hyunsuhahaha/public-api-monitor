@@ -8,7 +8,12 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/telemetry"
 )
 
 // MaxBody: enough to find the header and a timestamp; the rest is not read.
@@ -83,13 +88,25 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	req.Header.Set("User-Agent", "public-api-monitor/0.1 (+https://github.com/hyunsuhahaha/public-api-monitor)")
 	req.Header.Set("Accept", "application/json, application/xml;q=0.9, */*;q=0.5")
 
+	// The HTTP span is made by hand, not by otelhttp: that records the full URL, and the
+	// query string carries the service key. Host and path only, and the path redacted too:
+	// Seoul's open API puts the key in the path (/{key}/json/...).
+	path := t.Redact(req.URL.Path)
+	_, span := telemetry.Tracer().Start(ctx, "GET "+req.URL.Host+path, trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("http.request.method", "GET"), attribute.String("server.address", req.URL.Hostname()),
+			attribute.String("url.path", path)))
 	var o Observation
 	resp, err := p.Client.Do(req)
 	if err == nil {
 		o.HTTPStatus = resp.StatusCode
 		o.Body, err = io.ReadAll(io.LimitReader(resp.Body, MaxBody))
 		resp.Body.Close()
+		span.SetAttributes(attribute.Int("http.response.status_code", o.HTTPStatus), attribute.Int("http.response.body.size", len(o.Body)))
 	}
+	if err != nil {
+		span.SetStatus(codes.Error, t.Redact(err.Error()))
+	}
+	span.End()
 	o.Latency = p.Now().Sub(start)
 	if err != nil {
 		o.Err = errors.New(t.Redact(err.Error()))

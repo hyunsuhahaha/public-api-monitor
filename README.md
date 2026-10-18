@@ -14,7 +14,8 @@
 | **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
 | **판정** | 6단계(정상·느림·갱신 멈춤·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
-| **인프라** | Go 단일 바이너리, SQLite, Prometheus·Grafana, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions |
+| **관측성** | Prometheus 지표, OpenTelemetry 트레이스(확인 1건 = 트레이스 1개: 대기 → HTTP 호출 → 판정, 로그에 trace_id), 구조화 로그 |
+| **인프라** | Go 단일 바이너리, SQLite, Prometheus·Grafana·Jaeger, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions |
 | **운영 중 잡은 것** | 에어코리아 시도별 대기오염 API의 자정 무렵 10초 타임아웃 연속 2회 (2026-10-19 00:04) |
 
 ## SRE로서 한 일
@@ -108,7 +109,7 @@ targets.yaml         감시 대상 API 목록
 cp .env.example .env     # 키 입력
 go run ./cmd/pamon -once # 대상마다 한 번 호출하고 결과 표 출력 (targets.yaml 수정 후 확인용)
 go run ./cmd/pamon       # http://localhost:8080
-docker compose up        # pamon + Prometheus(:9090) + Grafana(:3000, 대시보드 자동 등록)
+docker compose up        # pamon + Prometheus(:9090) + Grafana(:3000, 대시보드 자동 등록) + Jaeger(:16686, 트레이스)
 go run ./cmd/pamon -report 2026-10   # 월간 리포트를 마크다운으로 (블로그·GeekNews 게시용)
 ```
 

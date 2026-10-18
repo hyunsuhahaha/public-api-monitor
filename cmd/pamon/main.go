@@ -28,6 +28,7 @@ import (
 	"github.com/hyunsuhahaha/public-api-monitor/internal/quorum"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/report"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/telemetry"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/web"
 )
 
@@ -68,6 +69,20 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	shutdownTracing, err := telemetry.Setup(ctx, *role, *location)
+	if err != nil {
+		log.Error("tracing", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownTracing(flush)
+	}()
+	if telemetry.Enabled() {
+		log.Info("tracing to OTLP", "endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	}
 
 	switch *role {
 	case "central":
