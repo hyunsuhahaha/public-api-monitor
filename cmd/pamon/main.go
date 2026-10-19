@@ -45,7 +45,7 @@ var startedAt = time.Now()
 
 var mFollowUps = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "pamon_timeout_followups_total",
-	Help: "Timed-out checks re-sent once with a longer wait: late (answered after all) or hung (still nothing).",
+	Help: "Timed-out checks re-sent once with a longer wait: retried (answered at once), late (answered after the timeout) or hung (still nothing).",
 }, []string{"target", "outcome"})
 
 func init() {
@@ -162,8 +162,13 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	}
 	prober.FollowUps = probe.NewFollowUps()
 	prober.FollowUps.Done = func(id string, f probe.FollowUp) {
+		// retried: a fresh request answered at once (that one got stuck); late: it took
+		// longer than the timeout; hung: nothing even within the follow-up's budget
 		outcome := "hung"
-		if f.Answered {
+		switch {
+		case f.Answered && f.AfterMs < f.Timeout/2:
+			outcome = "retried"
+		case f.Answered:
 			outcome = "late"
 		}
 		mFollowUps.WithLabelValues(id, outcome).Inc()

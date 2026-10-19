@@ -452,10 +452,16 @@ async function openDrawer(id) {
   fb.hidden = !fu;
   if (fu) {
     const when = kst(fu.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    fb.className = "fu " + (fu.answered ? "late" : "hung");
-    fb.textContent = fu.answered
-      ? `⏱ ${when} 타임아웃 뒤 다시 기다려 보니 ${ms(fu.afterMs)} 만에 응답 (HTTP ${fu.http}, 기준 ${ms(fu.timeoutMs)}): 서버가 느린 것 — 멈춘 게 아님`
-      : `⛔ ${when} 타임아웃 뒤 ${ms(fu.waitMs)}을 더 기다려도 응답 없음 (${fu.stalled || "응답 없음"}): 서버가 멈춘 것 — 타임아웃을 늘려도 소용없음`;
+    // three answers: a retry came back at once (that one request got stuck: retrying helps),
+    // it came back after a while (the server is slow: a longer timeout would have worked),
+    // or nothing even after a minute (the server is stuck: neither helps)
+    const quick = fu.answered && fu.afterMs < fu.timeoutMs / 2;
+    fb.className = "fu " + (quick ? "stuck" : fu.answered ? "late" : "hung");
+    fb.textContent = quick
+      ? `🔁 ${when} 타임아웃 직후 다시 보낸 요청은 ${ms(fu.afterMs)} 만에 응답 (기준 ${ms(fu.timeoutMs)}): 서버가 느린 게 아니라 일부 요청이 걸리는 것 — 재시도하면 됨`
+      : fu.answered
+        ? `⏱ ${when} 타임아웃 뒤 다시 기다려 보니 ${ms(fu.afterMs)} 만에 응답 (기준 ${ms(fu.timeoutMs)}): 서버가 느린 것 — 타임아웃을 늘리면 받을 수 있음`
+        : `⛔ ${when} 타임아웃 뒤 ${ms(fu.waitMs)}을 더 기다려도 응답 없음 (${fu.stalled || "응답 없음"}): 서버가 멈춘 것 — 타임아웃을 늘려도 소용없음`;
   }
   // today vs the same buckets yesterday: the median of the ratios, where both exist
   const ratios = s.p95.map((v, i) => (v && prevP95[i] ? v / prevP95[i] : null)).filter((x) => x != null).sort((a, b) => a - b);
