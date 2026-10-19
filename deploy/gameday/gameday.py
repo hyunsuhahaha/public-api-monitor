@@ -14,6 +14,7 @@ Scenarios (the fake API is checked every 10 s from two locations, "central" and 
   6 stale data         200 OK but 6 h old data  -> "stale" (degraded)
   7 adaptive slow      600 ms on a ~10 ms API   -> "slow (usually …)" under the 2 s limit
   8 schema change      a new response field     -> recorded as a schema change, still "up"
+  9 paging             outage, ack, recovery    -> one page, the ack announced, the recovery paged
 """
 import argparse
 import json
@@ -240,6 +241,36 @@ def s8_schema_change():
            f"감지 {t}초", f"{e.get('kind')}: {', '.join(e.get('paths', []))}")
 
 
+def hook_messages():
+    return get_json(FAKE + "/hook")["messages"]
+
+
+def s9_paging():
+    settle()
+    # opens and closes are held 30 s per agency before they go out: let the previous
+    # scenario's last message arrive before clearing, or it is mistaken for this one's
+    time.sleep(35)
+    urllib.request.urlopen(urllib.request.Request(FAKE + "/hook", method="DELETE"), timeout=5).read()
+    t0 = time.time()
+    mode("down")
+    t_page = wait(lambda: any(m.startswith("🔴") for m in hook_messages()), 120)
+    inc = open_incident() or {}
+    body = json.dumps({"author": "게임데이", "kind": "ack"}).encode("utf-8")
+    req = urllib.request.Request(f"{CENTRAL}/api/v1/incidents/{inc.get('id')}/notes", data=body, method="POST",
+                                 headers={"Authorization": "Bearer gameday-admin", "Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=5).read()
+    t_ack = wait(lambda: any(m.startswith("👤") for m in hook_messages()), 30)
+    acked = len(hook_messages())
+    mode("ok")
+    t_ok = wait(lambda: any(m.startswith("🟢") for m in hook_messages()[acked:]), 120)
+    msgs = hook_messages()
+    pages = [m for m in msgs if m.startswith("🔴")]
+    ok = t_page is not None and t_ack is not None and t_ok is not None and len(pages) == 1 and t_page <= 3 * INTERVAL + 35
+    record(9, "알림 (장애 → 담당 → 복구)", "장애 알림 1통(그룹 대기 30초 포함 ≤ 65초), 담당 알림, 복구 알림", ok,
+           f"장애 알림 {t_page}초 · 담당 알림 {t_ack}초 · 복구 알림 (복구 후) {t_ok}초",
+           f"받은 알림 {len(msgs)}통: " + " / ".join(m.split(chr(10))[0][:40] for m in msgs))
+
+
 def write_report(started_at, duration):
     os.makedirs(os.path.join(ROOT, "docs", "gameday"), exist_ok=True)
     with open(os.path.join(ROOT, "docs", "gameday", "results.json"), "w", encoding="utf-8") as f:
@@ -276,7 +307,7 @@ def main():
         sys.exit("stack did not become ready")
     started = time.time()
     scenarios = [s1_hard_outage, s2_silent_failure, s3_regional, s4_central_outage, s5_restart_mid_incident, s6_stale,
-                 lambda: s7_adaptive_slow(started), s8_schema_change]
+                 lambda: s7_adaptive_slow(started), s8_schema_change, s9_paging]
     try:
         for i, s in enumerate(scenarios, 1):
             if args.only and i not in args.only:

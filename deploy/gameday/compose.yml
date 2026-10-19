@@ -14,6 +14,8 @@ services:
       PAMON_LOCATION: central
       PAMON_CONFIG: /gameday/targets.yaml
       PAMON_INGEST_TOKEN: gameday
+      PAMON_WEBHOOK_URL: http://fakeapi:9000/hook   # scenario 9 reads what was paged
+      PAMON_ADMIN_TOKEN: gameday-admin
       FAKE_KEY: gameday-key
     volumes: ["./targets.yaml:/gameday/targets.yaml:ro", "central-data:/data"]
     ports: ["28080:8080"]

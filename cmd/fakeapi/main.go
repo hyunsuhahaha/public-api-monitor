@@ -3,6 +3,8 @@
 //
 //	GET  /api?serviceKey=...      {"response":{"header":{"resultCode":"00",...},"body":{...}}}
 //	POST /admin/mode?m=MODE[&ms=N] switch the failure mode (GET shows the current one)
+//	POST /hook                    a stand-in Slack/Discord webhook: keeps the messages
+//	GET  /hook                    the messages received ({"messages": [...]}); DELETE clears
 //
 // Modes: ok, down (HTTP 503), error05 (HTTP 200 with resultCode 05, the failure a plain
 // HTTP check misses), html (HTTP 200 with an error page), slow (adds ms milliseconds),
@@ -88,11 +90,33 @@ func admin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"mode": m, "delayMs": d.Milliseconds()})
 }
 
+var hookMsgs []string
+
+// hook records webhook posts ({"text"} or {"content"}) for the paging scenario.
+func hook(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	defer mu.Unlock()
+	switch r.Method {
+	case http.MethodPost:
+		var p struct{ Text, Content string }
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		hookMsgs = append(hookMsgs, p.Text+p.Content)
+		log.Printf("hook: %s", p.Text+p.Content)
+	case http.MethodDelete:
+		hookMsgs = nil
+	}
+	json.NewEncoder(w).Encode(map[string]any{"messages": append([]string{}, hookMsgs...)})
+}
+
 func main() {
 	addr := flag.String("addr", ":9000", "listen address")
 	flag.Parse()
 	http.HandleFunc("/api", api)
 	http.HandleFunc("/admin/mode", admin)
+	http.HandleFunc("/hook", hook)
 	log.Printf("fakeapi on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }

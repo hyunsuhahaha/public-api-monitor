@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-10-19 06:31",
-  "seconds": 712,
+  "startedAt": "2026-10-19 15:40",
+  "seconds": 818,
   "results": [
     {
       "no": 1,
       "name": "하드 장애 (HTTP 503)",
       "expect": "장애 감지 ≤ 3주기(35초), 복구 시 자동 종료",
       "pass": true,
-      "measured": "감지 28.3초 · 복구 감지 20.2초",
+      "measured": "감지 30.4초 · 복구 감지 19.2초",
       "note": "판정 down"
     },
     {
@@ -15,7 +15,7 @@
       "name": "조용한 장애 (HTTP 200 + resultCode 05)",
       "expect": "일반 HTTP 체크가 '정상'이라 하는 응답을 장애로 감지",
       "pass": true,
-      "measured": "감지 29.3초",
+      "measured": "감지 30.4초",
       "note": "원인: code 05: SERVICETIMEOUT_ERROR (central, probe)"
     },
     {
@@ -23,7 +23,7 @@
       "name": "한 지역만 장애 (probe의 API 경로 차단)",
       "expect": "장애를 열지 않고 '일부 지역에서만 실패'로 기록",
       "pass": true,
-      "measured": "probe 실패 관측 45.5초 · 40초 동안 새 장애 0건",
+      "measured": "probe 실패 관측 30.4초 · 40초 동안 새 장애 0건",
       "note": "판정 ok, 사유 'failing only from probe'"
     },
     {
@@ -31,7 +31,7 @@
       "name": "중앙 서버 45초 중단",
       "expect": "원격 감시기가 결과를 쌓아 두었다가 유실 없이 전달",
       "pass": true,
-      "measured": "중단 중 쌓인 결과 6건 · 전송 실패 3회 · 재기동 0.0초 · 큐 비움 40.5초",
+      "measured": "중단 중 쌓인 결과 5건 · 전송 실패 3회 · 재기동 0.0초 · 큐 비움 43.6초",
       "note": "전달 10건, 버림 0건"
     },
     {
@@ -48,7 +48,7 @@
       "expect": "응답은 정상이어도 '갱신 멈춤'으로 판정",
       "pass": true,
       "measured": "감지 30.4초",
-      "note": "stale: newest data 6h1m0s old"
+      "note": "stale: newest data 6h0m0s old"
     },
     {
       "no": 7,
@@ -65,6 +65,14 @@
       "pass": true,
       "measured": "감지 10.1초",
       "note": "added: response.body.items.item[].pm25Value"
+    },
+    {
+      "no": 9,
+      "name": "알림 (장애 → 담당 → 복구)",
+      "expect": "장애 알림 1통(그룹 대기 30초 포함 ≤ 65초), 담당 알림, 복구 알림",
+      "pass": true,
+      "measured": "장애 알림 24.3초 · 담당 알림 0.0초 · 복구 알림 (복구 후) 50.7초",
+      "note": "받은 알림 3통: 🔴 [다시 발생 · 불안정 3회] 가짜 공공 API — http 503  / 👤 [담당] 게임데이 — #2 가짜 공공 API 장애를 맡음 / 🟢 [복구] 가짜 공공 API — 7분 동안"
     }
   ]
 }

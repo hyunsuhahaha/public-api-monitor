@@ -66,7 +66,7 @@
 
 ## 신뢰성 작업
 
-- **[게임데이 결과](docs/gameday/RESULTS.md):** 가짜 공공 API와 중앙·원격 감시기를 Docker로 띄우고 장애 8종을 일부러 일으켜, 감지 시간과 유실 여부를 측정한다(`python deploy/gameday/gameday.py`, 8/8 통과).
+- **[게임데이 결과](docs/gameday/RESULTS.md):** 가짜 공공 API와 중앙·원격 감시기를 Docker로 띄우고 장애 8종과 알림 흐름(장애 → 담당 → 복구)을 일부러 일으켜, 감지·알림 시간과 유실 여부를 측정한다(`python deploy/gameday/gameday.py`, 9/9 통과).
 - **포스트모템 2건:** [진행 중 장애가 사라진 버그](docs/postmortems/2026-10-19-open-incidents-invisible.md)(게임데이가 잡음), [배포 직후 시작 단계 교착으로 감시 10분 중단](docs/postmortems/2026-10-19-startup-deadlock.md)(내 배포가 낸 장애).
 - **[런북](docs/runbooks/README.md):** 알림마다 확인·조치·종료 조건을 정리했다.
 - **모니터 자체의 SLO:** "예정된 확인의 99.9%가 한 주기 안에 실행"을 기준으로 multi-window burn-rate 알림을 건다(`deploy/alerts.yml`).
