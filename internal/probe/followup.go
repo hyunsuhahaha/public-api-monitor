@@ -52,6 +52,16 @@ func NewFollowUps() *FollowUps {
 	return &FollowUps{Wait: 60 * time.Second, Every: 30 * time.Minute, last: map[string]FollowUp{}, busy: map[string]bool{}}
 }
 
+// Remember seeds a target's latest follow-up (from the database after a restart), so
+// the once-per-Every limit holds across restarts.
+func (f *FollowUps) Remember(id string, x FollowUp) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if x.At.After(f.last[id].At) {
+		f.last[id] = x
+	}
+}
+
 // Last returns the latest follow-up for a target, if any.
 func (f *FollowUps) Last(id string) (FollowUp, bool) {
 	f.mu.Lock()

@@ -50,3 +50,16 @@ func TestFollowUpLateAnswer(t *testing.T) {
 		t.Fatalf("Last: %+v %v", f, ok)
 	}
 }
+
+func TestFollowUpRememberKeepsTheLimit(t *testing.T) {
+	f := NewFollowUps()
+	now := time.Now()
+	f.Remember("a", FollowUp{At: now.Add(-10 * time.Minute)})
+	started := false
+	f.Done = func(string, FollowUp) { started = true }
+	f.start(http.DefaultClient, "a", "http://127.0.0.1:1/", http.Header{}, time.Second, time.Now)
+	time.Sleep(50 * time.Millisecond)
+	if started {
+		t.Fatal("a follow-up 10 minutes after the remembered one must wait")
+	}
+}

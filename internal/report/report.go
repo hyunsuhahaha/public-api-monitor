@@ -180,7 +180,7 @@ func Build(ctx context.Context, st *store.Store, cfg *config.Config, month strin
 				after = append(after, f.AfterMs)
 			}
 		}
-		x.MedianMs = pct(after, 0.5)
+		x.MedianMs = lowMedian(after)
 		r.Timeouts = append(r.Timeouts, x)
 	}
 	sort.Slice(r.Timeouts, func(i, j int) bool {
@@ -204,6 +204,16 @@ func minutes(in *incident.Incident, from, end time.Time) int {
 		return 0
 	}
 	return int(e.Sub(s).Round(time.Minute).Minutes())
+}
+
+// lowMedian: the lower middle value, so two follow-ups of 0.1 s and 57 s read 0.1 s, not 57 s.
+func lowMedian(v []int64) int64 {
+	if len(v) == 0 {
+		return 0
+	}
+	s := append([]int64(nil), v...)
+	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	return s[(len(s)-1)/2]
 }
 
 func pct(v []int64, p float64) int64 {

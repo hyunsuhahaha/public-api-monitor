@@ -161,6 +161,11 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 		}
 	}
 	prober.FollowUps = probe.NewFollowUps()
+	for _, t := range cfg.Targets { // keep the once-per-30-minutes limit across restarts
+		if list, err := st.FollowUps(ctx, t.ID, time.Now().Add(-prober.FollowUps.Every)); err == nil && len(list) > 0 {
+			prober.FollowUps.Remember(t.ID, list[0])
+		}
+	}
 	prober.FollowUps.Done = func(id string, f probe.FollowUp) {
 		mFollowUps.WithLabelValues(id, f.Outcome()).Inc()
 		if err := st.SaveFollowUp(context.Background(), id, f); err != nil {
