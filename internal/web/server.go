@@ -37,6 +37,8 @@ type Server struct {
 	Ingest      func(ctx context.Context, results []probe.Result) error
 	IngestToken string
 	PublicURL   string // for absolute links in the feed (else taken from the request)
+	// AdminToken, if set, lets operators add notes to incidents (Bearer token).
+	AdminToken string
 	// Version and StartedAt describe the running build (GET /version, the page footer).
 	Version   string
 	StartedAt time.Time
@@ -65,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/series", s.cache.wrap(s.series))
 	mux.HandleFunc("GET /api/v1/schema-events", s.schemaEvents)
 	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incidentDetail)
+	mux.HandleFunc("POST /api/v1/incidents/{id}/notes", s.addNote)
 	s.reportRoutes(mux)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {

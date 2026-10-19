@@ -96,6 +96,14 @@
     </div>
     <div class="d-stats" id="im-stats"></div>
     <div class="d-panel"><h3>다음 할 일 <span class="hint">문제 위치에 따라</span></h3><ol class="next" id="im-next"></ol></div>
+    <div class="d-panel"><h3>메모 <span class="hint">확인한 것·한 일 (포스트모템 초안에 들어감)</span></h3>
+      <div id="im-notes"></div>
+      <form id="im-note-form" class="note-form" hidden>
+        <input id="im-note-author" placeholder="이름" maxlength="40">
+        <textarea id="im-note-text" rows="2" maxlength="2000" placeholder="예: 데이터포털 공지 확인 — 10:00~12:00 에어코리아 서버 점검"></textarea>
+        <button class="btn" type="submit">메모 남기기</button>
+      </form>
+    </div>
     <div class="d-panel"><h3>지역 × 시간 (확인 하나 = 칸 하나)</h3><canvas id="im-matrix"></canvas></div>
     <div class="d-panel"><h3>판정이 바뀐 순간</h3><div id="im-timeline"></div></div>
     <div class="d-panel"><h3>원시 확인 <span class="hint" id="im-count"></span></h3><div class="table-wrap"><table class="log" id="im-log"></table></div></div>

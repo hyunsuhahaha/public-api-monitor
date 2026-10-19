@@ -90,6 +90,16 @@ CREATE TABLE IF NOT EXISTS schema_events (
 	paths  TEXT    NOT NULL  -- newline-separated
 );
 CREATE INDEX IF NOT EXISTS schema_events_at ON schema_events(at);
+-- what the operator learned or did during an incident (shown in the incident view and
+-- the postmortem draft)
+CREATE TABLE IF NOT EXISTS incident_notes (
+	id       INTEGER PRIMARY KEY,
+	incident INTEGER NOT NULL,
+	at       INTEGER NOT NULL,
+	author   TEXT    NOT NULL,
+	text     TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS incident_notes_incident ON incident_notes(incident, at);
 -- timeout follow-ups (probe.FollowUps): did a timed-out request come back when retried?
 CREATE TABLE IF NOT EXISTS followups (
 	target     TEXT    NOT NULL,
@@ -841,6 +851,46 @@ func (s *Store) FollowUpsBetween(ctx context.Context, from, to time.Time) (map[s
 		}
 		f.At = fromMS(at)
 		out[t] = append(out[t], f)
+	}
+	return out, rows.Err()
+}
+
+// Note is one operator note on an incident.
+type Note struct {
+	ID       int64     `json:"id"`
+	Incident int64     `json:"incident"`
+	At       time.Time `json:"at"`
+	Author   string    `json:"author"`
+	Text     string    `json:"text"`
+}
+
+// AddNote stores a note and sets its ID.
+func (s *Store) AddNote(ctx context.Context, n *Note) error {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO incident_notes(incident, at, author, text) VALUES(?,?,?,?)`,
+		n.Incident, ms(n.At), n.Author, n.Text)
+	if err != nil {
+		return err
+	}
+	n.ID, err = res.LastInsertId()
+	return err
+}
+
+// Notes returns an incident's notes, oldest first.
+func (s *Store) Notes(ctx context.Context, incident int64) ([]Note, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, incident, at, author, text FROM incident_notes WHERE incident=? ORDER BY at, id`, incident)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Note{}
+	for rows.Next() {
+		var n Note
+		var at int64
+		if err := rows.Scan(&n.ID, &n.Incident, &at, &n.Author, &n.Text); err != nil {
+			return nil, err
+		}
+		n.At = fromMS(at)
+		out = append(out, n)
 	}
 	return out, rows.Err()
 }

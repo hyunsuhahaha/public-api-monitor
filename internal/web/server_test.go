@@ -61,7 +61,7 @@ targets:
 		t.Fatal(err)
 	}
 	s := &Server{Cfg: cfg, Store: st, LastCheck: func() time.Time { return now },
-		IngestToken: "tok",
+		IngestToken: "tok", AdminToken: "admin",
 		SlowLimit: func(id string, ceil time.Duration) (time.Duration, time.Duration, bool) {
 			return min(450*time.Millisecond, ceil), 50 * time.Millisecond, id == "a"
 		},
@@ -294,5 +294,38 @@ func TestSeriesShift(t *testing.T) {
 		if now.T[i]-prev.T[i] != 86400 {
 			t.Fatalf("bucket %d: %d vs %d", i, now.T[i], prev.T[i])
 		}
+	}
+}
+
+func TestIncidentNotes(t *testing.T) {
+	_, h := setup(t)
+	post := func(auth, body string) int {
+		req := httptest.NewRequest("POST", "/api/v1/incidents/1/notes", strings.NewReader(body))
+		if auth != "" {
+			req.Header.Set("Authorization", "Bearer "+auth)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w.Code
+	}
+	if c := post("", `{"text":"x"}`); c != 401 {
+		t.Fatalf("no token: %d", c)
+	}
+	if c := post("wrong", `{"text":"x"}`); c != 401 {
+		t.Fatalf("wrong token: %d", c)
+	}
+	if c := post("admin", `{"text":"  "}`); c != 400 {
+		t.Fatalf("empty text: %d", c)
+	}
+	if c := post("admin", `{"author":"홍길동","text":"데이터포털 공지: 서버 점검"}`); c != 200 {
+		t.Fatalf("note: %d", c)
+	}
+	var d struct {
+		Notes   []struct{ Author, Text string }
+		CanNote bool
+	}
+	json.Unmarshal(get(t, h, "/api/v1/incidents/1").Body.Bytes(), &d)
+	if !d.CanNote || len(d.Notes) != 1 || d.Notes[0].Author != "홍길동" || d.Notes[0].Text != "데이터포털 공지: 서버 점검" {
+		t.Fatalf("%+v", d)
 	}
 }

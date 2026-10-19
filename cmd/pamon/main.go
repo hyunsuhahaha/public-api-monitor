@@ -178,7 +178,7 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	srv := &http.Server{
 		Addr: addr,
 		Handler: (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck,
-			Ingest: c.Ingest, IngestToken: token, PublicURL: os.Getenv("PAMON_PUBLIC_URL"),
+			Ingest: c.Ingest, IngestToken: token, PublicURL: os.Getenv("PAMON_PUBLIC_URL"), AdminToken: os.Getenv("PAMON_ADMIN_TOKEN"),
 			SlowLimit: prober.Baseline.Limit, Version: version, StartedAt: startedAt}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,

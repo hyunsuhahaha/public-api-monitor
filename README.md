@@ -58,6 +58,7 @@
 - **API별 burn rate:** 서비스 표에 에러 버짓 소진 속도(1시간·6시간)를 보여준다. Prometheus 규칙과 같은 multi-window 조건(1시간+5분 14.4×는 호출, 6시간+30분 6×는 티켓)이라 화면과 호출기가 같은 판단을 한다.
 - **기관 단위 배너, 조치 필요 배너:** 한 기관의 여러 API가 함께 실패하면 하나의 문제로 묶는다. 키·승인 같은 우리 쪽 문제는 할 일 목록으로 따로 모은다.
 - **API별 장애 통계:** 장애 수, 영향 시간, MTTR, MTBF, 불안정 횟수. 무엇부터 손볼지 정하는 표.
+- **장애 메모:** 확인한 것과 한 일을 장애에 남기면(관리 토큰 필요) 포스트모템 초안의 '운영자 메모'로 들어간다.
 - **교대 인수인계:** 지금 상태, 이번 교대의 장애, 장애가 몰린 기관, 형식 변경을 다음 당번에게 넘길 Markdown으로 만든다(`h`).
 - **계획 점검:** 공지된 점검 시간(`targets.yaml`의 `maintenance`)은 '점검 중'으로 남기고 가용률·SLO·장애·알림에서 뺀다. 설정은 CI에서 `pamon -check`로 검증한다.
 - **공개 상태 페이지 (`/status`):** 상태판은 운영자용이고, 이 페이지는 API를 쓰는 개발자용이다. 기관별 현재 상태, 90일 일별 막대, 최근 장애를 Statuspage 형식으로 보여준다.
@@ -204,7 +205,8 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 | `GET /badge/{id}.svg` | 30일 가용률 배지 |
 | `GET /metrics` | Prometheus 지표 (`pamon_checks_total`, `pamon_check_latency_seconds`, `pamon_target_up`, `pamon_check_phase_seconds`, `pamon_check_timeouts_total`, `pamon_build_info`, …) |
 | `POST /api/v1/ingest` | 원격 감시기 결과 수신 (`Authorization: Bearer $PAMON_INGEST_TOKEN`) |
-| `GET /api/v1/incidents/{id}` | 장애 하나: 그 구간의 원시 확인(요청 구간 포함)과 판정 |
+| `GET /api/v1/incidents/{id}` | 장애 하나: 그 구간의 원시 확인(요청 구간 포함), 판정, 운영자 메모 |
+| `POST /api/v1/incidents/{id}/notes` | 장애에 메모 남기기 (`Authorization: Bearer $PAMON_ADMIN_TOKEN`, 토큰이 없으면 꺼짐) |
 | `GET /api/v1/schema-events` | 응답 필드 추가·사라짐 기록 (90일) |
 | `GET /status` | 공개 상태 페이지 (API 사용자용) |
 | `GET /version` | 실행 중인 빌드(커밋), Go 버전, 가동 시간 |

@@ -214,3 +214,9 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .fu { margin: -2px 0 10px; padding: 8px 12px; border-radius: 4px; font-size: 12px; border: 1px solid var(--line2); border-left-width: 3px; }
 .fu.late { border-left-color: var(--deg); } .fu.hung { border-left-color: var(--out); }
 .fu.stuck { border-left-color: var(--blue); }
+
+.note { display: grid; grid-template-columns: 90px auto 1fr; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
+.note .t { color: var(--muted); font-size: 11px; }
+.note-form { display: grid; grid-template-columns: 120px 1fr auto; gap: 8px; margin-top: 8px; align-items: start; }
+.note-form input, .note-form textarea { background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 4px; padding: 6px 8px; font: inherit; resize: vertical; }
+@media (max-width: 640px) { .note-form { grid-template-columns: 1fr; } .note { grid-template-columns: 1fr; gap: 2px; } }

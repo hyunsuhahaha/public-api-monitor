@@ -74,6 +74,41 @@ function nextSteps(d, w, open) {
   return steps;
 }
 
+// ── incident notes ─────────────────────────────────────────────────────────────
+// Writing needs PAMON_ADMIN_TOKEN; the browser keeps it after the first prompt.
+const TOKEN_KEY = "pamon_admin_token";
+function renderNotes(d) {
+  const box = $("im-notes"); box.replaceChildren();
+  const notes = d.notes || [];
+  if (!notes.length) box.append(el("div", "empty", d.canNote ? "아직 메모가 없습니다" : "메모 없음 (쓰려면 서버에 PAMON_ADMIN_TOKEN 설정)"));
+  for (const n of notes) {
+    const r = el("div", "note");
+    r.append(el("span", "t", kst(n.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })), el("b", "", n.author), el("span", "", n.text));
+    box.append(r);
+  }
+  $("im-note-form").hidden = !d.canNote;
+  try { $("im-note-author").value = localStorage.getItem("pamon_author") || ""; } catch (e) {}
+}
+$("im-note-form").onsubmit = async (e) => {
+  e.preventDefault();
+  if (!currentIncident) return;
+  const text = $("im-note-text").value.trim(), author = $("im-note-author").value.trim();
+  if (!text) return;
+  let token = null;
+  try { token = localStorage.getItem(TOKEN_KEY); } catch (err) {}
+  if (!token) token = window.prompt("메모를 쓰려면 관리 토큰(PAMON_ADMIN_TOKEN)을 입력하세요");
+  if (!token) return;
+  const r = await fetch(`/api/v1/incidents/${currentIncident.incident.id}/notes`, {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ author, text }),
+  });
+  if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (err) {} alert("토큰이 맞지 않습니다"); return; }
+  if (!r.ok) { alert("저장하지 못했습니다: " + (await r.text())); return; }
+  try { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem("pamon_author", author); } catch (err) {}
+  $("im-note-text").value = "";
+  openIncident(currentIncident.incident.id);
+};
+
 async function openIncident(id) {
   const d = await fetch("/api/v1/incidents/" + id).then((r) => (r.ok ? r.json() : null));
   if (!d) return;
@@ -99,6 +134,7 @@ async function openIncident(id) {
     i.flaps ? statPanel("불안정", `×${i.flaps}`, "복구된 듯하다 다시 실패", "c-deg-t") : statPanel("처음 원인", i.reason.split(" (")[0], "", ""),
     (() => { const w = whereItFailed(inWin); return statPanel("문제 위치", w.who, w.detail + ` · 응답 p50 ${ms(lat[Math.floor(lat.length / 2)] || 0)}`, w.cls); })());
   $("im-next").replaceChildren(...nextSteps(d, whereItFailed(inWin), open));
+  renderNotes(d);
 
   // matrix: one row per location, one cell per check, the incident window shaded
   const cv = $("im-matrix"), W = cv.parentElement.clientWidth - 22, rowH = 18, labelW = 110;
@@ -176,6 +212,7 @@ function postmortemMarkdown(d) {
     prev = v.status;
   }
   lines.push("", "## 영향", "", "- (이 API를 쓰는 서비스와 사용자에게 무엇이 안 됐나)", "",
+    ...((d.notes || []).length ? ["## 운영자 메모 (KST)", "", ...d.notes.map((n) => `- ${kst(n.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} **${n.author}**: ${n.text}`), ""] : []),
     "## 원인", "", `- 모니터가 본 위치: **${whereItFailed(inWin).who}** — ${whereItFailed(inWin).detail}`, "- (제공 기관 공지·문의 결과)", "",
     "## 우리가 한 일", "", "- (알림을 받고 한 조치)", "",
     "## 재발 방지 / 개선", "", "| 조치 | 담당 | 상태 |", "|---|---|---|", "| | | |", "");

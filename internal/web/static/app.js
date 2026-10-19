@@ -76,8 +76,8 @@ function renderStats(d) {
   box.append(
     statPanel("가용률 · " + RANGE_LABEL[d.range], pct(f.availability), "목표(SLO) " + pct(f.slo, 1), avCls),
     statPanel("에러 버짓 잔여", f.availability < 0 ? "–" : budgetText(budget), budget < 0 ? "목표를 넘겨 실패함 (버짓 초과)" : "목표 대비 남은 실패 허용치", bCls, Math.max(0, budget) * 100, budget >= 0.5 ? C.ok : budget >= 0 ? C.deg : C.out),
-    statPanel("장애", String(c.down || 0), "진행 중 장애 " + f.openIncidents + "건", c.down ? "c-out-t" : "c-ok-t"),
-    statPanel("성능 저하", String(c.degraded || 0), "느림·데이터 이상(오래됨·값 틀림)", c.degraded ? "c-deg-t" : "c-ok-t"),
+    statPanel("지금 실패 중", String(c.down || 0), `열린 장애 ${f.openIncidents}건 (장애는 연속 2회 실패부터)`, c.down ? "c-out-t" : "c-ok-t"),
+    statPanel("지금 저하", String(c.degraded || 0), "느림·데이터 이상(오래됨·값 틀림)", c.degraded ? "c-deg-t" : "c-ok-t"),
     statPanel("응답 시간 p95", ms(f.p95), "p50 " + ms(f.p50) + " · p99 " + ms(f.p99), "c-blue-t"),
     statPanel("확인 / 분", f.checksPerMin.toFixed(1), `정상 ${c.up || 0}${c.maint ? " · 점검 " + c.maint : ""} · 확인 불가 ${c.unknown || 0} / ${d.targets.length}개 API`, ""),
   );
