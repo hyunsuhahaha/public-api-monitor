@@ -67,3 +67,30 @@ func TestSchemaPaths(t *testing.T) {
 		t.Fatalf("events: %+v", list)
 	}
 }
+
+// Opening a database drops "added" events from a target's first day, recorded before the
+// warm-up rule existed; later ones stay.
+func TestWarmupCleanupOnOpen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "w.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	t0 := time.Date(2026, 10, 18, 23, 50, 0, 0, time.UTC)
+	st.ObservePaths(ctx, "a", []string{"x"}, t0, 0)
+	for _, at := range []time.Time{t0.Add(6 * time.Hour), t0.Add(30 * time.Hour)} {
+		if err := st.SaveSchemaEvent(ctx, &SchemaEvent{Target: "a", At: at, Kind: "added", Paths: []string{"y"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st.Close()
+	if st, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	list, _ := st.SchemaEvents(ctx, "a", t0, 10)
+	if len(list) != 1 || !list[0].At.Equal(t0.Add(30*time.Hour)) {
+		t.Fatalf("%+v", list)
+	}
+}

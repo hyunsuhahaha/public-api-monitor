@@ -124,6 +124,10 @@ func Open(path string) (*Store, error) {
 	// it): they are not the API's fields and would come back as "removed"
 	db.Exec(`DELETE FROM schema_paths WHERE path LIKE 'OpenAPI_ServiceResponse%'`)
 	db.Exec(`DELETE FROM schema_events WHERE paths LIKE 'OpenAPI_ServiceResponse%'`)
+	// "added" events from a target's first day of learning, recorded before the warm-up rule
+	// (they were time-of-day fields, not changes): the rule applied to the history
+	db.Exec(`DELETE FROM schema_events WHERE kind='added' AND at < 86400000 +
+		(SELECT MIN(first_seen) FROM schema_paths p WHERE p.target = schema_events.target)`)
 	// rows written before the zero-time fix: open incidents stored as year-1 milliseconds
 	if _, err := db.Exec(`UPDATE incidents SET ended=0 WHERE ended<0`); err != nil {
 		db.Close()

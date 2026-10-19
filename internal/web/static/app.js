@@ -228,6 +228,13 @@ function renderCats() {
 }
 
 // ── heatmap ───────────────────────────────────────────────────────────────────
+// cut a label to a pixel width (Korean is wider than a character count suggests)
+function fitText(g, s, w) {
+  if (g.measureText(s).width <= w) return s;
+  while (s.length > 1 && g.measureText(s + "…").width > w) s = s.slice(0, -1);
+  return s + "…";
+}
+
 function renderHeat() {
   const cv = $("heat"), rows = visibleRows(), n = (state.data.targets[0] && state.data.targets[0].states.length) || 1;
   const labelW = 150, rowH = 14, W = Math.max(300, cv.parentElement.clientWidth - 24), H = rows.length * rowH + 18;
@@ -235,7 +242,7 @@ function renderHeat() {
   const cw = (W - labelW) / n;
   g.font = "11px Inter, 'Malgun Gothic', sans-serif"; g.textBaseline = "middle";
   rows.forEach((t, r) => {
-    g.fillStyle = C.axis; g.fillText(t.name.length > 18 ? t.name.slice(0, 17) + "…" : t.name, 0, r * rowH + rowH / 2);
+    g.fillStyle = C.axis; g.fillText(fitText(g, t.name, labelW - 8), 0, r * rowH + rowH / 2);
     t.states.forEach((s, i) => { g.fillStyle = stateColor(s); g.fillRect(labelW + i * cw + 0.5, r * rowH + 1, Math.max(1, cw - 1), rowH - 2); });
   });
   g.fillStyle = "#5d616b"; g.textBaseline = "top";
