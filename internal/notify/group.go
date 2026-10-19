@@ -96,3 +96,8 @@ func groupMessage(provider string, ev incident.Event, items []groupItem, publicU
 func (g *Grouper) NotifySchema(ctx context.Context, e store.SchemaEvent, t *config.Target) {
 	g.Send(ctx, SchemaMessage(e, t, g.PublicURL))
 }
+
+// NotifyNote goes out at once (notes are not grouped).
+func (g *Grouper) NotifyNote(ctx context.Context, in *incident.Incident, t *config.Target, n store.Note) {
+	g.Send(ctx, NoteMessage(in, t, n, g.PublicURL))
+}

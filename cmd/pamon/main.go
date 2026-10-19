@@ -179,6 +179,16 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 		Addr: addr,
 		Handler: (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck,
 			Ingest: c.Ingest, IngestToken: token, PublicURL: os.Getenv("PAMON_PUBLIC_URL"), AdminToken: os.Getenv("PAMON_ADMIN_TOKEN"),
+			OnNote: func(ctx context.Context, in *incident.Incident, n store.Note) {
+				nn, ok := c.Notifier.(interface {
+					NotifyNote(context.Context, *incident.Incident, *config.Target, store.Note)
+				})
+				for i := range cfg.Targets {
+					if ok && cfg.Targets[i].ID == in.TargetID {
+						nn.NotifyNote(context.WithoutCancel(ctx), in, &cfg.Targets[i], n)
+					}
+				}
+			},
 			SlowLimit: prober.Baseline.Limit, Version: version, StartedAt: startedAt}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,

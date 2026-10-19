@@ -9,6 +9,7 @@ import (
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 )
 
 type sink struct {
@@ -62,5 +63,16 @@ func TestGrouperOneAgencyOnePage(t *testing.T) {
 	}
 	if !strings.Contains(single, "버스") || strings.Contains(single, "기관") {
 		t.Fatalf("a lone incident reads as usual: %q", single)
+	}
+}
+
+func TestNoteMessages(t *testing.T) {
+	in := &incident.Incident{ID: 64}
+	tg := &config.Target{Name: "에어코리아 측정소"}
+	if m := NoteMessage(in, tg, store.Note{Kind: "ack", Author: "당번"}, "https://s.example/"); m != "👤 [담당] 당번 — #64 에어코리아 측정소 장애를 맡음\nhttps://s.example/#i=64" {
+		t.Fatalf("ack: %q", m)
+	}
+	if m := NoteMessage(in, tg, store.Note{Kind: "note", Author: "당번", Text: "공지 확인"}, ""); m != "📝 [메모] #64 에어코리아 측정소 — 당번: 공지 확인" {
+		t.Fatalf("note: %q", m)
 	}
 }

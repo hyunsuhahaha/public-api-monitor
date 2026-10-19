@@ -39,6 +39,8 @@ type Server struct {
 	PublicURL   string // for absolute links in the feed (else taken from the request)
 	// AdminToken, if set, lets operators add notes to incidents (Bearer token).
 	AdminToken string
+	// OnNote, if set, is told each stored note or ack (the webhook announces it).
+	OnNote func(ctx context.Context, in *incident.Incident, n store.Note)
 	// Version and StartedAt describe the running build (GET /version, the page footer).
 	Version   string
 	StartedAt time.Time

@@ -133,5 +133,8 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
 		return
 	}
+	if s.OnNote != nil {
+		s.OnNote(r.Context(), in, n)
+	}
 	writeJSON(w, n)
 }

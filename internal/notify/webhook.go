@@ -112,3 +112,22 @@ func (w *Webhook) post(ctx context.Context, text string) {
 		w.Log.Error("webhook", "status", resp.StatusCode)
 	}
 }
+
+// NoteMessage is the text for an operator's note or ack on an incident: the channel
+// sees who has it, so two people don't chase the same outage.
+func NoteMessage(in *incident.Incident, t *config.Target, n store.Note, publicURL string) string {
+	var b strings.Builder
+	if n.Kind == "ack" {
+		fmt.Fprintf(&b, "👤 [담당] %s — #%d %s 장애를 맡음", n.Author, in.ID, t.Name)
+	} else {
+		fmt.Fprintf(&b, "📝 [메모] #%d %s — %s: %s", in.ID, t.Name, n.Author, n.Text)
+	}
+	if publicURL != "" {
+		fmt.Fprintf(&b, "\n%s/#i=%d", strings.TrimRight(publicURL, "/"), in.ID)
+	}
+	return b.String()
+}
+
+func (w *Webhook) NotifyNote(ctx context.Context, in *incident.Incident, t *config.Target, n store.Note) {
+	w.post(ctx, NoteMessage(in, t, n, w.PublicURL))
+}
