@@ -20,7 +20,7 @@ while true; do
   fi
   set -a; [ -f "$REPO/.env" ] && . "$REPO/.env"; set +a
   "$DATA/pamon" -config "$REPO/targets.yaml" -db "$DATA/pamon.db" \
-    -addr "${PAMON_ADDR:-127.0.0.1:8080}" -location "${PAMON_LOCATION:-home-wsl}" >> "$DATA/pamon.log" 2>&1 &
+    -addr "${PAMON_ADDR:-127.0.0.1:8080,[::1]:8080}" -location "${PAMON_LOCATION:-home-wsl}" >> "$DATA/pamon.log" 2>&1 &
   CHILD=$!
   wait "$CHILD"
   echo "$(date -Is) pamon exited ($?), restarting in 10 s" >> "$DATA/pamon.log"

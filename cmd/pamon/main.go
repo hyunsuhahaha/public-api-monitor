@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -67,7 +69,7 @@ func main() {
 		cfgPath  = flag.String("config", env("PAMON_CONFIG", "targets.yaml"), "targets file")
 		role     = flag.String("role", env("PAMON_ROLE", "central"), "central or probe")
 		dbPath   = flag.String("db", env("PAMON_DB", "pamon.db"), "SQLite database file (central)")
-		addr     = flag.String("addr", env("PAMON_ADDR", ":8080"), "HTTP listen address")
+		addr     = flag.String("addr", env("PAMON_ADDR", ":8080"), "HTTP listen address(es), comma-separated")
 		location = flag.String("location", env("PAMON_LOCATION", "local"), "name of this probe location")
 		central  = flag.String("central", env("PAMON_CENTRAL_URL", ""), "central base URL (probe)")
 		once     = flag.Bool("once", false, "check every target once, print the results and exit")
@@ -222,14 +224,24 @@ func runProbe(ctx context.Context, log *slog.Logger, cfg *config.Config, prober 
 	return shutdown(srv)
 }
 
+// serve listens on every address in srv.Addr (comma-separated): on Windows "localhost"
+// tries ::1 first, and a server on 127.0.0.1 alone cost each request ~200 ms of fallback,
+// so the WSL runner listens on both loopbacks.
 func serve(ctx context.Context, log *slog.Logger, srv *http.Server, role string, targets int, ingest bool) {
-	go func() {
-		log.Info("listening", "addr", srv.Addr, "role", role, "targets", targets, "ingest", ingest)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("http", "err", err)
+	for _, addr := range strings.Split(srv.Addr, ",") {
+		ln, err := net.Listen("tcp", strings.TrimSpace(addr))
+		if err != nil {
+			log.Error("http", "addr", addr, "err", err)
 			os.Exit(1)
 		}
-	}()
+		log.Info("listening", "addr", ln.Addr().String(), "role", role, "targets", targets, "ingest", ingest)
+		go func() {
+			if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("http", "err", err)
+				os.Exit(1)
+			}
+		}()
+	}
 }
 
 func shutdown(srv *http.Server) error {
