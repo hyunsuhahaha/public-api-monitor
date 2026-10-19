@@ -70,6 +70,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/schema-events", s.schemaEvents)
 	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incidentDetail)
 	mux.HandleFunc("POST /api/v1/incidents/{id}/notes", s.addNote)
+	mux.HandleFunc("GET /api/v1/silences", s.listSilences)
+	mux.HandleFunc("POST /api/v1/silences", s.addSilence)
+	mux.HandleFunc("DELETE /api/v1/silences/{id}", s.endSilence)
 	s.reportRoutes(mux)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {

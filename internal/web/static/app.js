@@ -199,7 +199,10 @@ function renderTable() {
     td(el("span", "dot " + t.status)).title = LABEL[t.status] || t.status;
     const nm = el("div"); const prov = el("div", "prov", t.provider);
     if (t.reason) { prov.append(" · "); const r = el("span", "reason", t.reason); r.title = t.reason; prov.append(r); }
-    nm.append(el("div", "name", t.name), prov);
+    const nameEl = el("div", "name", t.name);
+    const sil = (state.data.silences || []).find((x) => x.target === t.id);
+    if (sil) { const b = el("span", "muted-tag", "🔕"); b.title = `알림 꺼짐 ~${kst(sil.until, { hour: "2-digit", minute: "2-digit" })} (${sil.author}${sil.reason ? ": " + sil.reason : ""})`; nameEl.append(" ", b); }
+    nm.append(nameEl, prov);
     td(nm);
     const av = td(pct(t.availability), "num");
     av.style.color = t.availability < 0 ? C.axis : t.availability >= t.slo ? C.ok : t.availability >= t.slo - 0.01 ? C.deg : C.out;
@@ -439,6 +442,7 @@ async function openDrawer(id) {
   state.target = id; writeHash();
   const t = state.data.targets.find((x) => x.id === id); if (!t) return;
   $("drawer").hidden = false; $("scrim").hidden = false;
+  renderSilence(id);
   $("d-title").replaceChildren(el("span", "dot " + t.status), document.createTextNode(t.name));
   $("d-sub").textContent = `${t.provider} · ${t.category || ""} · ${LABEL[t.status] || t.status}${t.reason ? " — " + t.reason : ""}`;
   $("d-stats").replaceChildren(
@@ -631,6 +635,25 @@ async function showBuild() {
   } catch (e) { /* older server */ }
 }
 showBuild();
+
+// silence: mute this API's pages for a while (the incident and SLO are unaffected)
+function renderSilence(id) {
+  const sil = (state.data.silences || []).find((x) => x.target === id);
+  $("d-silence-state").textContent = sil
+    ? `🔕 알림 꺼짐 · ${kst(sil.until, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}까지 · ${sil.author}${sil.reason ? " — " + sil.reason : ""}`
+    : "알림 켜짐";
+  $("d-silence").classList.toggle("on", !!sil);
+  $("d-silence-on").hidden = !!sil; $("d-silence-len").hidden = !!sil; $("d-silence-off").hidden = !sil;
+  $("d-silence-off").onclick = async () => { if (await adminFetch("DELETE", `/api/v1/silences/${sil.id}`)) { await load(); renderSilence(id); } };
+}
+$("d-silence-on").onclick = async () => {
+  const id = state.target; if (!id) return;
+  const reason = window.prompt("왜 끄나요? (예: 기관 공지된 장애, 원인 확인 중)") ?? null;
+  if (reason === null) return;
+  let author = "";
+  try { author = localStorage.getItem("pamon_author") || ""; } catch (e) {}
+  if (await adminFetch("POST", "/api/v1/silences", { target: id, minutes: +$("d-silence-len").value, reason, author })) { await load(); renderSilence(id); }
+};
 
 // ── load ──────────────────────────────────────────────────────────────────────
 // A monitoring page must never show old data as if it were current: when a refresh fails

@@ -92,6 +92,19 @@ function renderNotes(d) {
   $("im-take").hidden = !d.canNote || !isOpen(d.incident);
   try { $("im-note-author").value = localStorage.getItem("pamon_author") || ""; } catch (e) {}
 }
+// a write with the admin token: asks for it once, keeps it, forgets it when refused
+async function adminFetch(method, url, body) {
+  let token = null;
+  try { token = localStorage.getItem(TOKEN_KEY); } catch (err) {}
+  if (!token) token = window.prompt("관리 토큰(PAMON_ADMIN_TOKEN)을 입력하세요");
+  if (!token) return null;
+  const r = await fetch(url, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: body && JSON.stringify(body) });
+  if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (err) {} alert("토큰이 맞지 않습니다"); return null; }
+  if (!r.ok) { alert("저장하지 못했습니다: " + (await r.text())); return null; }
+  try { localStorage.setItem(TOKEN_KEY, token); } catch (err) {}
+  return r;
+}
+
 async function postNote(kind, text, author) {
   let token = null;
   try { token = localStorage.getItem(TOKEN_KEY); } catch (err) {}

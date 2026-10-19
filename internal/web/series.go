@@ -138,6 +138,16 @@ type overviewResponse struct {
 	Rows   []overviewTarget `json:"targets"`
 	// Maintenance: windows in the range, going on now or starting within a week
 	Maintenance []maintView `json:"maintenance"`
+	// Silences: APIs whose pages are muted now
+	Silences []store.Silence `json:"silences"`
+}
+
+func (s *Server) silences(ctx context.Context) []store.Silence {
+	list, err := s.Store.ActiveSilences(ctx, time.Now())
+	if err != nil {
+		return []store.Silence{}
+	}
+	return list
 }
 
 type maintView struct {
@@ -247,7 +257,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		fleetLat = append(fleetLat, x.LatencyMS)
 	}
 
-	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now())}
+	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now()), Silences: s.silences(ctx)}
 
 	var sumAvail float64
 	var withData, checks int

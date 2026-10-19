@@ -139,3 +139,20 @@ func TestMaintenanceWindow(t *testing.T) {
 		t.Fatalf("after the window, an outage pages: %v", ev.got)
 	}
 }
+
+// A silenced API still gets its incident; nobody is paged.
+func TestSilencedPagesNobody(t *testing.T) {
+	c, ev := newCentral(t)
+	now := time.Now()
+	c.Store.AddSilence(context.Background(), &store.Silence{Target: "a", Created: now.Add(-time.Minute), Until: now.Add(time.Hour), Author: "x"})
+	start := now.Add(-20 * time.Minute)
+	for i := 0; i < 2; i++ {
+		slot(t, c, start.Add(time.Duration(i)*5*time.Minute), probe.StatusDown, probe.StatusDown)
+	}
+	if len(ev.got) != 0 {
+		t.Fatalf("silenced: paged %v", ev.got)
+	}
+	if open, _ := c.Store.OpenIncidents(context.Background()); len(open) != 1 {
+		t.Fatalf("the incident is still recorded: %+v", open)
+	}
+}

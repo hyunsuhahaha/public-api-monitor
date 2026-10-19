@@ -138,3 +138,82 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, n)
 }
+
+// silences: GET lists the active ones; POST {"target","minutes","author","reason"} mutes
+// an API's pages; DELETE /api/v1/silences/{id} ends one early. Writes need AdminToken.
+func (s *Server) listSilences(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Store.ActiveSilences(r.Context(), time.Now())
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	writeJSON(w, list)
+}
+
+func (s *Server) admin(w http.ResponseWriter, r *http.Request) bool {
+	if s.AdminToken == "" {
+		http.NotFound(w, r)
+		return false
+	}
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(got), []byte(s.AdminToken)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func (s *Server) addSilence(w http.ResponseWriter, r *http.Request) {
+	if !s.admin(w, r) {
+		return
+	}
+	var body struct {
+		Target, Author, Reason string
+		Minutes                int
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if s.target(body.Target) == nil {
+		http.Error(w, "unknown target", http.StatusBadRequest)
+		return
+	}
+	if body.Minutes < 5 || body.Minutes > 7*24*60 {
+		http.Error(w, "minutes: 5 to 10080", http.StatusBadRequest)
+		return
+	}
+	if strings.ContainsRune(body.Author+body.Reason, utf8.RuneError) {
+		http.Error(w, "author and reason must be UTF-8", http.StatusBadRequest)
+		return
+	}
+	if body.Author = strings.TrimSpace(body.Author); body.Author == "" {
+		body.Author = "운영자"
+	}
+	now := time.Now()
+	x := store.Silence{Target: body.Target, Created: now, Until: now.Add(time.Duration(body.Minutes) * time.Minute),
+		Author: body.Author, Reason: strings.TrimSpace(body.Reason)}
+	if err := s.Store.AddSilence(r.Context(), &x); err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	s.cache.clear()
+	writeJSON(w, x)
+}
+
+func (s *Server) endSilence(w http.ResponseWriter, r *http.Request) {
+	if !s.admin(w, r) {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.Store.EndSilence(r.Context(), id, time.Now()); err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	s.cache.clear()
+	w.WriteHeader(http.StatusNoContent)
+}

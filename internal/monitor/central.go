@@ -246,6 +246,11 @@ func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
 		c.Log.Info("incident closed", "target", t.ID, "id", in.ID, "duration", in.Ended.Sub(in.Started).Round(time.Second))
 	}
 	if c.Notifier != nil {
+		// a silenced API's changes are recorded as usual but page nobody
+		if c.Store.Silenced(ctx, t.ID, time.Now()) {
+			c.Log.Info("page silenced", "target", t.ID, "id", in.ID, "event", int(ev))
+			return
+		}
 		c.Notifier.Notify(ctx, ev, in, t)
 	}
 }

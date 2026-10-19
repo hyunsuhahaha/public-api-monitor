@@ -63,3 +63,10 @@ func (c *respCache) wrap(h http.HandlerFunc) http.HandlerFunc {
 		}
 	}
 }
+
+// clear drops every cached answer (after a write the pages must see at once).
+func (c *respCache) clear() {
+	c.mu.Lock()
+	c.entries = nil
+	c.mu.Unlock()
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -353,5 +354,46 @@ func TestIncidentAckInList(t *testing.T) {
 	}
 	if list[0].Target != "a" || list[0].AckBy != "당번" || list[0].Notes != 0 {
 		t.Fatalf("an ack names who took it and is not a note: %+v", list[0])
+	}
+}
+
+func TestSilences(t *testing.T) {
+	_, h := setup(t)
+	do := func(method, path, auth, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if auth != "" {
+			req.Header.Set("Authorization", "Bearer "+auth)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+	if w := do("POST", "/api/v1/silences", "", `{"target":"a","minutes":60}`); w.Code != 401 {
+		t.Fatalf("no token: %d", w.Code)
+	}
+	if w := do("POST", "/api/v1/silences", "admin", `{"target":"nope","minutes":60}`); w.Code != 400 {
+		t.Fatalf("unknown target: %d", w.Code)
+	}
+	if w := do("POST", "/api/v1/silences", "admin", `{"target":"a","minutes":1}`); w.Code != 400 {
+		t.Fatalf("too short: %d", w.Code)
+	}
+	w := do("POST", "/api/v1/silences", "admin", `{"target":"a","minutes":60,"author":"당번","reason":"기관 공지된 장애"}`)
+	var x struct{ ID int64 }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &x) != nil || x.ID == 0 {
+		t.Fatalf("add: %d %s", w.Code, w.Body.String())
+	}
+	var ov struct {
+		Silences []struct{ Target, Reason string }
+	}
+	json.Unmarshal(get(t, h, "/api/v1/overview?range=1h").Body.Bytes(), &ov)
+	if len(ov.Silences) != 1 || ov.Silences[0].Target != "a" || ov.Silences[0].Reason != "기관 공지된 장애" {
+		t.Fatalf("overview: %+v", ov)
+	}
+	if w := do("DELETE", fmt.Sprintf("/api/v1/silences/%d", x.ID), "admin", ""); w.Code != 204 {
+		t.Fatalf("end: %d", w.Code)
+	}
+	json.Unmarshal(get(t, h, "/api/v1/overview?range=1h").Body.Bytes(), &ov)
+	if len(ov.Silences) != 0 {
+		t.Fatalf("ended silence still listed: %+v", ov.Silences)
 	}
 }

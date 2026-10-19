@@ -226,3 +226,8 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .note-tag { color: var(--muted); border: 1px solid var(--line); }
 .ack { color: var(--blue); font-size: 12px; align-self: center; }
 .note.is-ack span:last-child { color: var(--blue); }
+
+.silence { display: flex; align-items: center; gap: 10px; margin: -2px 0 10px; padding: 6px 12px; border: 1px solid var(--line2); border-radius: 4px; font-size: 12px; color: var(--muted); }
+.silence.on { color: var(--purple); border-color: rgba(184,119,217,.45); }
+.silence select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+.muted-tag { font-size: 11px; }

@@ -100,6 +100,17 @@ CREATE TABLE IF NOT EXISTS incident_notes (
 	text     TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS incident_notes_incident ON incident_notes(incident, at);
+-- silences: an operator mutes an API's pages for a while (incidents and SLOs unchanged,
+-- unlike maintenance)
+CREATE TABLE IF NOT EXISTS silences (
+	id      INTEGER PRIMARY KEY,
+	target  TEXT    NOT NULL,
+	created INTEGER NOT NULL,
+	until   INTEGER NOT NULL,
+	author  TEXT    NOT NULL,
+	reason  TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS silences_until ON silences(until);
 -- timeout follow-ups (probe.FollowUps): did a timed-out request come back when retried?
 CREATE TABLE IF NOT EXISTS followups (
 	target     TEXT    NOT NULL,
@@ -931,4 +942,58 @@ func (s *Store) NoteSummaries(ctx context.Context) (map[int64]NoteSummary, error
 		out[id] = x
 	}
 	return out, rows.Err()
+}
+
+// Silence mutes one API's pages until a time.
+type Silence struct {
+	ID      int64     `json:"id"`
+	Target  string    `json:"target"`
+	Created time.Time `json:"created"`
+	Until   time.Time `json:"until"`
+	Author  string    `json:"author"`
+	Reason  string    `json:"reason"`
+}
+
+func (s *Store) AddSilence(ctx context.Context, x *Silence) error {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO silences(target, created, until, author, reason) VALUES(?,?,?,?,?)`,
+		x.Target, ms(x.Created), ms(x.Until), x.Author, x.Reason)
+	if err != nil {
+		return err
+	}
+	x.ID, err = res.LastInsertId()
+	return err
+}
+
+// EndSilence ends a silence now (it stays in the history).
+func (s *Store) EndSilence(ctx context.Context, id int64, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE silences SET until=? WHERE id=? AND until>?`, ms(now), id, ms(now))
+	return err
+}
+
+// ActiveSilences returns the silences in force at a time, latest end first per target.
+func (s *Store) ActiveSilences(ctx context.Context, now time.Time) ([]Silence, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, target, created, until, author, reason FROM silences
+		WHERE created<=? AND until>? ORDER BY until DESC`, ms(now), ms(now))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Silence{}
+	for rows.Next() {
+		var x Silence
+		var c, u int64
+		if err := rows.Scan(&x.ID, &x.Target, &c, &u, &x.Author, &x.Reason); err != nil {
+			return nil, err
+		}
+		x.Created, x.Until = fromMS(c), fromMS(u)
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// Silenced reports whether a target's pages are muted at a time.
+func (s *Store) Silenced(ctx context.Context, target string, now time.Time) bool {
+	var n int
+	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM silences WHERE target=? AND created<=? AND until>?`, target, ms(now), ms(now)).Scan(&n)
+	return n > 0
 }
