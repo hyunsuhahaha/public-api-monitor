@@ -425,13 +425,16 @@ func (s *Server) slowLines(id string) (slowAfter, limit, usual int64) {
 	return t.SlowAfter.Milliseconds(), limit, usual
 }
 
-// followUp is the target's latest timeout follow-up, or nil.
-func (s *Server) followUp(id string) *probe.FollowUp {
-	if s.FollowUp == nil {
+// followUp is the target's latest timeout follow-up and how the last 7 days' came out
+// (retried / late / hung), or nil without any.
+func (s *Server) followUp(id string) map[string]any {
+	list, err := s.Store.FollowUps(context.Background(), id, time.Now().Add(-7*24*time.Hour))
+	if err != nil || len(list) == 0 {
 		return nil
 	}
-	if f, ok := s.FollowUp(id); ok {
-		return &f
+	tally := map[string]int{}
+	for _, f := range list {
+		tally[f.Outcome()]++
 	}
-	return nil
+	return map[string]any{"last": list[0], "outcome": list[0].Outcome(), "week": tally}
 }

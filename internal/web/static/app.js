@@ -448,7 +448,7 @@ async function openDrawer(id) {
   const prevP95 = s.t.map((t) => byT[t] ?? null);
   const hasPrev = prevP95.some((x) => x != null);
   // the last timeout's follow-up: slow (answered later) or hung (nothing even after a minute)
-  const fu = s.followUp, fb = $("d-fu");
+  const fw = s.followUp, fu = fw && fw.last, fb = $("d-fu");
   fb.hidden = !fu;
   if (fu) {
     const when = kst(fu.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -462,6 +462,8 @@ async function openDrawer(id) {
       : fu.answered
         ? `⏱ ${when} 타임아웃 뒤 다시 기다려 보니 ${ms(fu.afterMs)} 만에 응답 (기준 ${ms(fu.timeoutMs)}): 서버가 느린 것 — 타임아웃을 늘리면 받을 수 있음`
         : `⛔ ${when} 타임아웃 뒤 ${ms(fu.waitMs)}을 더 기다려도 응답 없음 (${fu.stalled || "응답 없음"}): 서버가 멈춘 것 — 타임아웃을 늘려도 소용없음`;
+    const wk = fw.week || {}, n = (wk.retried || 0) + (wk.late || 0) + (wk.hung || 0);
+    if (n > 1) fb.textContent += ` · 7일간 타임아웃 재확인 ${n}회: 재시도로 바로 됨 ${wk.retried || 0} · 늦게 응답 ${wk.late || 0} · 응답 없음 ${wk.hung || 0}`;
   }
   // today vs the same buckets yesterday: the median of the ratios, where both exist
   const ratios = s.p95.map((v, i) => (v && prevP95[i] ? v / prevP95[i] : null)).filter((x) => x != null).sort((a, b) => a - b);

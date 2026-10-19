@@ -90,6 +90,18 @@ CREATE TABLE IF NOT EXISTS schema_events (
 	paths  TEXT    NOT NULL  -- newline-separated
 );
 CREATE INDEX IF NOT EXISTS schema_events_at ON schema_events(at);
+-- timeout follow-ups (probe.FollowUps): did a timed-out request come back when retried?
+CREATE TABLE IF NOT EXISTS followups (
+	target     TEXT    NOT NULL,
+	at         INTEGER NOT NULL,
+	answered   INTEGER NOT NULL,
+	after_ms   INTEGER NOT NULL,
+	http       INTEGER NOT NULL,
+	wait_ms    INTEGER NOT NULL,
+	timeout_ms INTEGER NOT NULL,
+	stalled    TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS followups_target_at ON followups(target, at);
 `
 
 func Open(path string) (*Store, error) {
@@ -768,7 +780,7 @@ func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM hourly WHERE hour<?`, ms(time.Now().Add(-4*time.Since(before)))); err != nil {
 		return 0, err
 	}
-	for _, q := range []string{`DELETE FROM checks WHERE at<?`, `DELETE FROM verdicts WHERE at<?`} {
+	for _, q := range []string{`DELETE FROM checks WHERE at<?`, `DELETE FROM verdicts WHERE at<?`, `DELETE FROM followups WHERE at<?`} {
 		res, err := s.db.ExecContext(ctx, q, ms(before))
 		if err != nil {
 			return n, err
@@ -777,4 +789,32 @@ func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
 		n += k
 	}
 	return n, nil
+}
+
+// SaveFollowUp records one timeout follow-up.
+func (s *Store) SaveFollowUp(ctx context.Context, target string, f probe.FollowUp) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO followups(target, at, answered, after_ms, http, wait_ms, timeout_ms, stalled) VALUES(?,?,?,?,?,?,?,?)`,
+		target, ms(f.At), f.Answered, f.AfterMs, f.HTTP, f.WaitMs, f.Timeout, f.Stalled)
+	return err
+}
+
+// FollowUps returns a target's follow-ups since a time, newest first.
+func (s *Store) FollowUps(ctx context.Context, target string, since time.Time) ([]probe.FollowUp, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT at, answered, after_ms, http, wait_ms, timeout_ms, stalled FROM followups
+		WHERE target=? AND at>=? ORDER BY at DESC LIMIT 500`, target, ms(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []probe.FollowUp
+	for rows.Next() {
+		var f probe.FollowUp
+		var at int64
+		if err := rows.Scan(&at, &f.Answered, &f.AfterMs, &f.HTTP, &f.WaitMs, &f.Timeout, &f.Stalled); err != nil {
+			return nil, err
+		}
+		f.At = fromMS(at)
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }

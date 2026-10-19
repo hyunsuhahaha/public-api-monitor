@@ -162,16 +162,10 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	}
 	prober.FollowUps = probe.NewFollowUps()
 	prober.FollowUps.Done = func(id string, f probe.FollowUp) {
-		// retried: a fresh request answered at once (that one got stuck); late: it took
-		// longer than the timeout; hung: nothing even within the follow-up's budget
-		outcome := "hung"
-		switch {
-		case f.Answered && f.AfterMs < f.Timeout/2:
-			outcome = "retried"
-		case f.Answered:
-			outcome = "late"
+		mFollowUps.WithLabelValues(id, f.Outcome()).Inc()
+		if err := st.SaveFollowUp(context.Background(), id, f); err != nil {
+			log.Error("save follow-up", "err", err)
 		}
-		mFollowUps.WithLabelValues(id, outcome).Inc()
 		log.Info("timeout follow-up", "target", id, "answered", f.Answered, "after_ms", f.AfterMs, "stalled", f.Stalled)
 	}
 	m := &monitor.Monitor{Cfg: cfg, Prober: prober, Sink: c, Log: log, MaxParallel: 4}
@@ -180,7 +174,7 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 		Addr: addr,
 		Handler: (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck,
 			Ingest: c.Ingest, IngestToken: token, PublicURL: os.Getenv("PAMON_PUBLIC_URL"),
-			SlowLimit: prober.Baseline.Limit, Version: version, StartedAt: startedAt, FollowUp: prober.FollowUps.Last}).Handler(),
+			SlowLimit: prober.Baseline.Limit, Version: version, StartedAt: startedAt}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,
 	}

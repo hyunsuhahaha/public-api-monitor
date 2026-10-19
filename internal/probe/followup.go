@@ -35,6 +35,19 @@ type FollowUp struct {
 	Stalled  string    `json:"stalled,omitempty"` // where it was stuck, if it never answered
 }
 
+// Outcome: "retried" (a fresh request answered at once: that one got stuck, retrying
+// helps), "late" (answered, but after the timeout: a longer timeout would work) or "hung"
+// (nothing even within the follow-up's budget).
+func (f FollowUp) Outcome() string {
+	switch {
+	case f.Answered && f.AfterMs < f.Timeout/2:
+		return "retried"
+	case f.Answered:
+		return "late"
+	}
+	return "hung"
+}
+
 func NewFollowUps() *FollowUps {
 	return &FollowUps{Wait: 60 * time.Second, Every: 30 * time.Minute, last: map[string]FollowUp{}, busy: map[string]bool{}}
 }

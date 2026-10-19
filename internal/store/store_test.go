@@ -57,3 +57,25 @@ func TestCheckPhasesRoundTrip(t *testing.T) {
 		t.Fatalf("%+v %v", rs, err)
 	}
 }
+
+func TestFollowUpsRoundTrip(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "f.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	now := time.Now()
+	for i, f := range []probe.FollowUp{
+		{At: now.Add(-2 * time.Hour), Answered: true, AfterMs: 79, HTTP: 200, WaitMs: 60000, Timeout: 10000},
+		{At: now.Add(-time.Hour), Answered: false, AfterMs: 60000, WaitMs: 60000, Timeout: 10000, Stalled: "x"},
+	} {
+		if err := st.SaveFollowUp(ctx, "a", f); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	list, err := st.FollowUps(ctx, "a", now.Add(-24*time.Hour))
+	if err != nil || len(list) != 2 || list[0].Outcome() != "hung" || list[1].Outcome() != "retried" || list[1].AfterMs != 79 {
+		t.Fatalf("%+v %v", list, err)
+	}
+}
