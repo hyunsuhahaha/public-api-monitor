@@ -822,3 +822,25 @@ func (s *Store) FollowUps(ctx context.Context, target string, since time.Time) (
 	}
 	return out, rows.Err()
 }
+
+// FollowUpsBetween returns all targets' follow-ups in [from, to).
+func (s *Store) FollowUpsBetween(ctx context.Context, from, to time.Time) (map[string][]probe.FollowUp, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT target, at, answered, after_ms, http, wait_ms, timeout_ms, stalled FROM followups
+		WHERE at>=? AND at<? ORDER BY target, at`, ms(from), ms(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]probe.FollowUp{}
+	for rows.Next() {
+		var t string
+		var f probe.FollowUp
+		var at int64
+		if err := rows.Scan(&t, &at, &f.Answered, &f.AfterMs, &f.HTTP, &f.WaitMs, &f.Timeout, &f.Stalled); err != nil {
+			return nil, err
+		}
+		f.At = fromMS(at)
+		out[t] = append(out[t], f)
+	}
+	return out, rows.Err()
+}

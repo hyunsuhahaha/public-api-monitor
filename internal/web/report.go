@@ -79,13 +79,18 @@ tr:last-child td{border-bottom:0}.bad{color:var(--bad);font-weight:600}.note{col
 <div class="kpi"><span>감시 API</span><b>{{.WithData}} / {{.APIs}}</b></div>
 </div>
 <h2>API별 (가용률 낮은 순)</h2>
-<div class="wrap"><table><tr><th>#</th><th>API</th><th>기관</th><th>가용률</th><th>장애 시간</th><th>최장</th><th>건수</th><th>p95</th></tr>
+<div class="wrap"><table><tr><th>#</th><th>API</th><th>기관</th><th>가용률</th><th>장애 시간</th><th>최장</th><th title="장애와 성능 저하를 모두 센 수 (장애 시간은 장애만 합산)">장애·저하 건수</th><th>p95</th></tr>
 {{range $i, $r := .Rows}}{{if ge $r.Availability 0.0}}<tr><td>{{inc $i}}</td><td>{{$r.Name}}</td><td>{{$r.Provider}}</td><td{{if bad $r.Availability}} class="bad"{{end}}>{{pct $r.Availability}}</td><td>{{dur $r.DowntimeMin}}</td><td>{{dur $r.LongestMin}}</td><td>{{$r.Incidents}}</td><td>{{if $r.P95Ms}}{{$r.P95Ms}}ms{{else}}–{{end}}</td></tr>
 {{end}}{{end}}</table></div>
 {{if lt .WithData .APIs}}<p class="note">이 달 기록이 없는 API {{sub .APIs .WithData}}개는 표에서 뺐습니다 (서비스 키 미설정 등).</p>{{end}}
 {{if .Longest}}<h2>가장 길었던 장애</h2>
 <div class="wrap"><table><tr><th>API</th><th>시작 (KST)</th><th>길이</th><th>원인</th></tr>
 {{range .Longest}}<tr><td>{{.Name}}</td><td>{{kst .Started}}</td><td>{{dur .Minutes}}{{if .Ongoing}} (진행 중){{end}}</td><td>{{.Reason}}</td></tr>
+{{end}}</table></div>{{end}}
+{{if .Timeouts}}<h2>타임아웃 뒤 재확인</h2>
+<p class="note">타임아웃이 나면 같은 요청을 한 번 더 길게 기다려 봤습니다. 바로 응답하면 그 요청만 걸린 것(재시도하면 됨), 늦게 응답하면 서버가 느린 것, 끝까지 응답이 없으면 서버가 멈춘 것입니다.</p>
+<div class="wrap"><table><tr><th>API</th><th>재확인</th><th>재시도로 바로 됨</th><th>늦게 응답</th><th>응답 없음</th><th>응답까지 (중앙값)</th></tr>
+{{range .Timeouts}}<tr><td>{{.Name}}</td><td>{{.Checked}}</td><td>{{.Retried}}</td><td>{{.Late}}</td><td{{if .Hung}} class="bad"{{end}}>{{.Hung}}</td><td>{{if .MedianMs}}{{.MedianMs}}ms{{else}}–{{end}}</td></tr>
 {{end}}</table></div>{{end}}
 <h2>기관별</h2>
 <div class="wrap"><table><tr><th>기관</th><th>API 수</th><th>평균 가용률</th><th>장애 시간</th></tr>

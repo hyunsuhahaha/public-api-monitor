@@ -90,3 +90,32 @@ func TestDur(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildTimeoutFollowUps(t *testing.T) {
+	cfg, _ := config.Parse([]byte("targets:\n  - {id: bad, name: 나쁜 API, url: http://y}\n"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "f.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	at := kst("2026-10-19 11:43")
+	for _, ms := range []int64{79, 122, 134} {
+		st.SaveFollowUp(ctx, "bad", probe.FollowUp{At: at, Answered: true, AfterMs: ms, HTTP: 200, WaitMs: 60000, Timeout: 10000})
+	}
+	st.SaveFollowUp(ctx, "bad", probe.FollowUp{At: at, AfterMs: 60000, WaitMs: 60000, Timeout: 10000})
+	r, err := Build(ctx, st, cfg, "2026-10", kst("2026-11-05 00:00"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Timeouts) != 1 {
+		t.Fatalf("%+v", r.Timeouts)
+	}
+	x := r.Timeouts[0]
+	if x.Name != "나쁜 API" || x.Checked != 4 || x.Retried != 3 || x.Hung != 1 || x.MedianMs != 122 {
+		t.Fatalf("%+v", x)
+	}
+	if md := r.Markdown(""); !strings.Contains(md, "| 나쁜 API | 4 | 3 | 0 | 1 | 122ms |") {
+		t.Fatalf("markdown: %s", md)
+	}
+}

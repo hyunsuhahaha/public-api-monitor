@@ -46,6 +46,17 @@ type Outage struct {
 	Reason   string    `json:"reason"`
 }
 
+// Timeouts: what the follow-ups found for one API's timeouts (probe.FollowUps).
+type Timeouts struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Checked  int    `json:"checked"`
+	Retried  int    `json:"retried"` // answered at once when re-sent: that request got stuck
+	Late     int    `json:"late"`    // answered after the timeout: the server was slow
+	Hung     int    `json:"hung"`    // nothing within the follow-up's budget
+	MedianMs int64  `json:"medianMs"`
+}
+
 type Report struct {
 	Month        string     `json:"month"` // YYYY-MM (KST)
 	From         time.Time  `json:"from"`
@@ -59,6 +70,7 @@ type Report struct {
 	Rows         []Row      `json:"rows"`      // worst availability first
 	Providers    []Provider `json:"providers"` // worst first
 	Longest      []Outage   `json:"longest"`
+	Timeouts     []Timeouts `json:"timeouts"` // most followed-up first
 }
 
 // MonthRange parses YYYY-MM as a KST calendar month.
@@ -145,6 +157,38 @@ func Build(ctx context.Context, st *store.Store, cfg *config.Config, month strin
 		r.Longest = r.Longest[:10]
 	}
 	r.Providers = providers(r.Rows)
+	fus, err := st.FollowUpsBetween(ctx, from, to)
+	if err != nil {
+		return nil, err
+	}
+	for id, list := range fus {
+		x := Timeouts{ID: id, Name: id, Checked: len(list)}
+		if t := names[id]; t != nil {
+			x.Name = t.Name
+		}
+		var after []int64
+		for _, f := range list {
+			switch f.Outcome() {
+			case "retried":
+				x.Retried++
+			case "late":
+				x.Late++
+			default:
+				x.Hung++
+			}
+			if f.Answered {
+				after = append(after, f.AfterMs)
+			}
+		}
+		x.MedianMs = pct(after, 0.5)
+		r.Timeouts = append(r.Timeouts, x)
+	}
+	sort.Slice(r.Timeouts, func(i, j int) bool {
+		if r.Timeouts[i].Checked != r.Timeouts[j].Checked {
+			return r.Timeouts[i].Checked > r.Timeouts[j].Checked
+		}
+		return r.Timeouts[i].ID < r.Timeouts[j].ID
+	})
 	return r, nil
 }
 
@@ -266,6 +310,13 @@ func (r *Report) Markdown(publicURL string) string {
 				length += " (진행 중)"
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", o.Name, o.Started.In(config.KST).Format("1/2 15:04"), length, strings.ReplaceAll(o.Reason, "|", "/"))
+		}
+	}
+
+	if len(r.Timeouts) > 0 {
+		b.WriteString("\n## 타임아웃 뒤 재확인\n\n타임아웃이 나면 같은 요청을 한 번 더 길게 기다려 봤습니다. 바로 응답하면 그 요청만 걸린 것(재시도하면 됨), 늦게 응답하면 서버가 느린 것, 끝까지 응답이 없으면 서버가 멈춘 것입니다.\n\n| API | 재확인 | 재시도로 바로 됨 | 늦게 응답 | 응답 없음 | 응답까지 (중앙값) |\n|---|---|---|---|---|---|\n")
+		for _, x := range r.Timeouts {
+			fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %s |\n", x.Name, x.Checked, x.Retried, x.Late, x.Hung, msOrDash(x.MedianMs))
 		}
 	}
 
