@@ -109,6 +109,12 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
+	// text that wasn't UTF-8 (a shell in another code page) is refused, not stored garbled:
+	// encoding/json turns such bytes into U+FFFD
+	if strings.ContainsRune(body.Text, utf8.RuneError) || strings.ContainsRune(body.Author, utf8.RuneError) {
+		http.Error(w, "author and text must be UTF-8", http.StatusBadRequest)
+		return
+	}
 	body.Text = strings.TrimSpace(body.Text)
 	if body.Kind != "ack" {
 		body.Kind = "note"

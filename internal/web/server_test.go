@@ -317,6 +317,9 @@ func TestIncidentNotes(t *testing.T) {
 	if c := post("admin", `{"text":"  "}`); c != 400 {
 		t.Fatalf("empty text: %d", c)
 	}
+	if c := post("admin", "{\"author\":\"pamon \xbf\xee\xbf\xb5\",\"text\":\"x\"}"); c != 400 {
+		t.Fatalf("invalid UTF-8 (CP949 bytes): %d", c)
+	}
 	if c := post("admin", `{"author":"홍길동","text":"데이터포털 공지: 서버 점검"}`); c != 200 {
 		t.Fatalf("note: %d", c)
 	}
