@@ -570,3 +570,83 @@ targets:
     category: 생활
     key_env: SEOUL_OPENAPI_KEY
     url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ChildCareInfo/1/5/
+
+  # ── 공공데이터포털 3차 추가 (2026-10-19 활용신청) ───────────────────────────
+  - id: kma-typhoon
+    name: 기상청 태풍정보
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15043565/openapi.do
+    url: https://apis.data.go.kr/1360000/TyphoonInfoService/getTyphoonInfo?serviceKey={{.Key}}&pageNo=1&numOfRows=5&dataType=JSON&fromTmFc={{date (addDays .Now -3) "20060102"}}&toTmFc={{date .Now "20060102"}}
+  - id: kma-asos-daily
+    name: 기상청 종관기상관측(ASOS) 일자료
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15059093/openapi.do
+    url: https://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={{.Key}}&pageNo=1&numOfRows=5&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={{date (addDays .Now -2) "20060102"}}&endDt={{date (addDays .Now -2) "20060102"}}&stnIds=108
+    expect:
+      - name: 일평균기온(℃)
+        pattern: '"avgTa"\s*:\s*"(-?[\d.]+)"'
+        min: -40
+        max: 45
+  - id: kma-fcst-msg
+    name: 기상청 단기예보 통보문
+    provider: 기상청
+    category: 날씨
+    docs: https://www.data.go.kr/data/15058629/openapi.do
+    url: https://apis.data.go.kr/1360000/VilageFcstMsgService/getWthrSituation?serviceKey={{.Key}}&pageNo=1&numOfRows=5&dataType=JSON&stnId=108
+    freshness:   # 05·11·17시 발표: 14시간 넘게 그대로면 통보문이 멈춘 것
+      pattern: '"tmFc"\s*:\s*(\d{12})'
+      layout: "200601021504"
+      max_age: 14h
+  - id: fsc-bond-price
+    name: 금융위원회 채권시세정보
+    provider: 금융위원회
+    category: 금융
+    docs: https://www.data.go.kr/data/15094784/openapi.do
+    url: https://apis.data.go.kr/1160100/service/GetBondSecuritiesInfoService/getBondPriceInfo?serviceKey={{.Key}}&numOfRows=3&pageNo=1&resultType=json
+    freshness:   # 영업일 기준 시세: 주말·연휴를 넘겨도 5일 이상 멈추면 이상
+      pattern: '"basDt"\s*:\s*"(\d{8})"'
+      layout: "20060102"
+      max_age: 120h
+    expect:
+      - name: 채권 종가(원)
+        pattern: '"clprPrc"\s*:\s*"([\d.]+)"'
+        min: 1
+        max: 10000000
+  - id: fsc-krx-listed
+    name: 금융위원회 KRX 상장종목정보
+    provider: 금융위원회
+    category: 금융
+    docs: https://www.data.go.kr/data/15094775/openapi.do
+    url: https://apis.data.go.kr/1160100/service/GetKrxListedInfoService/getItemInfo?serviceKey={{.Key}}&numOfRows=3&pageNo=1&resultType=json
+    freshness:   # 영업일 기준 시세: 주말·연휴를 넘겨도 5일 이상 멈추면 이상
+      pattern: '"basDt"\s*:\s*"(\d{8})"'
+      layout: "20060102"
+      max_age: 120h
+  - id: fsc-etf-price
+    name: 금융위원회 증권상품(ETF) 시세
+    provider: 금융위원회
+    category: 금융
+    docs: https://www.data.go.kr/data/15094806/openapi.do
+    url: https://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService/getETFPriceInfo?serviceKey={{.Key}}&numOfRows=3&pageNo=1&resultType=json
+    freshness:   # 영업일 기준 시세: 주말·연휴를 넘겨도 5일 이상 멈추면 이상
+      pattern: '"basDt"\s*:\s*"(\d{8})"'
+      layout: "20060102"
+      max_age: 120h
+    expect:
+      - name: ETF 종가(원)
+        pattern: '"clpr"\s*:\s*"(\d+)"'
+        min: 1
+        max: 100000000
+  - id: tour-gocamping
+    name: 한국관광공사 고캠핑 (캠핑장)
+    provider: 한국관광공사
+    category: 관광
+    docs: https://www.data.go.kr/data/15101933/openapi.do
+    url: https://apis.data.go.kr/B551011/GoCamping/basedList?serviceKey={{.Key}}&numOfRows=3&pageNo=1&MobileOS=ETC&MobileApp=pamon&_type=json
+    expect:
+      - name: 위도
+        pattern: '"mapY"\s*:\s*"([\d.]+)"'
+        min: 33
+        max: 39
