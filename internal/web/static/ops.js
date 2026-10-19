@@ -196,7 +196,8 @@ let palItems = [], palSel = 0;
 
 function paletteCommands() {
   const cmds = RANGES.map((r) => ({ label: `기간: ${RANGE_LABEL[r]}`, hint: "명령", run: () => document.querySelectorAll("#ranges button")[RANGES.indexOf(r)].click() }));
-  cmds.push({ label: "월간 가용성 리포트 열기", hint: "명령", run: () => (location.href = "/report") },
+  cmds.push({ label: "공개 상태 페이지 열기 (API 사용자용)", hint: "명령", run: () => (location.href = "/status") },
+    { label: "월간 가용성 리포트 열기", hint: "명령", run: () => (location.href = "/report") },
     { label: "장애 피드(Atom) 열기", hint: "명령", run: () => (location.href = "/feed.xml") },
     { label: "키보드 단축키 보기", hint: "?", run: () => ($("help").hidden = false) },
     { label: "교대 인수인계 요약 (Markdown)", hint: "h", run: openHandoff });

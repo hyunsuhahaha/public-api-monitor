@@ -193,3 +193,15 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .phase { display: flex; height: 8px; min-width: 4px; border-radius: 2px; overflow: hidden; background: var(--none); }
 .phase span { display: block; height: 100%; }
 .log td:has(.phase) { width: 120px; min-width: 120px; }
+.rel th, .rel td { padding: 6px 8px; border-bottom: 1px solid var(--line2); white-space: nowrap; text-align: left; font-size: 12px; }
+.rel th { color: var(--muted); font-weight: 500; }
+.rel th.num, .rel td.num { text-align: right; }
+.rel tr:hover td { background: rgba(255,255,255,.03); }
+.rel .name { font-size: 13px; } .rel .prov { color: var(--muted); font-size: 11px; }
+.rel-bar { height: 3px; background: var(--none); border-radius: 2px; margin-top: 3px; min-width: 120px; }
+.rel-bar i { display: block; height: 100%; border-radius: 2px; }
+@media (max-width: 640px) { .rel th:nth-child(n+5), .rel td:nth-child(n+5) { display: none; } }
+/* top bar on mid-size screens: never wrap a button's label; drop the extras before that */
+.btn, .links a { white-space: nowrap; }
+@media (max-width: 1200px) { .btn kbd, .topbar .sub { display: none; } }
+@media (max-width: 980px) { .links { display: none; } }

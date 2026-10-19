@@ -308,6 +308,52 @@ function renderIncidents() {
   }
 }
 
+// ── reliability by API: which ones cost the most, and how fast they come back ─────
+// Over the selected range: incidents, time affected (overlap with the range), MTTR (mean
+// time to recover, closed incidents) and MTBF (time up per failure). Sorted by time
+// affected: the list to start from when deciding what to chase or silence.
+const mins = (m) => (m < 1 ? "<1분" : m < 60 ? Math.round(m) + "분" : m < 1440 ? (m / 60).toFixed(1) + "시간" : (m / 1440).toFixed(1) + "일");
+function renderReliability() {
+  const from = state.data.from * 1000, to = state.data.to * 1000, span = (to - from) / 60000, now = Date.now();
+  const names = Object.fromEntries(state.data.targets.map((t) => [t.id, t]));
+  const by = {};
+  for (const i of state.incidents) {
+    const s = Date.parse(i.started), e = isOpen(i) ? now : Date.parse(i.ended);
+    if (e < from || s > to) continue;
+    const r = (by[i.target] = by[i.target] || { n: 0, out: 0, impact: 0, closed: [], flaps: 0, last: 0, open: false });
+    r.n++; r.out += i.severity >= 2 ? 1 : 0; r.flaps += i.flaps || 0; r.last = Math.max(r.last, s); r.open = r.open || isOpen(i);
+    r.impact += (Math.min(e, to) - Math.max(s, from)) / 60000;
+    if (!isOpen(i)) r.closed.push((e - s) / 60000);
+  }
+  const rows = Object.entries(by).sort((a, b) => b[1].impact - a[1].impact);
+  const tbl = $("rel"); tbl.replaceChildren();
+  const all = rows.flatMap(([, r]) => r.closed).sort((a, b) => a - b);
+  $("rel-hint").textContent = rows.length
+    ? `${RANGE_LABEL[state.range]} · API ${rows.length}개에서 ${rows.reduce((a, [, r]) => a + r.n, 0)}건 · 영향 시간 합 ${mins(rows.reduce((a, [, r]) => a + r.impact, 0))} · 복구 시간 중앙값 ${all.length ? mins(all[Math.floor(all.length / 2)]) : "–"}`
+    : "";
+  if (!rows.length) { const tr = el("tr"); tr.append(el("td", "empty", "이 기간에는 장애가 없습니다")); tbl.append(tr); return; }
+  const hr = el("tr");
+  [["API", ""], ["장애", "이 기간에 열린(또는 걸친) 장애 수 · 괄호는 그중 완전 장애"], ["영향 시간", "장애가 열려 있던 시간의 합 (기간 안만)"],
+   ["MTTR", "평균 복구 시간 (닫힌 장애)"], ["MTBF", "장애 사이 평균 정상 시간 = (기간 − 영향 시간) ÷ 장애 수"], ["불안정", "복구된 듯하다 다시 실패한 횟수"], ["마지막", ""]]
+    .forEach(([h, tip]) => { const th = el("th", h === "API" ? "" : "num", h); if (tip) th.title = tip; hr.append(th); });
+  tbl.append(hr);
+  const maxImpact = rows[0][1].impact;
+  for (const [id, r] of rows.slice(0, 12)) {
+    const t = names[id] || { name: id, provider: "" };
+    const tr = el("tr"); tr.onclick = () => openDrawer(id); tr.style.cursor = "pointer";
+    const nm = el("td"); nm.append(el("div", "name", t.name), el("div", "prov", t.provider)); tr.append(nm);
+    tr.append(el("td", "num", r.n + (r.out ? ` (${r.out})` : "")));
+    const imp = el("td", "num"), bar = el("div", "rel-bar"), fill = el("i");
+    fill.style.width = (r.impact / maxImpact * 100) + "%"; fill.style.background = r.out ? C.out : C.deg; bar.append(fill);
+    imp.append(el("span", "", mins(r.impact) + ` · ${(r.impact / span * 100).toFixed(1)}%`), bar); tr.append(imp);
+    tr.append(el("td", "num", r.closed.length ? mins(r.closed.reduce((a, b) => a + b, 0) / r.closed.length) : "–"));
+    tr.append(el("td", "num", mins(Math.max(0, span - r.impact) / r.n)));
+    tr.append(el("td", "num", r.flaps ? "×" + r.flaps : "–"));
+    tr.append(el("td", "num", r.open ? "진행 중" : kst(r.last, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })));
+    tbl.append(tr);
+  }
+}
+
 // ── schema changes ────────────────────────────────────────────────────────────
 function schemaRow(e, withName) {
   const names = Object.fromEntries(state.data.targets.map((t) => [t.id, t.name]));
@@ -534,7 +580,7 @@ async function load() {
     fetch("/api/v1/schema-events").then((r) => r.json()),
   ]);
   state.data = d; state.incidents = inc; state.schema = sch; state.loadedAt = Date.now();
-  renderStats(d); renderCorrel(); renderCats(); renderTable(); renderHeat(); renderIncidents(); renderSchema();
+  renderStats(d); renderCorrel(); renderCats(); renderTable(); renderHeat(); renderIncidents(); renderReliability(); renderSchema();
 }
 
 function renderRanges() {
