@@ -45,6 +45,35 @@ function whereItFailed(checks) {
   return { who, cls, detail: parts.join(" · ") || "구간 기록 없음" };
 }
 
+// What to do next, from where it failed: check the portal's notices and the agency's
+// other APIs for a provider problem, the other locations and DNS for a network one; the
+// runbook and the escalation path either way. Links, not prose.
+const RUNBOOK = "https://github.com/hyunsuhahaha/public-api-monitor/blob/main/docs/runbooks/README.md#공공-api-장애-대응";
+function nextSteps(d, w, open) {
+  const i = d.incident, t = d.target || {}, steps = [];
+  const link = (text, href) => { const a = el("a", "", text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; };
+  const li = (...parts) => { const x = el("li"); x.append(...parts); steps.push(x); };
+  const peers = (state.data.targets || []).filter((x) => x.provider === t.provider && x.id !== t.id);
+  const badPeers = peers.filter((x) => sev(x.status) >= 1);
+  if (w.who === "네트워크" || w.who === "섞임") {
+    li("다른 지역 결과를 본다: 한 지역만 실패면 그 지역 네트워크 문제 (아래 지역 × 시간 표)");
+    li("감시 서버에서 DNS·연결을 직접 확인: ", el("code", "", "dig apis.data.go.kr · curl -sv -o /dev/null https://apis.data.go.kr"));
+  }
+  if (w.who !== "네트워크") {
+    li(link("공공데이터포털 공지사항", "https://www.data.go.kr/bbs/ntc/selectNoticeListView.do"), "에서 점검·장애 공지를 찾는다. 공지된 점검이면 ", el("code", "", "targets.yaml maintenance"), "에 등록해 SLO에서 뺀다");
+    // same rule as the agency banner: two or more, and half or more, is the agency
+    const agencyWide = badPeers.length >= 2 && badPeers.length * 2 >= peers.length;
+    li(peers.length ? `같은 기관(${t.provider}) 다른 API ${peers.length}개 중 지금 ${badPeers.length}개가 이상` +
+      (agencyWide ? " — 기관 전체 문제일 가능성" : badPeers.length ? " — 일부만 이상, 기관 전체 문제로 보긴 이름" : " — 지금은 이 API만의 문제") : `${t.provider || "기관"}의 다른 API는 감시하지 않음`);
+    if (t.docs) li(link("API 안내 페이지", t.docs), "의 문의처·변경 이력을 확인한다");
+    if (open && Date.now() - Date.parse(i.started) > 30 * 60e3) li("30분 넘게 계속되면 데이터포털 고객센터(1566-0025)나 기관 문의처에 상태판 링크와 시작 시각을 함께 보내 신고한다");
+  }
+  if (i.flaps >= 2) li(`불안정 ×${i.flaps}: 알림이 시끄러우면 기관 문제로 기록하고, 반복되는 시간대가 있는지 API별 장애 통계에서 본다`);
+  if (!open) li("닫힌 장애: ", el("b", "", "포스트모템 초안 복사"), "로 기록을 남긴다 (원인 항목이 문제 위치로 채워져 있음)");
+  li(link("런북: 공공 API 장애 대응", RUNBOOK));
+  return steps;
+}
+
 async function openIncident(id) {
   const d = await fetch("/api/v1/incidents/" + id).then((r) => (r.ok ? r.json() : null));
   if (!d) return;
@@ -69,6 +98,7 @@ async function openIncident(id) {
     statPanel("영향 지역", `${failingLocs.size} / ${locs.length}`, [...failingLocs].join(", ") || "–", failingLocs.size === locs.length ? "c-out-t" : "c-deg-t"),
     i.flaps ? statPanel("불안정", `×${i.flaps}`, "복구된 듯하다 다시 실패", "c-deg-t") : statPanel("처음 원인", i.reason.split(" (")[0], "", ""),
     (() => { const w = whereItFailed(inWin); return statPanel("문제 위치", w.who, w.detail + ` · 응답 p50 ${ms(lat[Math.floor(lat.length / 2)] || 0)}`, w.cls); })());
+  $("im-next").replaceChildren(...nextSteps(d, whereItFailed(inWin), open));
 
   // matrix: one row per location, one cell per check, the incident window shaded
   const cv = $("im-matrix"), W = cv.parentElement.clientWidth - 22, rowH = 18, labelW = 110;
