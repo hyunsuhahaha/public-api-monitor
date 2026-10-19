@@ -43,6 +43,11 @@ var version = "dev"
 
 var startedAt = time.Now()
 
+var mFollowUps = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "pamon_timeout_followups_total",
+	Help: "Timed-out checks re-sent once with a longer wait: late (answered after all) or hung (still nothing).",
+}, []string{"target", "outcome"})
+
 func init() {
 	promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "pamon_build_info", Help: "Always 1; the labels say which build is running.",
@@ -155,13 +160,22 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 			}
 		}
 	}
+	prober.FollowUps = probe.NewFollowUps()
+	prober.FollowUps.Done = func(id string, f probe.FollowUp) {
+		outcome := "hung"
+		if f.Answered {
+			outcome = "late"
+		}
+		mFollowUps.WithLabelValues(id, outcome).Inc()
+		log.Info("timeout follow-up", "target", id, "answered", f.Answered, "after_ms", f.AfterMs, "stalled", f.Stalled)
+	}
 	m := &monitor.Monitor{Cfg: cfg, Prober: prober, Sink: c, Log: log, MaxParallel: 4}
 	token := os.Getenv("PAMON_INGEST_TOKEN")
 	srv := &http.Server{
 		Addr: addr,
 		Handler: (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck,
 			Ingest: c.Ingest, IngestToken: token, PublicURL: os.Getenv("PAMON_PUBLIC_URL"),
-			SlowLimit: prober.Baseline.Limit, Version: version, StartedAt: startedAt}).Handler(),
+			SlowLimit: prober.Baseline.Limit, Version: version, StartedAt: startedAt, FollowUp: prober.FollowUps.Last}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,
 	}

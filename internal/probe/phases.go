@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http/httptrace"
 	"sync"
@@ -51,6 +52,10 @@ func (c *phaseClock) trace() *httptrace.ClientTrace {
 		WroteRequest:         func(httptrace.WroteRequestInfo) { c.mark(&c.wrote) },
 		GotFirstResponseByte: func() { c.mark(&c.firstByte) },
 	}
+}
+
+func withTrace(ctx context.Context, c *phaseClock) context.Context {
+	return httptrace.WithClientTrace(ctx, c.trace())
 }
 
 func span(a, b time.Time) int64 {

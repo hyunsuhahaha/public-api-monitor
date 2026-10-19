@@ -42,6 +42,9 @@ type Prober struct {
 	Location string
 	Now      func() time.Time
 	Baseline *Baseline // nil: only the fixed slow_after limit
+	// FollowUps, if set, re-sends a timed-out request once in the background with a longer
+	// budget to tell a slow server from a hung one.
+	FollowUps *FollowUps
 }
 
 // New returns a prober whose client never follows the key into another host's logs:
@@ -121,6 +124,9 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	r.Phases = clock.phases()
 	if o.Timeout {
 		v.Reason = "timeout: " + stalledText[clock.stalled()]
+		if p.FollowUps != nil {
+			p.FollowUps.start(p.Client, t.ID, u, req.Header, t.Timeout.Duration, p.Now)
+		}
 	}
 	if v.Status == StatusOK && p.Baseline != nil {
 		// slower than this API usually is (learned per target), though under slow_after

@@ -40,6 +40,8 @@ type Server struct {
 	// Version and StartedAt describe the running build (GET /version, the page footer).
 	Version   string
 	StartedAt time.Time
+	// FollowUp, if set, reports a target's latest timeout follow-up (probe.FollowUps).
+	FollowUp func(id string) (probe.FollowUp, bool)
 	// SlowLimit, if set, reports the learned slow limit of a target (probe.Baseline.Limit).
 	SlowLimit func(id string, ceil time.Duration) (limit, usual time.Duration, ok bool)
 

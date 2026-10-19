@@ -394,7 +394,7 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 	slowAfter, limit, usual := s.slowLines(id)
 	writeJSON(w, map[string]any{
 		"target": id, "range": name, "stepSec": int64(step.Seconds()), "slo": s.slo(id),
-		"slowAfterMs": slowAfter, "slowLimitMs": limit, "usualMs": usual,
+		"slowAfterMs": slowAfter, "slowLimitMs": limit, "usualMs": usual, "followUp": s.followUp(id),
 		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states, "counted": counted, "bad": bad,
 		"byLocation": byLoc, "locationStates": fails, "recent": recentChecks(recent),
 	})
@@ -423,4 +423,15 @@ func (s *Server) slowLines(id string) (slowAfter, limit, usual int64) {
 		}
 	}
 	return t.SlowAfter.Milliseconds(), limit, usual
+}
+
+// followUp is the target's latest timeout follow-up, or nil.
+func (s *Server) followUp(id string) *probe.FollowUp {
+	if s.FollowUp == nil {
+		return nil
+	}
+	if f, ok := s.FollowUp(id); ok {
+		return &f
+	}
+	return nil
 }

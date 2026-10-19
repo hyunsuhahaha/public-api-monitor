@@ -447,6 +447,16 @@ async function openDrawer(id) {
   const byT = prev ? Object.fromEntries(prev.t.map((t, i) => [t + shiftSec, prev.p95[i]])) : {};
   const prevP95 = s.t.map((t) => byT[t] ?? null);
   const hasPrev = prevP95.some((x) => x != null);
+  // the last timeout's follow-up: slow (answered later) or hung (nothing even after a minute)
+  const fu = s.followUp, fb = $("d-fu");
+  fb.hidden = !fu;
+  if (fu) {
+    const when = kst(fu.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    fb.className = "fu " + (fu.answered ? "late" : "hung");
+    fb.textContent = fu.answered
+      ? `⏱ ${when} 타임아웃 뒤 다시 기다려 보니 ${ms(fu.afterMs)} 만에 응답 (HTTP ${fu.http}, 기준 ${ms(fu.timeoutMs)}): 서버가 느린 것 — 멈춘 게 아님`
+      : `⛔ ${when} 타임아웃 뒤 ${ms(fu.waitMs)}을 더 기다려도 응답 없음 (${fu.stalled || "응답 없음"}): 서버가 멈춘 것 — 타임아웃을 늘려도 소용없음`;
+  }
   // today vs the same buckets yesterday: the median of the ratios, where both exist
   const ratios = s.p95.map((v, i) => (v && prevP95[i] ? v / prevP95[i] : null)).filter((x) => x != null).sort((a, b) => a - b);
   const cmp = $("d-lat-cmp");

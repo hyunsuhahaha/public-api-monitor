@@ -82,14 +82,23 @@ document.addEventListener("mouseover", (e) => {
   tip.style.left = Math.min(innerWidth - 270, Math.max(4, r.left - 60)) + "px"; tip.style.top = (r.bottom + 6) + "px";
 });
 
+let lastOk = Date.now();
 async function load() {
   try {
     const get = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + " " + r.status); return r.json(); });
     const [st, incs] = await Promise.all([get("/api/v1/status"), get("/api/v1/incidents")]);
     render(st, incs);
+    lastOk = Date.now();
   } catch (e) {
-    // keep what is on screen; say the page is stale and try again soon
+    // keep what is on screen but never pass it off as current; try again soon
     if (!document.querySelector(".api")) $("banner").textContent = "상태를 불러오지 못했습니다. 잠시 후 다시 시도합니다.";
+    else {
+      const b = $("banner");
+      b.className = "banner deg";
+      let note = b.querySelector(".stale");
+      if (!note) { note = el("small", "stale"); b.append(note); }
+      note.textContent = `⚠ 서버에 연결하지 못해 ${Math.max(1, Math.round((Date.now() - lastOk) / 60000))}분 전 정보를 보여주는 중입니다`;
+    }
     setTimeout(load, 5000);
   }
 }
