@@ -5,7 +5,7 @@
 const C = { ok: "#73bf69", deg: "#fade2a", warn: "#ff9830", out: "#f2495c", blue: "#5794f2", purple: "#b877d9",
   none: "#2b2e36", grid: "#22252b", axis: "#8b8f98", panel: "#16171c" };
 const LOC_COLORS = [C.blue, C.purple, "#ff7383", "#5ab1ef", "#8ab8ff", "#ffb357"];
-const LABEL = { ok: "정상", slow: "느림", stale: "갱신 멈춤", error: "오류", down: "장애", client: "확인 불가", maint: "점검 중", unknown: "측정 전" };
+const LABEL = { ok: "정상", slow: "느림", stale: "데이터 이상", error: "오류", down: "장애", client: "확인 불가", maint: "점검 중", unknown: "측정 전" };
 const RANGES = ["1h", "6h", "24h", "7d", "30d"];
 const RANGE_LABEL = { "1h": "1시간", "6h": "6시간", "24h": "24시간", "7d": "7일", "30d": "30일" };
 
@@ -77,7 +77,7 @@ function renderStats(d) {
     statPanel("가용률 · " + RANGE_LABEL[d.range], pct(f.availability), "목표(SLO) " + pct(f.slo, 1), avCls),
     statPanel("에러 버짓 잔여", f.availability < 0 ? "–" : budgetText(budget), budget < 0 ? "목표를 넘겨 실패함 (버짓 초과)" : "목표 대비 남은 실패 허용치", bCls, Math.max(0, budget) * 100, budget >= 0.5 ? C.ok : budget >= 0 ? C.deg : C.out),
     statPanel("장애", String(c.down || 0), "진행 중 장애 " + f.openIncidents + "건", c.down ? "c-out-t" : "c-ok-t"),
-    statPanel("성능 저하", String(c.degraded || 0), "느림·갱신 멈춤", c.degraded ? "c-deg-t" : "c-ok-t"),
+    statPanel("성능 저하", String(c.degraded || 0), "느림·데이터 이상(오래됨·값 틀림)", c.degraded ? "c-deg-t" : "c-ok-t"),
     statPanel("응답 시간 p95", ms(f.p95), "p50 " + ms(f.p50) + " · p99 " + ms(f.p99), "c-blue-t"),
     statPanel("확인 / 분", f.checksPerMin.toFixed(1), `정상 ${c.up || 0}${c.maint ? " · 점검 " + c.maint : ""} · 확인 불가 ${c.unknown || 0} / ${d.targets.length}개 API`, ""),
   );

@@ -87,3 +87,32 @@ func TestKeyNeverInErrors(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestBadValue(t *testing.T) {
+	cfg, err := config.Parse([]byte(`
+targets:
+  - id: a
+    url: http://x/?k={{.Key}}
+    expect:
+      - name: T1H
+        pattern: '"category":"T1H"[^}]*"obsrValue":"(-?[\d.]+)"'
+        min: -40
+        max: 45
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := cfg.Targets[0].Expect
+	ok := `{"item":[{"category":"T1H","obsrValue":"12.5"},{"category":"REH","obsrValue":"88"}]}`
+	if bad, why := badValue([]byte(ok), rules); bad {
+		t.Fatal(why)
+	}
+	hot := `{"item":[{"category":"T1H","obsrValue":"300"}]}`
+	if bad, why := badValue([]byte(hot), rules); !bad || why != "bad value: T1H=300 (expected -40~45)" {
+		t.Fatalf("%v %q", bad, why)
+	}
+	none := `{"item":[{"category":"REH","obsrValue":"88"}]}`
+	if bad, why := badValue([]byte(none), rules); !bad || why != "bad value: T1H missing (0 of 1)" {
+		t.Fatalf("%v %q", bad, why)
+	}
+}

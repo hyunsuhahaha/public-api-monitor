@@ -3,10 +3,12 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -135,6 +137,12 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 			v.Status, v.Reason = StatusStale, why
 		}
 	}
+	if v.Status.Healthy() && len(t.Expect) > 0 {
+		// wrong data is a data problem like old data: degraded, reported as such
+		if bad, why := badValue(o.Body, t.Expect); bad {
+			v.Status, v.Reason = StatusStale, why
+		}
+	}
 	r.Status, r.Code, r.Reason = v.Status, v.Code, v.Reason
 	if v.Status.Healthy() {
 		r.Shape = Shape(o.Body)
@@ -150,6 +158,37 @@ func isTimeout(err error) bool {
 }
 
 // staleness finds the newest timestamp the pattern matches and compares it with now.
+// badValue checks the expect rules; the first one broken is the reason.
+func badValue(body []byte, rules []config.Expect) (bool, string) {
+	for _, e := range rules {
+		n := 0
+		for _, m := range e.Re.FindAllSubmatch(body, 500) {
+			x, err := strconv.ParseFloat(string(m[1]), 64)
+			if err != nil {
+				continue
+			}
+			n++
+			if (e.Min != nil && x < *e.Min) || (e.Max != nil && x > *e.Max) {
+				return true, fmt.Sprintf("bad value: %s=%s (expected %s)", e.Name, m[1], bounds(e))
+			}
+		}
+		if n < e.MinMatches {
+			return true, fmt.Sprintf("bad value: %s missing (%d of %d)", e.Name, n, e.MinMatches)
+		}
+	}
+	return false, ""
+}
+
+func bounds(e config.Expect) string {
+	f := func(p *float64) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatFloat(*p, 'f', -1, 64)
+	}
+	return f(e.Min) + "~" + f(e.Max)
+}
+
 func staleness(body []byte, f *config.Freshness, now time.Time) (bool, string) {
 	var newest time.Time
 	for _, m := range f.Re.FindAllSubmatch(body, 200) {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -67,6 +68,7 @@ func main() {
 		once     = flag.Bool("once", false, "check every target once, print the results and exit")
 		month    = flag.String("report", "", "print the Markdown availability report for YYYY-MM from -db and exit")
 		paths    = flag.Bool("paths", false, "with -once: fail only on endpoints that no longer exist (code 12, 404); for CI with a dummy key")
+		dump     = flag.String("dump", "", "call one target once and print the start of its response body (to write freshness/expect rules)")
 		check    = flag.Bool("check", false, "validate the config, print what it monitors and its maintenance windows, and exit")
 		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
 	)
@@ -77,6 +79,9 @@ func main() {
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
+	}
+	if *dump != "" {
+		os.Exit(dumpTarget(cfg, *dump))
 	}
 	if *check {
 		printCheck(cfg, time.Now())
@@ -268,4 +273,34 @@ func printCheck(cfg *config.Config, now time.Time) {
 		fmt.Printf("maintenance %s ~ %s %v %q: %s\n", m.Start.In(config.KST).Format("2006-01-02 15:04"),
 			m.End.In(config.KST).Format("2006-01-02 15:04"), m.Match, m.Note, state)
 	}
+}
+
+// dumpTarget prints the first 3 KB of one target's answer. The URL is not printed: it
+// carries the service key.
+func dumpTarget(cfg *config.Config, id string) int {
+	for i := range cfg.Targets {
+		t := &cfg.Targets[i]
+		if t.ID != id {
+			continue
+		}
+		u, err := t.Render(time.Now())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "url:", err)
+			return 1
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), t.Timeout.Duration)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "request:", t.Redact(err.Error()))
+			return 1
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 3<<10))
+		fmt.Printf("HTTP %d %s\n%s\n", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+		return 0
+	}
+	fmt.Fprintln(os.Stderr, "no target", id)
+	return 1
 }

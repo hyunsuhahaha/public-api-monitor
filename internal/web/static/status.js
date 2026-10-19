@@ -3,7 +3,7 @@
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const pct = (x) => (x < 0 ? "–" : (x * 100).toFixed(x >= 0.9995 ? 1 : 2) + "%");
-const NOW = { ok: ["정상", "ok"], slow: ["느림", "deg"], stale: ["데이터 갱신 멈춤", "deg"], error: ["오류", "out"], down: ["장애", "out"],
+const NOW = { ok: ["정상", "ok"], slow: ["느림", "deg"], stale: ["데이터 이상", "deg"], error: ["오류", "out"], down: ["장애", "out"],
   maint: ["점검 중", "maint"], client: ["확인 중", "none"], unknown: ["측정 전", "none"] };
 const kst = (d, o) => new Date(d).toLocaleString("ko-KR", Object.assign({ timeZone: "Asia/Seoul", hour12: false }, o));
 

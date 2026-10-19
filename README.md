@@ -24,7 +24,7 @@
 |---|---|
 | **감시 대상** | 실제 공공 API 45개 (기상청, 에어코리아, 국토부 실거래가, 응급실 실시간 병상, 서울 지하철·버스, 나라장터 등) |
 | **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
-| **판정** | 6단계(정상·느림·갱신 멈춤·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
+| **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
 | **관측성** | Prometheus 지표, OpenTelemetry 트레이스(확인 1건 = 트레이스 1개: 대기 → HTTP 호출 → 판정, 로그에 trace_id), 구조화 로그 |
 | **인프라** | Go 단일 바이너리, SQLite, Prometheus·Grafana·Jaeger, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions |
@@ -98,7 +98,7 @@ flowchart LR
 |---|---|---|
 | 정상 `ok` | 정상 응답 (결과 없음 `03`/`INFO-200` 포함) | 정상 |
 | 느림 `slow` | 정상이지만 기준보다 느림 | 정상(저하) |
-| 갱신 멈춤 `stale` | 정상이지만 데이터 시각이 너무 오래됨 | 정상(저하) |
+| 데이터 이상 `stale` | 정상이지만 데이터 시각이 너무 오래됐거나, 값이 말이 안 됨(예: 기온 300도, `expect` 규칙) | 정상(저하) |
 | 오류 `error` | 제공 기관 쪽 오류 코드 (DB 오류, 타임아웃 `05`, 서버 오류 등), 200 안의 HTML 오류 페이지 | 장애 |
 | 장애 `down` | 응답 없음, 타임아웃, 5xx | 장애 |
 | 확인 불가 `client` | **우리 쪽 문제**: 키 미등록 `30`, 호출 한도 `22`, 잘못된 파라미터 `10` 등 | 제외 |
@@ -220,8 +220,15 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 - id: airkorea-sido
   name: 에어코리아 시도별 실시간 대기오염
   url: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey={{.Key}}&returnType=json&numOfRows=10&pageNo=1&sidoName={{esc "서울"}}&ver=1.0
-  freshness:            # 매시 갱신 데이터: 3시간 넘게 멈추면 '갱신 멈춤'
+  freshness:            # 매시 갱신 데이터: 3시간 넘게 멈추면 '데이터 이상'
     pattern: '"dataTime"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"'
     layout: "2006-01-02 15:04"
     max_age: 3h
+  expect:               # 값 검사: 측정값이 말이 되는 범위인지 ("-"처럼 숫자가 아니면 건너뜀)
+    - name: pm10Value
+      pattern: '"pm10Value"\s*:\s*"(-?[\d.]+)"'
+      min: 0
+      max: 2000
 ```
+
+응답 본문이 어떻게 생겼는지는 `pamon -dump <id>`로 봅니다(키가 든 URL은 출력하지 않음).

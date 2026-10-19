@@ -39,6 +39,20 @@ type Freshness struct {
 	Re *regexp.Regexp `yaml:"-"` // Pattern, compiled by Parse
 }
 
+// Expect is a sanity rule on the values an API answers with: Pattern's first group
+// captures a number (every match is checked), which must lie in [Min, Max]. An API that
+// answers 200 with a temperature of 300 °C is not healthy. Values that don't look like a
+// number (AirKorea's "-" for no reading) are not matched and so not judged.
+type Expect struct {
+	Name       string   `yaml:"name"`
+	Pattern    string   `yaml:"pattern"`
+	Min        *float64 `yaml:"min"`
+	Max        *float64 `yaml:"max"`
+	MinMatches int      `yaml:"min_matches"` // fewer matches than this is a failure too (default 1)
+
+	Re *regexp.Regexp `yaml:"-"`
+}
+
 // Target is one monitored API call.
 type Target struct {
 	ID        string     `yaml:"id"`
@@ -52,6 +66,7 @@ type Target struct {
 	SlowAfter Duration   `yaml:"slow_after"`
 	Interval  Duration   `yaml:"interval"`
 	Freshness *Freshness `yaml:"freshness"`
+	Expect    []Expect   `yaml:"expect"`
 	SLO       float64    `yaml:"slo"` // availability objective, e.g. 0.999
 
 	tmpl *template.Template
@@ -170,6 +185,21 @@ func Parse(raw []byte) (*Config, error) {
 			return nil, fmt.Errorf("target %q url: %w", t.ID, err)
 		}
 		t.tmpl = tmpl
+		for j := range t.Expect {
+			e := &t.Expect[j]
+			if e.Re, err = regexp.Compile(e.Pattern); err != nil || e.Re.NumSubexp() < 1 {
+				return nil, fmt.Errorf("target %q expect %d: pattern needs one capture group (%v)", t.ID, j, err)
+			}
+			if e.Min == nil && e.Max == nil {
+				return nil, fmt.Errorf("target %q expect %d: min or max is required", t.ID, j)
+			}
+			if e.Name == "" {
+				e.Name = e.Pattern
+			}
+			if e.MinMatches == 0 {
+				e.MinMatches = 1
+			}
+		}
 		if f := t.Freshness; f != nil {
 			if f.Re, err = regexp.Compile(f.Pattern); err != nil || f.Re.NumSubexp() < 1 {
 				return nil, fmt.Errorf("target %q freshness.pattern: needs one capture group (%v)", t.ID, err)

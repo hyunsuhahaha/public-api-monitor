@@ -37,6 +37,15 @@ targets:
     category: 날씨
     docs: https://www.data.go.kr/data/15084084/openapi.do
     url: https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&base_date={{baseDate .Now 40}}&base_time={{baseTime .Now 40}}&nx=60&ny=127
+    expect:              # 온도·습도가 말이 되는지 (200이어도 값이 틀리면 데이터 이상)
+      - name: 기온(T1H)
+        pattern: '"category":"T1H"[^}]*"obsrValue":"(-?[\d.]+)"'
+        min: -40
+        max: 45
+      - name: 습도(REH)
+        pattern: '"category":"REH"[^}]*"obsrValue":"(-?[\d.]+)"'
+        min: 0
+        max: 100
 
   - id: kma-ultra-fcst
     name: 기상청 초단기예보
@@ -94,6 +103,11 @@ targets:
     category: 환경
     docs: https://www.data.go.kr/data/15073861/openapi.do
     url: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey={{.Key}}&returnType=json&numOfRows=10&pageNo=1&sidoName={{esc "서울"}}&ver=1.0
+    expect:              # 측정소 값 ("-"는 측정 없음: 판정하지 않음)
+      - name: pm10Value
+        pattern: '"pm10Value"\s*:\s*"(-?[\d.]+)"'
+        min: 0
+        max: 2000
     # hourly data: the newest measurement should be under 3 hours old
     freshness:
       pattern: '"dataTime"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"'
@@ -251,6 +265,15 @@ targets:
       pattern: '"MSRMT_DT"\s*:\s*"(\d{12})"'
       layout: "200601021504"
       max_age: 3h
+    expect:
+      - name: 미세먼지(PM)
+        pattern: '"PM"\s*:\s*(-?[\d.]+)'
+        min: 0
+        max: 1000
+      - name: 초미세먼지(FPM)
+        pattern: '"FPM"\s*:\s*(-?[\d.]+)'
+        min: 0
+        max: 600
 
   - id: seoul-citydata
     name: 서울 실시간 도시데이터(광화문·덕수궁)
