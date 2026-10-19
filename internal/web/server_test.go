@@ -279,3 +279,20 @@ func TestVersion(t *testing.T) {
 		t.Fatalf("%+v %v", v, err)
 	}
 }
+
+// shift=1d answers the same window a day earlier, with timestamps a day back, so the
+// page can lay yesterday over today bucket for bucket.
+func TestSeriesShift(t *testing.T) {
+	_, h := setup(t)
+	var now, prev struct{ T []int64 }
+	json.Unmarshal(get(t, h, "/api/v1/series?target=a&range=6h").Body.Bytes(), &now)
+	json.Unmarshal(get(t, h, "/api/v1/series?target=a&range=6h&shift=1d").Body.Bytes(), &prev)
+	if len(now.T) == 0 || len(now.T) != len(prev.T) {
+		t.Fatalf("lengths %d %d", len(now.T), len(prev.T))
+	}
+	for i := range now.T {
+		if now.T[i]-prev.T[i] != 86400 {
+			t.Fatalf("bucket %d: %d vs %d", i, now.T[i], prev.T[i])
+		}
+	}
+}

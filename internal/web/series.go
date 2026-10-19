@@ -31,11 +31,15 @@ func (s *Server) parseRange(r *http.Request) (string, time.Time, time.Time, time
 	if iv := s.Cfg.Interval.Duration; rg.step < iv {
 		rg.step = iv
 	}
-	to := time.Now()
+	// shift=1d|7d: the same window a day or a week earlier ("is this normal for this time
+	// of day?"); a whole number of steps, so its buckets line up with today's
+	to := time.Now().Add(-shifts[r.URL.Query().Get("shift")])
 	// buckets aligned to the step, so a refresh doesn't shift them
 	from := to.Add(-rg.span).Truncate(rg.step)
 	return name, from, to, rg.step
 }
+
+var shifts = map[string]time.Duration{"1d": 24 * time.Hour, "7d": 7 * 24 * time.Hour}
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

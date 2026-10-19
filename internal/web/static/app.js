@@ -437,7 +437,24 @@ async function openDrawer(id) {
     statPanel("에러 버짓 잔여", t.availability < 0 ? "–" : budgetText(t.budgetLeft), "", t.budgetLeft >= 0.5 ? "c-ok-t" : t.budgetLeft >= 0 ? "c-deg-t" : "c-out-t"),
     statPanel("p50", ms(t.p50), "", "c-blue-t"), statPanel("p95", ms(t.p95), "", "c-blue-t"),
     statPanel("판정 수", String(t.checks), "지역 " + t.locations.length + "곳", ""));
-  const s = await fetch(`/api/v1/series?target=${encodeURIComponent(id)}&range=${state.range}`).then((r) => r.json());
+  // the same window a day (or, for 7 days, a week) earlier, laid over today's
+  const shift = { "1h": "1d", "6h": "1d", "24h": "1d", "7d": "7d" }[state.range];
+  const [s, prev] = await Promise.all([
+    fetch(`/api/v1/series?target=${encodeURIComponent(id)}&range=${state.range}`).then((r) => r.json()),
+    shift ? fetch(`/api/v1/series?target=${encodeURIComponent(id)}&range=${state.range}&shift=${shift}`).then((r) => r.json()).catch(() => null) : null,
+  ]);
+  const shiftSec = shift === "7d" ? 7 * 86400 : 86400;
+  const byT = prev ? Object.fromEntries(prev.t.map((t, i) => [t + shiftSec, prev.p95[i]])) : {};
+  const prevP95 = s.t.map((t) => byT[t] ?? null);
+  const hasPrev = prevP95.some((x) => x != null);
+  // today vs the same buckets yesterday: the median of the ratios, where both exist
+  const ratios = s.p95.map((v, i) => (v && prevP95[i] ? v / prevP95[i] : null)).filter((x) => x != null).sort((a, b) => a - b);
+  const cmp = $("d-lat-cmp");
+  if (ratios.length >= 3) {
+    const r = ratios[Math.floor(ratios.length / 2)], pctTxt = Math.round((r - 1) * 100);
+    cmp.textContent = `p95 ${shift === "7d" ? "지난주" : "어제"} 대비 ${pctTxt >= 0 ? "+" : ""}${pctTxt}%`;
+    cmp.className = "cmp " + (r >= 1.5 ? "worse" : r <= 0.67 ? "better" : "");
+  } else cmp.textContent = hasPrev ? "" : `${shift === "7d" ? "지난주" : "어제"} 같은 시각 기록 없음`;
   if (state.target !== id) return;
   // where the time goes, from the recent checks' phases: the network (DNS, connect, TLS)
   // or the provider's server (wait for the first byte); timeouts say where they stalled
@@ -468,9 +485,10 @@ async function openDrawer(id) {
   plots.push(new uPlot({
     width: W, height: 220, axes: axes(), scales: { x: { time: true }, y: { range: (u, lo, hi) => [0, Math.max(hi, yTop)] } }, tzDate: tz, padding: [8, 8, 10, 0],
     series: [{}, { label: "p50", stroke: C.ok, width: 1.5 }, { label: "p95", stroke: C.blue, width: 1.5, fill: "rgba(87,148,242,.08)" },
-      { label: "max", stroke: "rgba(255,152,48,.7)", width: 1, dash: [4, 3] }],
+      { label: "max", stroke: "rgba(255,152,48,.7)", width: 1, dash: [4, 3] },
+      { label: shift === "7d" ? "지난주 p95" : "어제 p95", stroke: "rgba(200,200,210,.45)", width: 1.5, dash: [2, 3], show: hasPrev }],
     plugins: [statesPlugin(s.states, s.stepSec), markersPlugin(state.schema.filter((e) => e.target === id).map((e) => Date.parse(e.at) / 1000)), thresholdsPlugin(lines)],
-  }, [s.t, s.p50, s.p95, s.max], $("d-lat")));
+  }, [s.t, s.p50, s.p95, s.max, prevP95], $("d-lat")));
   // error budget burn-down: what is left of the range's allowance (1 - SLO) x checks,
   // bucket by bucket; below zero the API is over its budget for this range
   const total = s.counted.reduce((a, b) => a + b, 0), allowed = (1 - s.slo) * total;
@@ -588,13 +606,23 @@ async function showBuild() {
 showBuild();
 
 // ── load ──────────────────────────────────────────────────────────────────────
+// A monitoring page must never show old data as if it were current: when a refresh fails
+// the age turns into a red "연결 끊김" and it retries every 5 s until the server is back.
+let retryTimer = null;
 async function load() {
-  const [d, inc, sch] = await Promise.all([
-    fetch("/api/v1/overview?range=" + state.range).then((r) => r.json()),
-    fetch("/api/v1/incidents").then((r) => r.json()),
-    fetch("/api/v1/schema-events").then((r) => r.json()),
-  ]);
+  let d, inc, sch;
+  try {
+    const get = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + " " + r.status); return r.json(); });
+    [d, inc, sch] = await Promise.all([get("/api/v1/overview?range=" + state.range), get("/api/v1/incidents"), get("/api/v1/schema-events")]);
+  } catch (e) {
+    state.loadError = String(e.message || e);
+    showAge();
+    clearTimeout(retryTimer); retryTimer = setTimeout(load, 5000);
+    return;
+  }
+  state.loadError = null; clearTimeout(retryTimer);
   state.data = d; state.incidents = inc; state.schema = sch; state.loadedAt = Date.now();
+  showAge();
   renderStats(d); renderCorrel(); renderCats(); renderTable(); renderHeat(); renderIncidents(); renderReliability(); renderSchema();
 }
 
@@ -613,6 +641,14 @@ document.querySelectorAll(".svc th[data-sort]").forEach((th) => { th.onclick = (
 $("d-close").onclick = closeDrawer; $("scrim").onclick = closeDrawer;
 $("refresh").onclick = () => load();
 window.addEventListener("resize", () => { if (state.data) renderHeat(); });
-setInterval(() => { if (state.loadedAt) $("age").textContent = Math.round((Date.now() - state.loadedAt) / 1000) + "초 전"; }, 1000);
+function showAge() {
+  const age = state.loadedAt ? Math.round((Date.now() - state.loadedAt) / 1000) : null;
+  const txt = age == null ? "–" : age < 120 ? age + "초 전" : Math.round(age / 60) + "분 전";
+  const btn = $("refresh");
+  btn.classList.toggle("stale", !!state.loadError || age > 90);
+  $("age").textContent = state.loadError ? `연결 끊김 · ${txt} 데이터` : txt;
+  btn.title = state.loadError ? `서버에 연결하지 못함 (${state.loadError}). 5초마다 다시 시도 중` : "새로고침 (r)";
+}
+setInterval(showAge, 1000);
 setInterval(() => { if (document.visibilityState === "visible") load(); }, 30000);
 load().then(() => { if (state.target) openDrawer(state.target); }).catch((e) => { $("fleet-pill").textContent = "불러오기 실패"; console.error(e); });
