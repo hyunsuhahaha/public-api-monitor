@@ -128,6 +128,8 @@ func Open(path string) (*Store, error) {
 	for _, col := range []string{"dns_ms", "connect_ms", "tls_ms", "wait_ms", "reused"} {
 		db.Exec(`ALTER TABLE checks ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`)
 	}
+	// incident_notes.kind came later: "note", or "ack" (someone took the incident)
+	db.Exec(`ALTER TABLE incident_notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'note'`)
 	// incidents.flaps came later: add it to older databases (an error means it is there)
 	db.Exec(`ALTER TABLE incidents ADD COLUMN flaps INTEGER NOT NULL DEFAULT 0`)
 	// field paths learned from the data.go.kr gateway's error envelope (before Shape skipped
@@ -862,12 +864,16 @@ type Note struct {
 	At       time.Time `json:"at"`
 	Author   string    `json:"author"`
 	Text     string    `json:"text"`
+	Kind     string    `json:"kind"` // note | ack
 }
 
 // AddNote stores a note and sets its ID.
 func (s *Store) AddNote(ctx context.Context, n *Note) error {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO incident_notes(incident, at, author, text) VALUES(?,?,?,?)`,
-		n.Incident, ms(n.At), n.Author, n.Text)
+	if n.Kind == "" {
+		n.Kind = "note"
+	}
+	res, err := s.db.ExecContext(ctx, `INSERT INTO incident_notes(incident, at, author, text, kind) VALUES(?,?,?,?,?)`,
+		n.Incident, ms(n.At), n.Author, n.Text, n.Kind)
 	if err != nil {
 		return err
 	}
@@ -877,7 +883,7 @@ func (s *Store) AddNote(ctx context.Context, n *Note) error {
 
 // Notes returns an incident's notes, oldest first.
 func (s *Store) Notes(ctx context.Context, incident int64) ([]Note, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, incident, at, author, text FROM incident_notes WHERE incident=? ORDER BY at, id`, incident)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, incident, at, author, text, kind FROM incident_notes WHERE incident=? ORDER BY at, id`, incident)
 	if err != nil {
 		return nil, err
 	}
@@ -886,11 +892,43 @@ func (s *Store) Notes(ctx context.Context, incident int64) ([]Note, error) {
 	for rows.Next() {
 		var n Note
 		var at int64
-		if err := rows.Scan(&n.ID, &n.Incident, &at, &n.Author, &n.Text); err != nil {
+		if err := rows.Scan(&n.ID, &n.Incident, &at, &n.Author, &n.Text, &n.Kind); err != nil {
 			return nil, err
 		}
 		n.At = fromMS(at)
 		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// NoteSummary is what an incident list needs: how many notes, and who took it last.
+type NoteSummary struct {
+	Notes int
+	AckBy string
+	AckAt time.Time
+}
+
+// NoteSummaries returns, per incident with notes, the note count and the latest ack.
+func (s *Store) NoteSummaries(ctx context.Context) (map[int64]NoteSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT incident, at, author, kind FROM incident_notes ORDER BY at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]NoteSummary{}
+	for rows.Next() {
+		var id, at int64
+		var author, kind string
+		if err := rows.Scan(&id, &at, &author, &kind); err != nil {
+			return nil, err
+		}
+		x := out[id]
+		if kind == "ack" {
+			x.AckBy, x.AckAt = author, fromMS(at)
+		} else {
+			x.Notes++
+		}
+		out[id] = x
 	}
 	return out, rows.Err()
 }

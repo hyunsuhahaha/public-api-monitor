@@ -82,31 +82,44 @@ function renderNotes(d) {
   const notes = d.notes || [];
   if (!notes.length) box.append(el("div", "empty", d.canNote ? "아직 메모가 없습니다" : "메모 없음 (쓰려면 서버에 PAMON_ADMIN_TOKEN 설정)"));
   for (const n of notes) {
-    const r = el("div", "note");
-    r.append(el("span", "t", kst(n.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })), el("b", "", n.author), el("span", "", n.text));
+    const r = el("div", "note" + (n.kind === "ack" ? " is-ack" : ""));
+    r.append(el("span", "t", kst(n.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })), el("b", "", n.author), el("span", "", n.kind === "ack" ? "이 장애를 맡음" : n.text));
     box.append(r);
   }
   $("im-note-form").hidden = !d.canNote;
+  const acks = notes.filter((n) => n.kind === "ack"), last = acks[acks.length - 1];
+  $("im-ack").textContent = last ? `담당 ${last.author} · ${kst(last.at, { hour: "2-digit", minute: "2-digit" })}부터` : "";
+  $("im-take").hidden = !d.canNote || !isOpen(d.incident);
   try { $("im-note-author").value = localStorage.getItem("pamon_author") || ""; } catch (e) {}
+}
+async function postNote(kind, text, author) {
+  let token = null;
+  try { token = localStorage.getItem(TOKEN_KEY); } catch (err) {}
+  if (!token) token = window.prompt("메모를 쓰려면 관리 토큰(PAMON_ADMIN_TOKEN)을 입력하세요");
+  if (!token) return false;
+  const r = await fetch(`/api/v1/incidents/${currentIncident.incident.id}/notes`, {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ author, text, kind }),
+  });
+  if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (err) {} alert("토큰이 맞지 않습니다"); return false; }
+  if (!r.ok) { alert("저장하지 못했습니다: " + (await r.text())); return false; }
+  try { localStorage.setItem(TOKEN_KEY, token); if (author) localStorage.setItem("pamon_author", author); } catch (err) {}
+  openIncident(currentIncident.incident.id);
+  load(); // the incident lists show who took it
+  return true;
 }
 $("im-note-form").onsubmit = async (e) => {
   e.preventDefault();
   if (!currentIncident) return;
   const text = $("im-note-text").value.trim(), author = $("im-note-author").value.trim();
-  if (!text) return;
-  let token = null;
-  try { token = localStorage.getItem(TOKEN_KEY); } catch (err) {}
-  if (!token) token = window.prompt("메모를 쓰려면 관리 토큰(PAMON_ADMIN_TOKEN)을 입력하세요");
-  if (!token) return;
-  const r = await fetch(`/api/v1/incidents/${currentIncident.incident.id}/notes`, {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-    body: JSON.stringify({ author, text }),
-  });
-  if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (err) {} alert("토큰이 맞지 않습니다"); return; }
-  if (!r.ok) { alert("저장하지 못했습니다: " + (await r.text())); return; }
-  try { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem("pamon_author", author); } catch (err) {}
-  $("im-note-text").value = "";
-  openIncident(currentIncident.incident.id);
+  if (text && await postNote("note", text, author)) $("im-note-text").value = "";
+};
+$("im-take").onclick = async () => {
+  if (!currentIncident) return;
+  let author = "";
+  try { author = localStorage.getItem("pamon_author") || ""; } catch (e) {}
+  if (!author) author = (window.prompt("이름 (누가 맡는지 표시됩니다)") || "").trim();
+  if (author) await postNote("ack", "", author);
 };
 
 async function openIncident(id) {
@@ -212,7 +225,7 @@ function postmortemMarkdown(d) {
     prev = v.status;
   }
   lines.push("", "## 영향", "", "- (이 API를 쓰는 서비스와 사용자에게 무엇이 안 됐나)", "",
-    ...((d.notes || []).length ? ["## 운영자 메모 (KST)", "", ...d.notes.map((n) => `- ${kst(n.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} **${n.author}**: ${n.text}`), ""] : []),
+    ...((d.notes || []).length ? ["## 운영자 메모 (KST)", "", ...d.notes.map((n) => `- ${kst(n.at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} **${n.author}**: ${n.kind === "ack" ? "장애를 맡음" : n.text}`), ""] : []),
     "## 원인", "", `- 모니터가 본 위치: **${whereItFailed(inWin).who}** — ${whereItFailed(inWin).detail}`, "- (제공 기관 공지·문의 결과)", "",
     "## 우리가 한 일", "", "- (알림을 받고 한 조치)", "",
     "## 재발 방지 / 개선", "", "| 조치 | 담당 | 상태 |", "|---|---|---|", "| | | |", "");
@@ -239,7 +252,8 @@ function handoffMarkdown(hours) {
   L.push("## 지금 상태", "");
   const open = state.incidents.filter(isOpen);
   L.push(open.length ? `- **진행 중 장애 ${open.length}건**` : "- 진행 중 장애 없음");
-  for (const i of open) L.push(`  - #${i.id} ${nm(i.target)} — ${i.lastReason || i.reason} (${at(i.started)}부터, ${dur(i.started, new Date().toISOString())}${i.flaps ? `, 불안정 ×${i.flaps}` : ""})`);
+  for (const i of open) L.push(`  - #${i.id} ${nm(i.target)} — ${i.lastReason || i.reason} (${at(i.started)}부터, ${dur(i.started, new Date().toISOString())}${i.flaps ? `, 불안정 ×${i.flaps}` : ""})` +
+    (i.ackBy ? ` · 담당 ${i.ackBy}` : " · **담당 없음**") + (i.notes ? ` · 메모 ${i.notes}개` : ""));
   const deg = d.targets.filter((t) => sev(t.status) === 1);
   if (deg.length) L.push(`- 성능 저하 ${deg.length}개: ` + deg.map((t) => `${t.name} (${t.reason || LABEL[t.status]})`).join(", "));
   const burning = d.targets.filter((t) => t.burn1h >= 14.4 && t.burn5m >= 14.4 || t.burn6h >= 6 && t.burn30m >= 6);

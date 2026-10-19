@@ -104,12 +104,17 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var body struct{ Author, Text string }
+	var body struct{ Author, Text, Kind string }
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&body); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
 	body.Text = strings.TrimSpace(body.Text)
+	if body.Kind != "ack" {
+		body.Kind = "note"
+	} else if body.Text == "" {
+		body.Text = "확인 중 (담당)"
+	}
 	if body.Text == "" || utf8.RuneCountInString(body.Text) > 2000 {
 		http.Error(w, "text: 1 to 2000 characters", http.StatusBadRequest)
 		return
@@ -117,7 +122,7 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 	if body.Author = strings.TrimSpace(body.Author); body.Author == "" {
 		body.Author = "운영자"
 	}
-	n := store.Note{Incident: id, At: time.Now(), Author: body.Author, Text: body.Text}
+	n := store.Note{Incident: id, At: time.Now(), Author: body.Author, Text: body.Text, Kind: body.Kind}
 	if err := s.Store.AddNote(r.Context(), &n); err != nil {
 		http.Error(w, "internal error", 500)
 		return

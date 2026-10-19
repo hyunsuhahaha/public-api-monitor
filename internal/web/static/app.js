@@ -273,6 +273,8 @@ function incRow(i, title) {
   const r = el("div", "inc"); r.append(el("span", "dot " + (isOpen(i) ? "down" : "ok")));
   const m = el("div"), h = el("div", "", title);
   if (i.flaps) { const f = el("span", "flap", "불안정 ×" + i.flaps); f.title = `복구된 것처럼 보였다가 다시 실패 ${i.flaps}회 — 한 장애로 묶음`; h.append(" ", f); }
+  if (i.ackBy) { const a = el("span", "ack-tag", "담당 " + i.ackBy); a.title = `${i.ackBy}이(가) 맡음`; h.append(" ", a); }
+  if (i.notes) { const n = el("span", "note-tag", "메모 " + i.notes); h.append(" ", n); }
   m.append(h, el("div", "t", short(i.started) + (isOpen(i) ? " ~ 진행 중" : " ~ " + kst(i.ended, { hour: "2-digit", minute: "2-digit" }))));
   r.append(m, el("span", "t", isOpen(i) ? "진행 중" : dur(i.started, i.ended)));
   return r;

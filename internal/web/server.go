@@ -288,12 +288,33 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if list == nil {
-		list = []*incident.Incident{}
+	sums, err := s.Store.NoteSummaries(r.Context())
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	// each incident plus who took it and how many notes it has
+	type row struct {
+		*incident.Incident
+		AckBy string     `json:"ackBy,omitempty"`
+		AckAt *time.Time `json:"ackAt,omitempty"`
+		Notes int        `json:"notes,omitempty"`
+	}
+	out := make([]row, 0, len(list))
+	for _, in := range list {
+		x := row{Incident: in}
+		if sm, ok := sums[in.ID]; ok {
+			x.AckBy, x.Notes = sm.AckBy, sm.Notes
+			if sm.AckBy != "" {
+				at := sm.AckAt
+				x.AckAt = &at
+			}
+		}
+		out = append(out, x)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	json.NewEncoder(w).Encode(list)
+	json.NewEncoder(w).Encode(out)
 }
 
 // badge: a shields-style SVG with the target's 30-day uptime, coloured by current status.

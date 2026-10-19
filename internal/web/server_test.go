@@ -329,3 +329,26 @@ func TestIncidentNotes(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 }
+
+func TestIncidentAckInList(t *testing.T) {
+	_, h := setup(t)
+	req := httptest.NewRequest("POST", "/api/v1/incidents/1/notes", strings.NewReader(`{"author":"당번","kind":"ack"}`))
+	req.Header.Set("Authorization", "Bearer admin")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("ack: %d %s", w.Code, w.Body.String())
+	}
+	var list []struct {
+		ID     int64
+		Target string
+		AckBy  string
+		Notes  int
+	}
+	if err := json.Unmarshal(get(t, h, "/api/v1/incidents").Body.Bytes(), &list); err != nil || len(list) != 1 {
+		t.Fatalf("%v %+v", err, list)
+	}
+	if list[0].Target != "a" || list[0].AckBy != "당번" || list[0].Notes != 0 {
+		t.Fatalf("an ack names who took it and is not a note: %+v", list[0])
+	}
+}
