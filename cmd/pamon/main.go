@@ -15,9 +15,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
@@ -32,6 +35,19 @@ import (
 	"github.com/hyunsuhahaha/public-api-monitor/internal/telemetry"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/web"
 )
+
+// version is the commit this binary was built from (-ldflags "-X main.version=..."):
+// what is running is the first question after any deploy.
+var version = "dev"
+
+var startedAt = time.Now()
+
+func init() {
+	promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "pamon_build_info", Help: "Always 1; the labels say which build is running.",
+		ConstLabels: prometheus.Labels{"version": version, "goversion": runtime.Version()},
+	}).Set(1)
+}
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
@@ -140,7 +156,7 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 		Addr: addr,
 		Handler: (&web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck,
 			Ingest: c.Ingest, IngestToken: token, PublicURL: os.Getenv("PAMON_PUBLIC_URL"),
-			SlowLimit: prober.Baseline.Limit}).Handler(),
+			SlowLimit: prober.Baseline.Limit, Version: version, StartedAt: startedAt}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,
 	}

@@ -11,7 +11,10 @@ export PATH="$HOME/go-sdk/go/bin:$PATH" GOFLAGS=-buildvcs=false
 echo $$ > "$DATA/run.pid"
 trap 'kill "${CHILD:-}" 2>/dev/null; rm -f "$DATA/run.pid"; exit 0' TERM INT
 while true; do
-  (cd "$REPO" && go build -o "$DATA/pamon" ./cmd/pamon) >> "$DATA/build.log" 2>&1 || true
+  # stamp the commit (and -dirty for uncommitted changes) so /version says what runs
+  REV="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo dev)"
+  git -C "$REPO" diff --quiet HEAD -- . 2>/dev/null || REV="$REV-dirty"
+  (cd "$REPO" && go build -ldflags "-X main.version=$REV" -o "$DATA/pamon" ./cmd/pamon) >> "$DATA/build.log" 2>&1 || true
   if [ -f "$DATA/pamon.log" ] && [ "$(stat -c %s "$DATA/pamon.log")" -gt 50000000 ]; then
     mv -f "$DATA/pamon.log" "$DATA/pamon.log.1"
   fi

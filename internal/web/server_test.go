@@ -268,3 +268,14 @@ func TestPublicStatusPage(t *testing.T) {
 		t.Fatalf("status.js %d", w.Code)
 	}
 }
+
+func TestVersion(t *testing.T) {
+	h := (&Server{Cfg: &config.Config{}, Version: "abc1234", StartedAt: time.Now().Add(-time.Hour)}).Handler()
+	var v struct {
+		Version   string
+		UptimeSec int64
+	}
+	if err := json.Unmarshal(get(t, h, "/version").Body.Bytes(), &v); err != nil || v.Version != "abc1234" || v.UptimeSec < 3600 {
+		t.Fatalf("%+v %v", v, err)
+	}
+}

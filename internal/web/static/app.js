@@ -572,6 +572,21 @@ function phaseCell(c) {
   return td;
 }
 
+// which build is running and since when: the first thing to check after a deploy
+async function showBuild() {
+  try {
+    const v = await fetch("/version").then((r) => r.json());
+    const up = v.uptimeSec < 3600 ? Math.round(v.uptimeSec / 60) + "분" : v.uptimeSec < 86400 ? (v.uptimeSec / 3600).toFixed(1) + "시간" : (v.uptimeSec / 86400).toFixed(1) + "일";
+    const b = $("build"), sha = v.version.length > 12 ? v.version.slice(0, 7) : v.version;
+    b.replaceChildren(document.createTextNode(" · 빌드 "));
+    if (/^[0-9a-f]{7,40}$/.test(v.version)) { const a = el("a", "mono", sha); a.href = `https://github.com/hyunsuhahaha/public-api-monitor/commit/${v.version}`; b.append(a); }
+    else b.append(el("span", "mono", sha));
+    b.append(` · ${up} 가동 중 · ${v.go}`);
+    b.title = `시작 ${kst(v.startedAt, {})}`;
+  } catch (e) { /* older server */ }
+}
+showBuild();
+
 // ── load ──────────────────────────────────────────────────────────────────────
 async function load() {
   const [d, inc, sch] = await Promise.all([

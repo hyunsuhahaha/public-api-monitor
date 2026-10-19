@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -36,6 +37,9 @@ type Server struct {
 	Ingest      func(ctx context.Context, results []probe.Result) error
 	IngestToken string
 	PublicURL   string // for absolute links in the feed (else taken from the request)
+	// Version and StartedAt describe the running build (GET /version, the page footer).
+	Version   string
+	StartedAt time.Time
 	// SlowLimit, if set, reports the learned slow limit of a target (probe.Baseline.Limit).
 	SlowLimit func(id string, ceil time.Duration) (limit, usual time.Duration, ok bool)
 
@@ -63,6 +67,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incidentDetail)
 	s.reportRoutes(mux)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"version": s.Version, "go": runtime.Version(), "startedAt": s.StartedAt,
+			"uptimeSec": int64(time.Since(s.StartedAt).Seconds())})
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.Handle("GET /metrics", promhttp.Handler())
