@@ -410,3 +410,163 @@ targets:
     category: 관광
     docs: https://www.data.go.kr/data/15101578/openapi.do
     url: https://apis.data.go.kr/B551011/KorService2/searchFestival2?serviceKey={{.Key}}&numOfRows=3&pageNo=1&MobileOS=ETC&MobileApp=pamon&_type=json&arrange=A&eventStartDate={{date .Now "20060102"}}
+
+  # ── 서울 열린데이터광장 (2차 추가: 환경·교통·의료·생활) ─────────────────────
+  - id: seoul-air-avg
+    name: 서울 평균 대기질
+    provider: 서울특별시
+    category: 환경
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ListAvgOfSeoulAirQualityService/1/5/
+    expect:
+      - name: 미세먼지(PM)
+        pattern: '"PM"\s*:\s*(-?[\d.]+)'
+        min: 0
+        max: 1000
+  - id: seoul-air-district
+    name: 서울 자치구별 대기질
+    provider: 서울특별시
+    category: 환경
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ListAirQualityByDistrictService/1/5/
+    freshness:
+      pattern: '"MSRMT_YMD"\s*:\s*"(\d{12})"'
+      layout: "200601021504"
+      max_age: 3h
+    expect:
+      - name: 미세먼지(PM)
+        pattern: '"PM"\s*:\s*"(-?[\d.]+)"'
+        min: 0
+        max: 1000
+  - id: seoul-river-stage
+    name: 서울 하천 수위 (실시간)
+    provider: 서울특별시
+    category: 환경
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ListRiverStageService/1/5/
+    freshness:   # 10분 단위 수집: 1시간 넘게 멈추면 홍수 대응에 쓸 수 없다
+      pattern: '"DTRSM_DATA_CLCT_TM"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}):\d{2}"'
+      layout: "2006-01-02 15:04"
+      max_age: 1h
+    expect:
+      - name: 하천 수위(m)
+        pattern: '"RLTM_RVR_WATL_CNT"\s*:\s*(-?[\d.]+)'
+        min: -10
+        max: 50
+  - id: seoul-rainfall
+    name: 서울 강우량 (10분 단위)
+    provider: 서울특별시
+    category: 환경
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ListRainfallService/1/5/
+    freshness:
+      pattern: '"DATA_CLCT_TM"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"'
+      layout: "2006-01-02 15:04"
+      max_age: 1h
+    expect:
+      - name: 10분 강우량(mm)
+        pattern: '"RN_10M"\s*:\s*"(-?[\d.]+)"'
+        min: 0
+        max: 200
+  - id: seoul-water-quality
+    name: 서울 하천 수질 자동측정
+    provider: 서울특별시
+    category: 환경
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/WPOSInformationTime/1/5/
+    freshness:
+      pattern: '"YMD"\s*:\s*"(\d{8})"'
+      layout: "20060102"
+      max_age: 48h
+    expect:
+      - name: 수온(℃)
+        pattern: '"WATT"\s*:\s*"(-?[\d.]+)"'
+        min: -5
+        max: 40
+  - id: seoul-parking-usage
+    name: 서울 공영주차장 일별 이용
+    provider: 서울특별시
+    category: 교통
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/TbUseDaystatusView/1/5/
+    freshness:
+      pattern: '"DT"\s*:\s*"(\d{4}/\d{2}/\d{2})"'
+      layout: "2006/01/02"
+      max_age: 72h
+  - id: seoul-bike-stations
+    name: 서울 따릉이 대여소 정보
+    provider: 서울특별시
+    category: 교통
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/tbCycleStationInfo/1/5/
+  - id: seoul-subway-stations
+    name: 서울 지하철역 정보
+    provider: 서울특별시
+    category: 교통
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/SearchInfoBySubwayNameService/1/5/
+  - id: seoul-pharmacy
+    name: 서울 약국 운영 정보
+    provider: 서울특별시
+    category: 의료
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/TbPharmacyOperateInfo/1/5/
+  - id: seoul-hospital
+    name: 서울 병의원 정보
+    provider: 서울특별시
+    category: 의료
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/TbHospitalInfo/1/5/
+  - id: seoul-living-population
+    name: 서울 생활인구 (행정동)
+    provider: 서울특별시
+    category: 생활
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/SPOP_LOCAL_RESD_DONG/1/5/
+  - id: seoul-necessaries-prices
+    name: 서울 생필품 가격
+    provider: 서울특별시
+    category: 생활
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ListNecessariesPricesService/1/5/
+    expect:
+      - name: 가격(원)
+        pattern: '"A_PRICE"\s*:\s*"(\d+)"'
+        min: 1
+        max: 10000000
+  - id: seoul-culture-events
+    name: 서울 문화행사
+    provider: 서울특별시
+    category: 관광
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/culturalEventInfo/1/5/
+  - id: seoul-reserve-culture
+    name: 서울 공공서비스 예약 (문화체험)
+    provider: 서울특별시
+    category: 생활
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ListPublicReservationCulture/1/5/
+  - id: seoul-reserve-sport
+    name: 서울 공공서비스 예약 (체육시설)
+    provider: 서울특별시
+    category: 생활
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ListPublicReservationSport/1/5/
+  - id: seoul-library-hours
+    name: 서울 도서관 운영 정보
+    provider: 서울특별시
+    category: 생활
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/SeoulLibraryTimeInfo/1/5/
+  - id: seoul-public-wifi
+    name: 서울 공공와이파이 위치
+    provider: 서울특별시
+    category: 생활
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/TbPublicWifiInfo/1/5/
+  - id: seoul-childcare
+    name: 서울 어린이집 정보
+    provider: 서울특별시
+    category: 생활
+    key_env: SEOUL_OPENAPI_KEY
+    url: http://openapi.seoul.go.kr:8088/{{.Key}}/json/ChildCareInfo/1/5/
