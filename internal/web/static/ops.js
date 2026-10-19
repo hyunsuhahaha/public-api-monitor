@@ -146,7 +146,9 @@ async function openIncident(id) {
   $("inc-modal").hidden = false;
   const title = $("im-title"); title.replaceChildren();
   title.append(el("span", "sev " + (open ? "open" : "s" + i.severity), open ? "진행 중" : sevLabel(i)), document.createTextNode(` #${i.id} ${t.name}`));
-  $("im-sub").textContent = `${t.provider} · ${fmtFull(i.started)} ~ ${open ? "진행 중" : fmtFull(i.ended)} · ${dur(i.started, end.toISOString())}`;
+  const muted = (state.data.silences || []).find((x) => x.target === i.target);
+  $("im-sub").textContent = `${t.provider} · ${fmtFull(i.started)} ~ ${open ? "진행 중" : fmtFull(i.ended)} · ${dur(i.started, end.toISOString())}` +
+    (muted ? ` · 🔕 알림 꺼짐 ${kst(muted.until, { hour: "2-digit", minute: "2-digit" })}까지` : "");
 
   const checks = d.checks, locs = [...new Set(checks.map((c) => c.location))].sort();
   const inWin = checks.filter((c) => Date.parse(c.at) >= Date.parse(i.started) && Date.parse(c.at) <= end.getTime());
@@ -273,6 +275,8 @@ function handoffMarkdown(hours) {
   if (burning.length) L.push(`- 에러 버짓 소진 경보 ${burning.length}개: ` + burning.map((t) => `${t.name} 1h ${burnText(t.burn1h)} · 6h ${burnText(t.burn6h)}`).join(", "));
   const ours = d.targets.filter((t) => t.status === "client");
   if (ours.length) L.push(`- 조치 필요 (우리 쪽) ${ours.length}개: ` + ours.map((t) => t.name).join(", ") + ` — ${[...new Set(ours.map((t) => t.reason))].join(" / ")}`);
+  for (const x of d.silences || [])
+    L.push(`- 🔕 알림 꺼짐: ${nm(x.target)} — ${at(x.until)}까지 (${x.author}${x.reason ? ": " + x.reason : ""}) · 이 동안 장애는 알림 없이 기록만 됨`);
   for (const m of d.maintenance || []) if (m.active || Date.parse(m.start) > now)
     L.push(`- ${m.active ? "점검 중" : "점검 예정"}: ${m.note || "계획 점검"} ${at(m.start)} ~ ${at(m.end)} (${m.targets.map(nm).join(", ")})`);
   const f = d.fleet;
