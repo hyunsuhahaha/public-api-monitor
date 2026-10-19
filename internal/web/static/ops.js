@@ -14,6 +14,37 @@ function closeIncident() {
 const fmtFull = (d) => kst(d, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const sevLabel = (i) => (i.severity >= 2 ? "장애" : "성능 저하");
 
+// Where an incident's failures happened, from the checks' phases and reasons: the
+// provider's server (stalled waiting for the first byte, 5xx, an error result code) or the
+// network (stalled in DNS, connect or TLS). The first question of every review.
+function whereItFailed(checks) {
+  const failing = checks.filter((c) => sev(c.status) >= 1);
+  const touts = failing.filter((c) => (c.reason || "").startsWith("timeout: "));
+  const stages = {};
+  for (const c of touts) { const s = c.reason.slice(9); stages[s] = (stages[s] || 0) + 1; }
+  const net = failing.map((c) => c.phases).filter((p) => p && (p.connectMs || p.tlsMs)).map((p) => (p.dnsMs || 0) + (p.connectMs || 0) + (p.tlsMs || 0)).sort((a, b) => a - b);
+  const netMed = net.length ? net[Math.floor(net.length / 2)] : null;
+  const server = (stages["서버 응답 대기 중 (연결은 됨)"] || 0) + (stages["본문 받는 중"] || 0)
+    + failing.filter((c) => c.http >= 500 || (c.http === 200 && c.status !== "slow" && c.status !== "stale")).length;
+  const network = (stages["TCP 연결 중"] || 0) + (stages["DNS 조회 중"] || 0) + (stages["TLS 연결 중"] || 0);
+  const slow = failing.filter((c) => c.status === "slow" && c.phases && c.latencyMs);
+  const waitShare = slow.length ? slow.reduce((a, c) => a + (c.phases.waitMs || 0), 0) / slow.reduce((a, c) => a + c.latencyMs, 0) : 0;
+  let who = "알 수 없음", cls = "";
+  if (server && !network) { who = "기관 서버"; cls = "c-warn-t"; }
+  else if (network && !server) { who = "네트워크"; cls = "c-blue-t"; }
+  else if (network && server) { who = "섞임"; cls = "c-deg-t"; }
+  else if (slow.length && waitShare >= 0.6) { who = "기관 서버"; cls = "c-warn-t"; }
+  else if (slow.length) { who = "네트워크"; cls = "c-blue-t"; }
+  const parts = Object.entries(stages).map(([s, n]) => `타임아웃 ${n}회: ${s}`);
+  const h5 = failing.filter((c) => c.http >= 500).length;
+  if (h5) parts.push(`HTTP 5xx ${h5}회`);
+  const coded = failing.filter((c) => c.http === 200 && c.code && c.status !== "slow" && c.status !== "stale");
+  if (coded.length) parts.push(`결과 코드 오류 ${coded.length}회 (code ${[...new Set(coded.map((c) => c.code))].join(", ")})`);
+  if (slow.length) parts.push(`느린 응답 ${slow.length}회, 서버 대기 ${Math.round(waitShare * 100)}%`);
+  if (netMed != null) parts.push(`연결 p50 ${ms(netMed)}`);
+  return { who, cls, detail: parts.join(" · ") || "구간 기록 없음" };
+}
+
 async function openIncident(id) {
   const d = await fetch("/api/v1/incidents/" + id).then((r) => (r.ok ? r.json() : null));
   if (!d) return;
@@ -37,7 +68,7 @@ async function openIncident(id) {
     statPanel("실패한 확인", `${failing.length} / ${inWin.length}`, "장애 구간 안의 원시 확인", failing.length ? "c-out-t" : ""),
     statPanel("영향 지역", `${failingLocs.size} / ${locs.length}`, [...failingLocs].join(", ") || "–", failingLocs.size === locs.length ? "c-out-t" : "c-deg-t"),
     i.flaps ? statPanel("불안정", `×${i.flaps}`, "복구된 듯하다 다시 실패", "c-deg-t") : statPanel("처음 원인", i.reason.split(" (")[0], "", ""),
-    statPanel("응답 시간 p50", ms(lat[Math.floor(lat.length / 2)] || 0), "장애 구간, 응답 온 것만", "c-blue-t"));
+    (() => { const w = whereItFailed(inWin); return statPanel("문제 위치", w.who, w.detail + ` · 응답 p50 ${ms(lat[Math.floor(lat.length / 2)] || 0)}`, w.cls); })());
 
   // matrix: one row per location, one cell per check, the incident window shaded
   const cv = $("im-matrix"), W = cv.parentElement.clientWidth - 22, rowH = 18, labelW = 110;
@@ -115,7 +146,7 @@ function postmortemMarkdown(d) {
     prev = v.status;
   }
   lines.push("", "## 영향", "", "- (이 API를 쓰는 서비스와 사용자에게 무엇이 안 됐나)", "",
-    "## 원인", "", "- (제공 기관 공지·문의 결과)", "",
+    "## 원인", "", `- 모니터가 본 위치: **${whereItFailed(inWin).who}** — ${whereItFailed(inWin).detail}`, "- (제공 기관 공지·문의 결과)", "",
     "## 우리가 한 일", "", "- (알림을 받고 한 조치)", "",
     "## 재발 방지 / 개선", "", "| 조치 | 담당 | 상태 |", "|---|---|---|", "| | | |", "");
   return lines.join("\n");
