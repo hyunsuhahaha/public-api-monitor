@@ -8,7 +8,7 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write # refresh the encrypted daily backup on the db-seed release
   actions: write # delete the previous database cache
   pages: write
   id-token: write
@@ -59,6 +59,18 @@ jobs:
         with:
           path: pamon.db*
           key: pamon-db-${{ github.run_id }}
+      # The Actions cache is not storage: GitHub may evict it. Once a day the database also
+      # goes, encrypted, to the db-seed release, which a run with no cache restores from,
+      # so losing the cache costs at most a day of history.
+      - name: daily backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED_KEY: ${{ secrets.PAMON_SEED_KEY }}
+        run: |
+          last=$(gh release view db-seed --json assets --jq '.assets[] | select(.name=="pamon.db.gz.gpg") | .createdAt')
+          if [ -n "$last" ] && [ $(( $(date +%s) - $(date -d "$last" +%s) )) -lt 86400 ]; then echo "backup is fresh ($last)"; exit 0; fi
+          gzip -c pamon.db | gpg --batch --yes --pinentry-mode loopback --passphrase "$SEED_KEY" -c -o pamon.db.gz.gpg
+          gh release upload db-seed pamon.db.gz.gpg --clobber
       - name: drop older database caches
         env:
           GH_TOKEN: ${{ github.token }}
