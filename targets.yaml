@@ -214,7 +214,7 @@ targets:
     provider: 인천국제공항공사
     category: 교통
     docs: https://www.data.go.kr/data/15095093/openapi.do
-    url: https://apis.data.go.kr/B551177/StatusOfPassengerFlightsDeOdp/getPassengerArrivalsDeOdp?serviceKey={{.Key}}&type=json&numOfRows=5&pageNo=1
+    url: https://apis.data.go.kr/B551177/StatusOfPassengerFlightsOdp/getPassengerArrivalsOdp?serviceKey={{.Key}}&type=json&numOfRows=5&pageNo=1
 
   - id: seoul-bike
     name: 서울 공공자전거(따릉이) 대여소 실시간
@@ -650,3 +650,54 @@ targets:
         pattern: '"mapY"\s*:\s*"([\d.]+)"'
         min: 33
         max: 39
+
+  # ── 공공데이터포털 4차 추가 (이미 승인된 키로 열리는 API) ─────────────────
+  - id: kma-mid-sea
+    name: 기상청 중기해상예보
+    provider: 기상청
+    category: 날씨
+    url: https://apis.data.go.kr/1360000/MidFcstInfoService/getMidSeaFcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&regId=12A20000&tmFc={{midTmFc .Now}}
+    expect:
+      - name: 4일 뒤 오전 파고(m)
+        pattern: '"wh4AAm"\s*:\s*([\d.]+)'
+        min: 0
+        max: 15
+  - id: kma-warning-msg
+    name: 기상청 기상특보 통보문
+    provider: 기상청
+    category: 날씨
+    url: https://apis.data.go.kr/1360000/WthrWrnInfoService/getWthrWrnMsg?serviceKey={{.Key}}&pageNo=1&numOfRows=5&dataType=JSON&stnId=108&fromTmFc={{date (addDays .Now -6) "20060102"}}&toTmFc={{date .Now "20060102"}}
+  - id: airkorea-pm25-week
+    name: 에어코리아 초미세먼지 주간예보
+    provider: 한국환경공단
+    category: 환경
+    url: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMinuDustWeekFrcstDspth?serviceKey={{.Key}}&returnType=json&numOfRows=3&pageNo=1&searchDate={{date .Now "2006-01-02"}}
+  - id: ev-charger-status
+    name: 전기차 충전기 상태 (서울)
+    provider: 한국환경공단
+    category: 교통
+    url: https://apis.data.go.kr/B552584/EvCharger/getChargerStatus?serviceKey={{.Key}}&pageNo=1&numOfRows=3&period=5&zcode=11&dataType=JSON
+    freshness:   # 충전기 상태는 실시간: 1시간 넘게 갱신이 없으면 수집이 멈춘 것
+      pattern: '"statUpdDt"\s*:\s*"(\d{14})"'
+      layout: "20060102150405"
+      max_age: 1h
+  - id: tago-bus-stops
+    name: TAGO 버스정류소 목록
+    provider: 국토교통부
+    category: 교통
+    url: https://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnNoList?serviceKey={{.Key}}&pageNo=1&numOfRows=5&_type=json&cityCode=25&nodeNm={{esc "시청"}}
+    expect:
+      - name: 정류소 위도
+        pattern: '"gpslati"\s*:\s*([\d.]+)'
+        min: 33
+        max: 39
+  - id: nemc-severe-accept
+    name: 응급실 중증질환 수용 가능 정보
+    provider: 국립중앙의료원
+    category: 의료
+    url: https://apis.data.go.kr/B552657/ErmctInfoInqireService/getSrsillDissAceptncPosblInfoInqire?serviceKey={{.Key}}&STAGE1={{esc "서울특별시"}}&STAGE2={{esc "종로구"}}&pageNo=1&numOfRows=5
+  - id: nemc-er-messages
+    name: 응급실·중증질환 메시지
+    provider: 국립중앙의료원
+    category: 의료
+    url: https://apis.data.go.kr/B552657/ErmctInfoInqireService/getEmrrmSrsillDissMsgInqire?serviceKey={{.Key}}&Q0={{esc "서울특별시"}}&Q1={{esc "종로구"}}&pageNo=1&numOfRows=5
