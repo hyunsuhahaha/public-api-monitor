@@ -1,6 +1,6 @@
 # pamon: 공공 API 상태판
 
-### 👉 [실시간 상태판 열기](https://hyunsuhahaha.github.io/public-api-monitor/) · [공개 상태 페이지](https://hyunsuhahaha.github.io/public-api-monitor/status.html)
+### 👉 [실시간 상태판 열기](https://hyunsuhahaha.github.io/public-api-monitor/)
 
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)
 
