@@ -1,10 +1,10 @@
 # pamon: 공공 API 상태판
 
+### 👉 [실시간 상태판 열기](https://hyunsuhahaha.github.io/public-api-monitor/) · [공개 상태 페이지](https://hyunsuhahaha.github.io/public-api-monitor/status.html)
+
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)
 
 공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **실제 공공 API 77개**가 지금 살아 있는지, 느린지, 엉뚱한 값을 주는지를 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
-
-**실시간 상태판: <https://hyunsuhahaha.github.io/public-api-monitor/>** · 공개 상태 페이지: [status.html](https://hyunsuhahaha.github.io/public-api-monitor/status.html)
 
 ![dashboard](docs/img/dashboard.png)
 
