@@ -99,7 +99,8 @@ const fetchShim = `<script>/* static export: GETs read the snapshot files */
     if (typeof u === "string" && u.startsWith("/") && (!o || !o.method || o.method === "GET")) {
       let [p, q] = u.slice(1).split("?");
       if (q) p += "_" + q.replace(/[^A-Za-z0-9._-]/g, "_");
-      u = "data/" + p + ".json";
+      // Pages caches files for 10 minutes; a per-minute query keeps polls current
+      u = "data/" + p + ".json?m=" + Math.floor(Date.now() / 60000);
     }
     return f(u, o);
   };
