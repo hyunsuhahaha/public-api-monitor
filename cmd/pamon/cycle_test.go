@@ -11,7 +11,7 @@ func TestDataFileMatchesShim(t *testing.T) {
 		"/api/v1/status": "data/api/v1/status.json",
 		"/version":       "data/version.json",
 		"/api/v1/series?target=kma-typhoon&range=24h&shift=1d": "data/api/v1/series_target_kma-typhoon_range_24h_shift_1d.json",
-		"/api/v1/incidents/42": "data/api/v1/incidents/42.json",
+		"/api/v1/incidents/42":                                 "data/api/v1/incidents/42.json",
 	} {
 		if got := dataFile(u); got != want {
 			t.Errorf("dataFile(%q) = %q, want %q", u, got, want)

@@ -692,10 +692,12 @@ $("d-close").onclick = closeDrawer; $("scrim").onclick = closeDrawer;
 $("refresh").onclick = () => load();
 window.addEventListener("resize", () => { if (state.data) renderHeat(); });
 function showAge() {
-  const age = state.loadedAt ? Math.round((Date.now() - state.loadedAt) / 1000) : null;
+  // age of the data itself (generatedAt), not of the fetch: a snapshot can be minutes old
+  const at = state.data && state.data.generatedAt ? Date.parse(state.data.generatedAt) : state.loadedAt;
+  const age = at ? Math.max(0, Math.round((Date.now() - at) / 1000)) : null;
   const txt = age == null ? "–" : age < 120 ? age + "초 전" : Math.round(age / 60) + "분 전";
   const btn = $("refresh");
-  btn.classList.toggle("stale", !!state.loadError || age > 90);
+  btn.classList.toggle("stale", !!state.loadError || age > 600); // two missed check intervals
   $("age").textContent = state.loadError ? `연결 끊김 · ${txt} 데이터` : txt;
   btn.title = state.loadError ? `서버에 연결하지 못함 (${state.loadError}). 5초마다 다시 시도 중` : "새로고침 (r)";
 }

@@ -140,6 +140,9 @@ type overviewResponse struct {
 	Maintenance []maintView `json:"maintenance"`
 	// Silences: APIs whose pages are muted now
 	Silences []store.Silence `json:"silences"`
+	// GeneratedAt: when this answer was built. The page shows its age from this, not from
+	// when it fetched it (a cached or exported snapshot can be minutes old).
+	GeneratedAt time.Time `json:"generatedAt"`
 }
 
 func (s *Server) silences(ctx context.Context) []store.Silence {
@@ -257,7 +260,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		fleetLat = append(fleetLat, x.LatencyMS)
 	}
 
-	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now()), Silences: s.silences(ctx)}
+	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now()), Silences: s.silences(ctx), GeneratedAt: time.Now()}
 
 	var sumAvail float64
 	var withData, checks int

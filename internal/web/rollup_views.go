@@ -99,7 +99,7 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 	n := int(to.Sub(from)/step) + 1
 	vb, hists, _, _, totals, allCounts := bucketsFromHours(rows, from, step, n)
 
-	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now()), Silences: s.silences(ctx)}
+	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now()), Silences: s.silences(ctx), GeneratedAt: time.Now()}
 	fleet := store.NewHist()
 	var sumAvail, sloSum float64
 	var withData, verdictN int

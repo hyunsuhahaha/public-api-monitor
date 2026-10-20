@@ -1,8 +1,10 @@
 # pamon: 공공 API 상태판
 
-[![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml)
+[![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)
 
-공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **실제 공공 API 77개**가 지금 살아 있는지, 느린지, 엉뚱한 값을 주는지를 5분마다 확인합니다(여러 지역 판정 지원, 현재 운영은 집 PC 1곳). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
+공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **실제 공공 API 77개**가 지금 살아 있는지, 느린지, 엉뚱한 값을 주는지를 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
+
+**실시간 상태판: <https://hyunsuhahaha.github.io/public-api-monitor/>** · 공개 상태 페이지: [status.html](https://hyunsuhahaha.github.io/public-api-monitor/status.html)
 
 ![dashboard](docs/img/dashboard.png)
 
@@ -82,7 +84,7 @@ flowchart LR
   subgraph probes[원격 감시기]
     P1[pamon -role probe<br/>home-wsl]
   end
-  subgraph central[중앙 (OCI 춘천 배포 예정)]
+  subgraph central[중앙 (서버로 돌릴 때: OCI 춘천)]
     C[pamon -role central] --> DB[(SQLite)]
     C --> W[상태판 · API · 피드 · 리포트]
     C --> M[/metrics/]
@@ -161,6 +163,15 @@ go run ./cmd/pamon       # http://localhost:8080
 docker compose up        # pamon + Prometheus(:9090) + Grafana(:3000, 대시보드 자동 등록) + Jaeger(:16686, 트레이스)
 go run ./cmd/pamon -report 2026-10   # 월간 리포트를 마크다운으로 (블로그·GeekNews 게시용)
 ```
+
+## 지금의 운영: GitHub Actions + GitHub Pages (서버 없음)
+
+[`.github/workflows/monitor.yml`](.github/workflows/monitor.yml)이 5분마다 `pamon -cycle -export site`를 실행합니다.
+
+- **한 바퀴 실행:** 모든 대상을 한 번씩 검사해 SQLite에 쌓고 끝납니다. 장애 판정은 서버와 같습니다. 연속 실패 횟수는 메모리에 있던 값이라, 시작할 때 최근 1시간 판정을 다시 넣어 실행이 바뀌어도 "연속 2번 실패"가 이어집니다.
+- **DB 보관:** SQLite 파일은 Actions 캐시에 두고 실행마다 이어 씁니다. 동시 실행은 `concurrency`로 줄 세워 쓰는 쪽이 늘 하나뿐입니다. 캐시가 비면 집 서버 시절 이력을 암호화해 둔 `db-seed` 릴리스에서 한 번 복원합니다.
+- **정적 내보내기:** 상태판과 공개 페이지, 그 페이지들이 읽는 JSON(범위별 개요, API별 시계열, 장애 상세)을 파일로 떠서 Pages에 올립니다. 페이지 안의 작은 fetch 심이 `/api/v1/...` 요청을 그 파일로 돌립니다. 화면의 "N분 전"은 데이터가 만들어진 시각(`generatedAt`) 기준이고, 10분(검사 주기 두 번)을 넘기면 경고색으로 바뀝니다.
+- **알려진 한계:** GitHub이 붐비면 예약 실행이 몇 분씩 밀립니다. 검사는 미국 러너에서 나가므로 응답 시간에 태평양 왕복이 더해집니다(느림 판정 기준은 위치별로 따로 학습). 공지 노트·알림 끄기처럼 서버에 쓰는 기능은 정적 페이지에서는 동작하지 않습니다.
 
 ## 내 PC에서 계속 돌리기 (WSL)
 
