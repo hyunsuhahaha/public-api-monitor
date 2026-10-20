@@ -2,7 +2,7 @@ name: monitor
 # The live deployment: every 5 minutes one cycle checks all targets into the SQLite
 # database (kept between runs in the Actions cache), then the dashboard and status page
 # are published with their data to GitHub Pages. No server to keep up; the price is that
-# GitHub runs scheduled jobs late under load and the checks come from a US runner.
+# the checks come from a US runner.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -23,6 +23,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      - run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: {go-version-file: go.mod}
@@ -69,3 +70,16 @@ jobs:
         with: {path: site}
       - id: deploy
         uses: actions/deploy-pages@v4
+
+      # Scheduled runs come late or, for hours, not at all, so each run starts the next one
+      # 5 minutes after it began; the cron above only restarts the chain if it ever breaks.
+      # A run already queued or running means a chain exists: then this one stops here.
+      - name: next beat
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          left=$(( 300 - ($(date +%s) - T0) ))
+          if [ "$left" -gt 0 ]; then sleep "$left"; fi
+          busy=$(gh run list --workflow monitor.yml --limit 20 --json databaseId,status             --jq '[.[] | select(.databaseId != ${{ github.run_id }} and .status != "completed")] | length')
+          if [ "$busy" = 0 ]; then gh workflow run monitor.yml --ref main; else echo "a run is already waiting"; fi
