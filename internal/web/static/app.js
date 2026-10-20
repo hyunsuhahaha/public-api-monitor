@@ -76,15 +76,73 @@ function renderStats(d) {
   box.append(
     statPanel("가용률 · " + RANGE_LABEL[d.range], pct(f.availability), "목표(SLO) " + pct(f.slo, 1), avCls),
     statPanel("에러 버짓 잔여", f.availability < 0 ? "–" : budgetText(budget), budget < 0 ? "목표를 넘겨 실패함 (버짓 초과)" : "목표 대비 남은 실패 허용치", bCls, Math.max(0, budget) * 100, budget >= 0.5 ? C.ok : budget >= 0 ? C.deg : C.out),
-    statPanel("지금 실패 중", String(c.down || 0), `열린 장애 ${f.openIncidents}건 (장애는 연속 2회 실패부터)`, c.down ? "c-out-t" : "c-ok-t"),
-    statPanel("지금 저하", String(c.degraded || 0), "느림·데이터 이상(오래됨·값 틀림)", c.degraded ? "c-deg-t" : "c-ok-t"),
+    clickable(statPanel("지금 실패 중", String(c.down || 0), `열린 장애 ${f.openIncidents}건 (장애는 연속 2회 실패부터)`, c.down ? "c-out-t" : "c-ok-t"), c.down, 2),
+    clickable(statPanel("지금 저하", String(c.degraded || 0), "느림·데이터 이상(오래됨·값 틀림)", c.degraded ? "c-deg-t" : "c-ok-t"), c.degraded, 1),
     statPanel("응답 시간 p95", ms(f.p95), "p50 " + ms(f.p50) + " · p99 " + ms(f.p99), "c-blue-t"),
     statPanel("확인 / 분", f.checksPerMin.toFixed(1), `정상 ${c.up || 0}${c.maint ? " · 점검 " + c.maint : ""} · 확인 불가 ${c.unknown || 0} / ${d.targets.length}개 API`, ""),
   );
   const pill = $("fleet-pill");
   pill.className = "pill " + (c.down ? "out" : c.degraded ? "deg" : "ok");
   pill.textContent = c.down ? `● ${c.down}개 장애` : c.degraded ? `● ${c.degraded}개 저하` : "● 모두 정상";
+  pill.classList.toggle("click", !!(c.down || c.degraded));
+  pill.title = c.down || c.degraded ? "무엇이 왜 문제인지 보기" : "";
+  pill.onclick = (e) => { e.stopPropagation(); if (c.down || c.degraded) openProblems(pill, 0); };
+  if (!$("problems").hidden) openProblems(null, state.probMin); // keep an open list current
 }
+
+// ── what is wrong right now ───────────────────────────────────────────────────
+// The pill and the two "now" panels open this list: each failing or degraded API, the
+// checker's reason in plain words and how long it has lasted; a row opens its drawer.
+function clickable(panel, n, min) {
+  if (!n) return panel;
+  panel.classList.add("click");
+  panel.title = "무엇이 왜 문제인지 보기";
+  panel.onclick = (e) => { e.stopPropagation(); openProblems(panel, min); };
+  return panel;
+}
+
+function why(r) {
+  if (!r) return "";
+  r = r.replace(/ \(usually .*\)$/, "");
+  const dur = (x) => x.replace(/(\d+)h/, "$1시간 ").replace(/(\d+)m(?!s)/, "$1분 ").replace(/(\d+(?:\.\d+)?)s/, "$1초").replace(/ 0초$/, "").trim();
+  let m;
+  if ((m = r.match(/^slow: (.+)$/))) return `응답이 ${dur(m[1])} 걸림`;
+  if ((m = r.match(/^stale: newest data (.+) old$/))) return `최신 데이터가 ${dur(m[1])} 전 것 (갱신 멈춤)`;
+  if ((m = r.match(/^bad value: (.+)$/))) return `값 이상: ${m[1].replace(/ missing \(.*\)$/, " 항목이 응답에 없음")}`;
+  if ((m = r.match(/^timeout: (.+)$/))) return `응답 없음 (시간 초과) — ${m[1]}`;
+  if ((m = r.match(/^http (\d+)/))) return `HTTP ${m[1]} 응답` + (r.includes(":") ? " — " + r.split(":").slice(1).join(":").trim() : "");
+  if ((m = r.match(/^code (\S+): (.+)$/))) return `오류 코드 ${m[1]} — ${m[2]}`;
+  return r;
+}
+
+function openProblems(anchor, min) {
+  const box = $("problems");
+  state.probMin = min;
+  const open = {};
+  for (const i of state.incidents || []) if (i.ended.startsWith("0001")) open[i.target] = i;
+  const list = (state.data ? state.data.targets : []).filter((t) => sev(t.status) >= Math.max(1, min))
+    .sort((a, b) => sev(b.status) - sev(a.status) || a.name.localeCompare(b.name, "ko"));
+  box.replaceChildren(el("div", "ph", min >= 2 ? `지금 실패 중 ${list.length}개` : `지금 문제 있는 API ${list.length}개`));
+  if (!list.length) box.append(el("div", "pe", "지금은 문제 있는 API가 없습니다."));
+  for (const t of list) {
+    const r = el("button", "pr"), i = open[t.id];
+    const mins = i ? Math.max(1, Math.round((Date.now() - Date.parse(i.started)) / 60000)) : 0;
+    const head = el("div", "prh");
+    head.append(el("span", "lab " + (sev(t.status) >= 2 ? "c-out-t" : "c-deg-t"), LABEL[t.status] || t.status), el("b", "", t.name), el("span", "pv", t.provider),
+      el("span", "pd", i ? (mins >= 60 ? `${Math.floor(mins / 60)}시간 ${mins % 60}분째` : `${mins}분째`) : "방금"));
+    r.append(head, el("div", "pw", why(t.reason) || "이유 기록 없음"));
+    r.onclick = () => { box.hidden = true; openDrawer(t.id); };
+    box.append(r);
+  }
+  if (anchor) {
+    const a = anchor.getBoundingClientRect();
+    box.style.top = Math.round(a.bottom + window.scrollY + 6) + "px";
+    box.style.left = Math.round(Math.max(8, Math.min(a.left, innerWidth - 480))) + "px";
+  }
+  box.hidden = false;
+}
+document.addEventListener("click", (e) => { const b = $("problems"); if (!b.hidden && !b.contains(e.target)) b.hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("problems").hidden = true; });
 
 // ── service table ─────────────────────────────────────────────────────────────
 function budgetCell(t) {

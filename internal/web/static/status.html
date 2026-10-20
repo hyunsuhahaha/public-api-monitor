@@ -3,47 +3,68 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>공공 API 상태 · pamon</title>
 <meta name="description" content="공공데이터포털·서울 열린데이터광장 API가 지금 쓸 수 있는지, 지난 90일 동안 어땠는지">
 <style>
-:root { --bg: #f7f8fa; --card: #fff; --line: #e3e6ea; --text: #1d2125; --muted: #6b7280;
-  --ok: #3fa34d; --deg: #e0a800; --out: #d64545; --none: #d9dde3; --maint: #8b5cf6; }
-@media (prefers-color-scheme: dark) { :root { --bg: #0e1013; --card: #16191d; --line: #262a30; --text: #e4e6e9; --muted: #8b919a; --none: #2b2f36; } }
+/* same palette as the operator board (app.css): dark, Grafana-like */
+:root { --bg: #0b0c0e; --card: #16171c; --card2: #1c1e24; --line: #2a2d35; --text: #d8d9da; --muted: #8b8f98;
+  --ok: #73bf69; --deg: #fade2a; --out: #f2495c; --none: #2b2e36; --maint: #b877d9;
+  --mono: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace; }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
-main { max-width: 860px; margin: 0 auto; padding: 28px 16px 60px; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 Inter, -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+main { max-width: 900px; margin: 0 auto; padding: 28px 16px 60px; }
 header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-h1 { font-size: 20px; margin: 0; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+h1 span { color: var(--muted); font-weight: 500; }
 a { color: inherit; }
+header a { color: #5794f2; text-decoration: none; } header a:hover { text-decoration: underline; }
 .muted { color: var(--muted); font-size: 12px; }
-.banner { margin: 18px 0 22px; padding: 16px 18px; border-radius: 8px; color: #fff; font-weight: 600; font-size: 16px; }
-.banner.ok { background: var(--ok); } .banner.deg { background: var(--deg); color: #1d2125; } .banner.out { background: var(--out); }
-.banner small { display: block; font-weight: 400; font-size: 13px; opacity: .9; margin-top: 2px; }
-.group { background: var(--card); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+.banner { margin: 18px 0 22px; padding: 14px 18px; border-radius: 6px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--ok); }
+.banner.deg { border-left-color: var(--deg); } .banner.out { border-left-color: var(--out); background: linear-gradient(90deg, rgba(242,73,92,.12), var(--card) 60%); }
+.banner .title { font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.banner .title::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.banner.deg .title::before { background: var(--deg); box-shadow: 0 0 10px var(--deg); } .banner.out .title::before { background: var(--out); box-shadow: 0 0 10px var(--out); animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.banner small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.probs { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.probs li { display: grid; grid-template-columns: 74px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.probs li:last-child { border-bottom: 0; }
+.probs li:hover { background: var(--card2); }
+.probs .lab { font-size: 12px; font-weight: 600; }
+.probs .nm { font-weight: 500; } .probs .nm small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.probs .why { display: block; color: var(--muted); font-size: 12.5px; }
+.probs .dur { color: var(--muted); font-size: 12px; white-space: nowrap; font-family: var(--mono); }
+.group { background: var(--card); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
 .group > summary { list-style: none; cursor: pointer; padding: 12px 16px; display: flex; justify-content: space-between; gap: 10px; font-weight: 600; }
 .group > summary::-webkit-details-marker { display: none; }
+.group > summary:hover { background: var(--card2); }
 .group > summary .st { font-weight: 500; font-size: 13px; }
-.api { padding: 12px 16px; border-top: 1px solid var(--line); }
+.api { padding: 12px 16px; border-top: 1px solid var(--line); scroll-margin-top: 16px; }
+.api.flash { animation: flash 1.6s; } @keyframes flash { 0%, 40% { background: rgba(87,148,242,.18); } }
 .api-h { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
 .api-h b { font-weight: 500; }
+.api-h a { text-decoration: none; } .api-h a:hover { text-decoration: underline; }
+.api .why { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .st.ok { color: var(--ok); } .st.deg { color: var(--deg); } .st.out { color: var(--out); } .st.maint { color: var(--maint); } .st.none { color: var(--muted); }
-.bars { display: flex; gap: 2px; height: 30px; margin: 8px 0 4px; }
-.bars i { flex: 1; border-radius: 2px; background: var(--none); min-width: 2px; }
+.bars { display: flex; gap: 2px; height: 28px; margin: 8px 0 4px; }
+.bars i { flex: 1; border-radius: 1px; background: var(--none); min-width: 2px; }
 .bars i.ok { background: var(--ok); } .bars i.deg { background: var(--deg); } .bars i.out { background: var(--out); }
 .bars i:hover { opacity: .7; }
 .scale { display: flex; justify-content: space-between; }
-.tip { position: fixed; pointer-events: none; background: #1d2125; color: #fff; font-size: 12px; padding: 6px 8px; border-radius: 4px; display: none; z-index: 9; max-width: 260px; }
+.tip { position: fixed; pointer-events: none; background: #000; border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 6px 8px; border-radius: 4px; display: none; z-index: 9; max-width: 260px; }
 h2 { font-size: 15px; margin: 30px 0 10px; }
-.inc { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; margin-bottom: 8px; }
+.inc { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 10px 16px; margin-bottom: 8px; }
 .inc .t { font-weight: 500; }
-@media (max-width: 560px) { .bars i:nth-child(-n+60) { display: none; } .scale .d90 { display: none; } .scale .d30 { display: inline; } }
+@media (max-width: 560px) { .bars i:nth-child(-n+60) { display: none; } .scale .d90 { display: none; } .scale .d30 { display: inline; }
+  .probs li { grid-template-columns: 60px 1fr; } .probs .dur { grid-column: 2; } }
 .scale .d30 { display: none; }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>공공 API 상태</h1>
+    <h1>공공 API 상태 <span>· pamon</span></h1>
     <span class="muted">5분마다 실제로 호출해 확인 · <a href="/">운영자 상태판</a> · <a href="/feed.xml">장애 피드</a></span>
   </header>
   <div class="banner" id="banner">불러오는 중…</div>

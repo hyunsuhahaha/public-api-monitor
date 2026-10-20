@@ -658,8 +658,8 @@ targets:
     category: 날씨
     url: https://apis.data.go.kr/1360000/MidFcstInfoService/getMidSeaFcst?serviceKey={{.Key}}&pageNo=1&numOfRows=10&dataType=JSON&regId=12A20000&tmFc={{midTmFc .Now}}
     expect:
-      - name: 4일 뒤 오전 파고(m)
-        pattern: '"wh4AAm"\s*:\s*([\d.]+)'
+      - name: 파고(m)   # 발표 시각마다 시작 날짜(wh4·wh5...)가 달라 가장 앞의 파고를 본다
+        pattern: '"wh\d+A(?:Am)?"\s*:\s*([\d.]+)'
         min: 0
         max: 15
   - id: kma-warning-msg

@@ -231,3 +231,20 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .silence.on { color: var(--purple); border-color: rgba(184,119,217,.45); }
 .silence select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
 .muted-tag { font-size: 11px; }
+
+/* what is wrong right now: opened from the pill or the "now" panels */
+.pill.click, .stat.click { cursor: pointer; }
+.pill.click:hover { filter: brightness(1.25); }
+.stat.click:hover { border-color: #3a3e48; background: var(--panel2); }
+.problems { position: absolute; z-index: 40; width: min(470px, calc(100vw - 16px)); max-height: 70vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+.problems .ph { padding: 10px 14px; font-weight: 600; border-bottom: 1px solid var(--line); }
+.problems .pe { padding: 14px; color: var(--muted); }
+.problems .pr { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line2); color: var(--text); padding: 10px 14px; cursor: pointer; font: inherit; }
+.problems .pr:hover { background: var(--panel2); }
+.problems .pr:last-child { border-bottom: 0; }
+.problems .prh { display: flex; gap: 8px; align-items: baseline; }
+.problems .lab { font-size: 11px; font-weight: 700; min-width: 58px; }
+.problems .pv { color: var(--muted); font-size: 12px; }
+.problems .pd { margin-left: auto; color: var(--muted); font-size: 12px; font-family: var(--mono); white-space: nowrap; }
+.problems .pw { margin: 3px 0 0 66px; color: var(--muted); font-size: 12.5px; }
