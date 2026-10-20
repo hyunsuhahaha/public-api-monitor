@@ -1,0 +1,71 @@
+name: monitor
+# The live deployment: every 5 minutes one cycle checks all targets into the SQLite
+# database (kept between runs in the Actions cache), then the dashboard and status page
+# are published with their data to GitHub Pages. No server to keep up; the price is that
+# GitHub runs scheduled jobs late under load and the checks come from a US runner.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write # delete the previous database cache
+  pages: write
+  id-token: write
+concurrency:
+  group: monitor # one writer to the database at a time; runs queue instead of racing
+  cancel-in-progress: false
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version-file: go.mod}
+      - run: CGO_ENABLED=0 go build -ldflags "-X main.version=$(git rev-parse --short HEAD)" -o pamon ./cmd/pamon
+
+      - name: restore database
+        id: db
+        uses: actions/cache/restore@v4
+        with:
+          path: pamon.db*
+          key: pamon-db-${{ github.run_id }}
+          restore-keys: pamon-db-
+      - name: first run only - seed from the encrypted history of the home server
+        if: steps.db.outputs.cache-matched-key == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED_KEY: ${{ secrets.PAMON_SEED_KEY }}
+        run: |
+          gh release download db-seed -p pamon.db.gz.gpg
+          gpg --batch --passphrase "$SEED_KEY" -d pamon.db.gz.gpg | gunzip > pamon.db
+
+      - name: check every target once, export the site
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          SEOUL_OPENAPI_KEY: ${{ secrets.SEOUL_OPENAPI_KEY }}
+          SEOUL_SUBWAY_KEY: ${{ secrets.SEOUL_SUBWAY_KEY }}
+          PAMON_WEBHOOK_URL: ${{ secrets.PAMON_WEBHOOK_URL }}
+          PAMON_PUBLIC_URL: https://hyunsuhahaha.github.io/public-api-monitor/
+        run: ./pamon -cycle -db pamon.db -location github-actions -export site
+
+      - name: save database
+        uses: actions/cache/save@v4
+        with:
+          path: pamon.db*
+          key: pamon-db-${{ github.run_id }}
+      - name: drop older database caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --key pamon-db- --limit 100 --json key --jq '.[].key' |
+            grep -vx "pamon-db-${{ github.run_id }}" | xargs -r -n1 gh cache delete || true
+
+      - uses: actions/upload-pages-artifact@v3
+        with: {path: site}
+      - id: deploy
+        uses: actions/deploy-pages@v4

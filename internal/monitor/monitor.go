@@ -115,6 +115,26 @@ func (m *Monitor) Run(ctx context.Context) {
 	wg.Wait()
 }
 
+// Round checks every target once and returns when all are done: for a scheduler outside
+// the process (a cron job) instead of Run's own slots.
+func (m *Monitor) Round(ctx context.Context) {
+	if m.MaxParallel <= 0 {
+		m.MaxParallel = 4
+	}
+	m.sem = make(chan struct{}, m.MaxParallel)
+	now := time.Now()
+	var wg sync.WaitGroup
+	for i := range m.Cfg.Targets {
+		t := &m.Cfg.Targets[i]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.checkOnce(ctx, t, now, t.Interval.Duration)
+		}()
+	}
+	wg.Wait()
+}
+
 func offset(id string, every time.Duration) time.Duration {
 	h := fnv.New32a()
 	h.Write([]byte(id))

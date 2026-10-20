@@ -78,6 +78,8 @@ func main() {
 		dump     = flag.String("dump", "", "call one target once and print the start of its response body (to write freshness/expect rules)")
 		check    = flag.Bool("check", false, "validate the config, print what it monitors and its maintenance windows, and exit")
 		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
+		cycle    = flag.Bool("cycle", false, "check every target once into -db (incidents included) and exit; for a cron job instead of a server")
+		export   = flag.String("export", "", "with -cycle: write the dashboard and status page with their data as static files into this directory")
 	)
 	flag.Parse()
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("location", *location)
@@ -100,6 +102,13 @@ func main() {
 	}
 	if *once {
 		os.Exit(runOnce(cfg, prober, *paths))
+	}
+	if *cycle {
+		if err := runCycle(log, cfg, prober, *dbPath, *location, *keep, *export); err != nil {
+			log.Error("cycle", "err", err)
+			os.Exit(1)
+		}
+		return
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -151,17 +160,7 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	if err := c.Start(ctx); err != nil {
 		return err
 	}
-	// the adaptive slow limit picks up where it left off (this location's last 24 h)
-	// (as live: answers past slow_after are not learned, slow-judged ones only move the median)
-	if lat, err := st.LatencySamples(ctx, time.Now().Add(-24*time.Hour), location); err == nil {
-		for _, t := range cfg.Targets {
-			for _, l := range lat[t.ID] {
-				if d := time.Duration(l.Ms) * time.Millisecond; d <= t.SlowAfter.Duration {
-					prober.Baseline.Observe(t.ID, d, l.Slow)
-				}
-			}
-		}
-	}
+	warmBaseline(ctx, st, cfg, prober, location)
 	prober.FollowUps = probe.NewFollowUps()
 	for _, t := range cfg.Targets { // keep the once-per-30-minutes limit across restarts
 		if list, err := st.FollowUps(ctx, t.ID, time.Now().Add(-prober.FollowUps.Every)); err == nil && len(list) > 0 {
@@ -200,6 +199,22 @@ func runCentral(ctx context.Context, log *slog.Logger, cfg *config.Config, probe
 	go c.Schema(ctx)
 	m.Run(ctx)
 	return shutdown(srv)
+}
+
+// warmBaseline: the adaptive slow limit picks up where it left off (this location's last
+// 24 h). As live: answers past slow_after are not learned, slow-judged ones only move the median.
+func warmBaseline(ctx context.Context, st *store.Store, cfg *config.Config, prober *probe.Prober, location string) {
+	lat, err := st.LatencySamples(ctx, time.Now().Add(-24*time.Hour), location)
+	if err != nil {
+		return
+	}
+	for _, t := range cfg.Targets {
+		for _, l := range lat[t.ID] {
+			if d := time.Duration(l.Ms) * time.Millisecond; d <= t.SlowAfter.Duration {
+				prober.Baseline.Observe(t.ID, d, l.Slow)
+			}
+		}
+	}
 }
 
 func runProbe(ctx context.Context, log *slog.Logger, cfg *config.Config, prober *probe.Prober, addr, central string) error {
