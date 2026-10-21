@@ -84,7 +84,7 @@ var okCodes = map[string]bool{
 // 20 access denied, 22 daily quota exceeded, 30 key not registered, 31 key expired,
 // 32 unregistered IP, 33 unsigned call) and Seoul's key / request errors.
 var clientCodes = map[string]bool{
-	"10": true, "11": true, "20": true, "22": true, "30": true, "31": true, "32": true, "33": true,
+	"10": true, "11": true, "20": true, "22": true, "23": true, "30": true, "31": true, "32": true, "33": true,
 	"INFO-100": true, "ERROR-300": true, "ERROR-301": true, "ERROR-310": true, "ERROR-331": true,
 	"ERROR-332": true, "ERROR-333": true, "ERROR-334": true, "ERROR-335": true, "ERROR-336": true,
 	// 서울 버스: 2/3 missing or bad parameter, 5 no key, 6 unregistered key, 7 unusable key, 8 quota
@@ -134,11 +134,11 @@ func Classify(o Observation, slowAfter time.Duration) Verdict {
 	msg := findFirst(msgPatterns, body)
 	switch {
 	case o.HTTPStatus >= 500:
-		return Verdict{Status: StatusDown, Code: code, Reason: httpReason(o.HTTPStatus, msg)}
+		return Verdict{Status: StatusDown, Code: code, Reason: httpReason(o.HTTPStatus, code, msg)}
 	case o.HTTPStatus == 401 || o.HTTPStatus == 403 || o.HTTPStatus == 429:
-		return Verdict{Status: StatusClient, Code: code, Reason: httpReason(o.HTTPStatus, msg)}
+		return Verdict{Status: StatusClient, Code: code, Reason: httpReason(o.HTTPStatus, code, msg)}
 	case o.HTTPStatus >= 400:
-		return Verdict{Status: StatusError, Code: code, Reason: httpReason(o.HTTPStatus, msg)}
+		return Verdict{Status: StatusError, Code: code, Reason: httpReason(o.HTTPStatus, code, msg)}
 	}
 	if strings.TrimSpace(body) == "" {
 		return Verdict{Status: StatusError, Reason: "empty body"}
@@ -174,16 +174,18 @@ func findFirst(patterns []*regexp.Regexp, s string) string {
 	return ""
 }
 
-func httpReason(status int, msg string) string {
+func httpReason(status int, code, msg string) string {
 	r := "http " + strconv.Itoa(status)
 	switch {
+	case code != "":
+		r += ": " + codeReason(code, msg)
 	case msg != "":
 		r += ": " + shorten(msg, 100)
 	case status == 401 || status == 403:
-		// data.go.kr's gateway answers a bare 403 for a key not approved for this API
-		r += ": 이 키로 호출 권한 없음 (활용신청·승인 확인)"
+		// The status alone cannot distinguish an outdated URL, approval or another block.
+		r += ": 접근 거부 (주소·키·승인·접근 제한 원인 확인 필요)"
 	case status == 429:
-		r += ": 호출 한도 초과"
+		r += ": 호출 제한 (일일 한도·초당 제한 확인)"
 	}
 	return r
 }

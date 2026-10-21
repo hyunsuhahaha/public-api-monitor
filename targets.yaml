@@ -323,14 +323,14 @@ targets:
     provider: 금융위원회
     category: 금융
     docs: https://www.data.go.kr/data/15094808/openapi.do
-    url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1&itmsNm={{esc "삼성전자"}}
+    url: https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1&itmsNm={{esc "삼성전자"}}
 
   - id: fsc-market-index
     name: 금융위원회 지수시세정보
     provider: 금융위원회
     category: 금융
     docs: https://www.data.go.kr/data/15094807/openapi.do
-    url: https://apis.data.go.kr/1160100/service/GetMarketIndexInfoService/getStockMarketIndex?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1&idxNm={{esc "코스피"}}
+    url: https://apis.data.go.kr/1160100/GetMarketIndexInfoService_V2/getStockMarketIndex_V2?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1&idxNm={{esc "코스피"}}
 
   - id: fsc-corp-outline
     name: 금융위원회 기업기본정보
@@ -344,7 +344,7 @@ targets:
     provider: 금융위원회
     category: 금융
     docs: https://www.data.go.kr/data/15094805/openapi.do
-    url: https://apis.data.go.kr/1160100/service/GetGeneralProductInfoService/getOilPriceInfo?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1
+    url: https://apis.data.go.kr/1160100/GetGeneralProductInfoService_V2/getOilPriceInfo_V2?serviceKey={{.Key}}&resultType=json&numOfRows=3&pageNo=1
 
   - id: sbiz-stores-radius
     name: 소상공인시장진흥공단 반경 내 상가업소

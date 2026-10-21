@@ -2,9 +2,30 @@ package probe
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestRateLimitAndAuthEvidence(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		obs    Observation
+		status Status
+		reason string
+	}{
+		{"per-second quota", Observation{HTTPStatus: 200, Body: []byte(`<resultCode>23</resultCode>`)}, StatusClient, "code 23"},
+		{"daily quota inside 403", Observation{HTTPStatus: 403, Body: []byte(`<returnReasonCode>22</returnReasonCode>`)}, StatusClient, "code 22"},
+		{"unknown 403", Observation{HTTPStatus: 403}, StatusClient, "원인 확인 필요"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			v := Classify(c.obs, 0)
+			if v.Status != c.status || !strings.Contains(v.Reason, c.reason) {
+				t.Fatalf("got %+v, want %s with %q", v, c.status, c.reason)
+			}
+		})
+	}
+}
 
 func TestClassify(t *testing.T) {
 	cases := []struct {

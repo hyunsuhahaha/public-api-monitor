@@ -515,6 +515,29 @@ func (s *Store) VerdictCounts(ctx context.Context, from, to time.Time) (map[stri
 	return out, rows.Err()
 }
 
+// ClientCounts exposes results excluded from provider uptime without changing its math
+// or the hourly schema. The existing verdicts_at index bounds this read to the range.
+// ponytail: long ranges still scan raw verdicts; add hourly client counters if cold
+// overview latency exceeds its budget (the existing response cache covers repeat reads).
+func (s *Store) ClientCounts(ctx context.Context, from, to time.Time) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT target, COUNT(*) FROM verdicts
+		WHERE at>=? AND at<? AND status='client' GROUP BY target`, ms(from), ms(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var target string
+		var count int
+		if err := rows.Scan(&target, &count); err != nil {
+			return nil, err
+		}
+		out[target] = count
+	}
+	return out, rows.Err()
+}
+
 // IncidentsOverlapping returns incidents that were open at some point in [from, to).
 func (s *Store) IncidentsOverlapping(ctx context.Context, from, to time.Time) ([]*incident.Incident, error) {
 	rows, err := s.db.QueryContext(ctx,

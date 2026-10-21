@@ -259,6 +259,62 @@ func TestOverviewBurnRates(t *testing.T) {
 	}
 }
 
+func TestOverviewCoverage(t *testing.T) {
+	st, h := setup(t)
+	// Missing data must not turn into 100% coverage.
+	for _, rg := range []string{"1h", "24h"} {
+		var empty struct{ Targets []overviewTarget }
+		if err := json.Unmarshal(get(t, h, "/api/v1/overview?range="+rg).Body.Bytes(), &empty); err != nil {
+			t.Fatal(err)
+		}
+		if len(empty.Targets) != 2 || empty.Targets[1].Coverage != -1 {
+			t.Fatalf("%s missing data: %+v", rg, empty)
+		}
+	}
+	// Rebuild the handler so the prior responses' cache cannot hide new verdicts.
+	cfg, err := config.Parse([]byte("targets:\n  - {id: a, url: http://x}\n  - {id: b, url: http://y}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h = (&Server{Cfg: cfg, Store: st}).Handler()
+	now := time.Now()
+	// b: only client results; maintenance is excluded from both ratios.
+	for i, status := range []probe.Status{probe.StatusClient, probe.StatusMaint} {
+		if err := st.SaveVerdict(context.Background(), store.Verdict{TargetID: "b", At: now.Add(time.Duration(i-2) * time.Minute), Status: status, Voters: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rg := range []string{"1h", "24h", "30d"} {
+		var v struct {
+			Targets []struct {
+				ID                     string
+				Availability, Coverage float64
+				ClientChecks           int
+			}
+			Fleet struct {
+				Coverage     float64
+				ClientChecks int
+			}
+		}
+		w := get(t, h, "/api/v1/overview?range="+rg)
+		if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range v.Targets {
+			wantCoverage, wantAvailability := 0.8, 0.75
+			if row.ID == "b" {
+				wantCoverage, wantAvailability = 0, -1
+			}
+			if row.Coverage != wantCoverage || row.Availability != wantAvailability || row.ClientChecks != 1 {
+				t.Fatalf("%s %+v: coverage must expose excluded client results", rg, row)
+			}
+		}
+		if math.Abs(v.Fleet.Coverage-4.0/6.0) > 1e-9 || v.Fleet.ClientChecks != 2 {
+			t.Fatalf("%s fleet: %+v", rg, v.Fleet)
+		}
+	}
+}
+
 func TestPublicStatusPage(t *testing.T) {
 	_, h := setup(t)
 	w := get(t, h, "/status")
