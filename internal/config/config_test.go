@@ -1,11 +1,46 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestFinancialTargetsUseApprovedV2(t *testing.T) {
+	c, err := Load("../../targets.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DATA_GO_KR_KEY", "test-key")
+	want := map[string]string{
+		"fsc-stock-price":  "/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2",
+		"fsc-market-index": "/1160100/GetMarketIndexInfoService_V2/getStockMarketIndex_V2",
+		"fsc-oil-price":    "/1160100/GetGeneralProductInfoService_V2/getOilPriceInfo_V2",
+	}
+	for _, target := range c.Targets {
+		path, ok := want[target.ID]
+		if !ok {
+			continue
+		}
+		rendered, err := target.Render(time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, err := url.Parse(rendered)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u.Host != "apis.data.go.kr" || u.Path != path || u.Query().Get("serviceKey") != "test-key" {
+			t.Errorf("%s: wrong approved endpoint: %s", target.ID, rendered)
+		}
+		delete(want, target.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing targets: %v", want)
+	}
+}
 
 func TestTargetsFileLoads(t *testing.T) {
 	c, err := Load("../../targets.yaml")

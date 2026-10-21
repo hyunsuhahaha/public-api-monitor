@@ -74,7 +74,7 @@ function renderStats(d) {
   const budget = f.budgetLeft;
   const bCls = budget >= 0.5 ? "c-ok-t" : budget >= 0 ? "c-deg-t" : "c-out-t";
   box.append(
-    statPanel("가용률 · " + RANGE_LABEL[d.range], pct(f.availability), "목표(SLO) " + pct(f.slo, 1), avCls),
+    statPanel("가용률 · " + RANGE_LABEL[d.range], pct(f.availability), "SLO " + pct(f.slo, 1) + " · 판정 가능 " + pct(f.coverage, 1) + ` (확인 불가 ${f.clientChecks || 0}회 제외)`, avCls),
     statPanel("에러 버짓 잔여", f.availability < 0 ? "–" : budgetText(budget), budget < 0 ? "목표를 넘겨 실패함 (버짓 초과)" : "목표 대비 남은 실패 허용치", bCls, Math.max(0, budget) * 100, budget >= 0.5 ? C.ok : budget >= 0 ? C.deg : C.out),
     clickable(statPanel("지금 실패 중", String(c.down || 0), `열린 장애 ${f.openIncidents}건 (장애는 연속 2회 실패부터)`, c.down ? "c-out-t" : "c-ok-t"), c.down, 2),
     clickable(statPanel("지금 저하", String(c.degraded || 0), "느림·데이터 이상(오래됨·값 틀림)", c.degraded ? "c-deg-t" : "c-ok-t"), c.degraded, 1),
@@ -82,8 +82,8 @@ function renderStats(d) {
     statPanel("확인 / 분", f.checksPerMin.toFixed(1), `정상 ${c.up || 0}${c.maint ? " · 점검 " + c.maint : ""} · 확인 불가 ${c.unknown || 0} / ${d.targets.length}개 API`, ""),
   );
   const pill = $("fleet-pill");
-  pill.className = "pill " + (c.down ? "out" : c.degraded ? "deg" : "ok");
-  pill.textContent = c.down ? `● ${c.down}개 장애` : c.degraded ? `● ${c.degraded}개 저하` : "● 모두 정상";
+  pill.className = "pill " + (c.down ? "out" : c.degraded || c.unknown ? "deg" : "ok");
+  pill.textContent = c.down ? `● ${c.down}개 장애` : c.degraded ? `● ${c.degraded}개 저하` : c.unknown ? `● ${c.unknown}개 확인 불가` : "● 모두 정상";
   pill.classList.toggle("click", !!(c.down || c.degraded));
   pill.title = c.down || c.degraded ? "무엇이 왜 문제인지 보기" : "";
   pill.onclick = (e) => { e.stopPropagation(); if (c.down || c.degraded) openProblems(pill, 0); };
@@ -171,6 +171,20 @@ function correlate(targets) {
   return { groups, wide: badProviders >= 4 && badProviders * 2 >= Object.keys(by).length };
 }
 
+// Prefer the body's code over the HTTP status: a 403 can carry quota code 22.
+function clientAdvice(reason = "") {
+  const code = (reason.match(/\bcode ([\w-]+)/) || [])[1];
+  if (["22", "BUS-8"].includes(code)) return ["일일 호출 한도", "마이페이지 → Open API → 활용신청 현황 → 해당 API → 운영계정 신청으로 트래픽 증설. 이미 운영계정이면 제공기관에 추가 증설 문의."];
+  if (code === "23") return ["초당 호출 제한", "동시 호출·재시도 간격을 늘리세요. 일일 한도 증설과는 별개입니다."];
+  if (["30", "INFO-100", "BUS-5", "BUS-6", "BUS-7"].includes(code)) return ["인증키 확인", "실행 환경에 등록된 키와 해당 API의 활용신청·승인 상태를 확인하세요."];
+  if (code === "31") return ["키 사용기간 만료", "활용신청 현황에서 해당 API 이용기간을 연장하세요."];
+  if (code === "20") return ["이용 권한 확인", "요청에 키가 포함됐는지, 승인·중지 상태와 승인받은 API 주소가 일치하는지 확인하세요."];
+  if (code === "32") return ["허용 IP 확인", "실제 호출 서버의 출발 IP와 등록된 허용 IP를 확인하세요."];
+  if (["10", "11", "BUS-2", "BUS-3", "ERROR-300", "ERROR-301"].includes(code)) return ["요청값 확인", "API 명세의 필수 파라미터와 값 형식을 확인하세요."];
+  if (/^http 429\b/.test(reason)) return ["호출 제한 확인", "응답 본문과 Retry-After를 확인해 일일 한도와 초당 제한을 구분하세요."];
+  return ["접근·요청 원인 확인", "응답 코드만으로 원인을 확정할 수 없습니다. API 버전·주소, 키, 승인 상태와 응답 본문을 확인하세요."];
+}
+
 function renderCorrel() {
   const { groups, wide } = correlate(state.data.targets), box = $("correl");
   const maint = state.data.maintenance || [], names = Object.fromEntries(state.data.targets.map((t) => [t.id, t.name]));
@@ -194,12 +208,21 @@ function renderCorrel() {
     box.hidden = false;
     const r = el("div", "cg ours");
     r.append(el("span", "dot client"), el("b", "", `조치 필요 · 우리 쪽 문제 ${ours.length}개`),
-      el("span", "cg-why", "기관 장애가 아니라 키·승인·호출 한도 문제 — 가용률·SLO에서 빠져 있음"));
-    const chips = el("span", "cg-chips");
-    for (const t of ours) { const c = el("button", "chip", t.name); c.title = t.reason || ""; c.onclick = () => openDrawer(t.id); chips.append(c); }
-    const why = [...new Set(ours.map((t) => t.reason).filter(Boolean))];
-    r.append(chips);
-    if (why.length) r.append(el("div", "cg-detail", why.join(" · ")));
+      el("span", "cg-why", "접근·호출 문제로 기관 상태를 확인할 수 없음 — 가용률·SLO에서 제외"));
+    for (const t of ours) {
+      const [cause, action] = clientAdvice(t.reason), detail = el("div", "cg-detail");
+      const c = el("button", "chip", t.name); c.title = t.reason || ""; c.onclick = () => openDrawer(t.id);
+      detail.append(c, el("b", "", " · " + cause), el("span", "", " — " + action));
+      if (t.docs) {
+        try {
+          const url = new URL(t.docs);
+          if (url.protocol === "https:") {
+            const link = el("a", "chip", "API 안내·활용신청"); link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer"; detail.append(" ", link);
+          }
+        } catch (_) {}
+      }
+      r.append(detail);
+    }
     box.append(r);
   }
   for (const g of groups) {
@@ -263,6 +286,8 @@ function renderTable() {
     nm.append(nameEl, prov);
     td(nm);
     const av = td(pct(t.availability), "num");
+    av.append(el("div", "prov", "판정 가능 " + pct(t.coverage, 1)));
+    av.title = `수집된 판정 중 기관 상태를 판단할 수 있는 비율. 확인 불가 ${t.clientChecks || 0}회 제외; 계획 점검 제외. 수집 중단 시간은 포함하지 않습니다.`;
     av.style.color = t.availability < 0 ? C.axis : t.availability >= t.slo ? C.ok : t.availability >= t.slo - 0.01 ? C.deg : C.out;
     td(budgetCell(t));
     td(burnCell(t), "num");
@@ -756,8 +781,8 @@ function showAge() {
   const txt = age == null ? "–" : age < 120 ? age + "초 전" : Math.round(age / 60) + "분 전";
   const btn = $("refresh");
   btn.classList.toggle("stale", !!state.loadError || age > 600); // two missed check intervals
-  $("age").textContent = state.loadError ? `연결 끊김 · ${txt} 데이터` : txt;
-  btn.title = state.loadError ? `서버에 연결하지 못함 (${state.loadError}). 5초마다 다시 시도 중` : "새로고침 (r)";
+  $("age").textContent = state.loadError ? `연결 끊김 · ${txt} 데이터` : age > 600 ? `갱신 중단 의심 · ${txt} 데이터` : txt;
+  btn.title = state.loadError ? `서버에 연결하지 못함 (${state.loadError}). 5초마다 다시 시도 중` : age > 600 ? "API 장애와 별개로 모니터의 수집·공개 갱신 상태를 확인하세요." : "새로고침 (r)";
 }
 setInterval(showAge, 1000);
 setInterval(() => { if (document.visibilityState === "visible") load(); }, 30000);

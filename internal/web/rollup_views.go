@@ -92,6 +92,11 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 		http.Error(w, "internal error", 500)
 		return
 	}
+	clients, err := s.Store.ClientCounts(ctx, from, to)
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
 	verdicts, _ := s.Store.LatestVerdicts(ctx)
 	byLoc, _ := s.Store.LatestByLocation(ctx, to.Add(-time.Hour))
 	burns := s.burnRates(ctx, time.Now())
@@ -102,10 +107,10 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now()), Silences: s.silences(ctx), GeneratedAt: time.Now()}
 	fleet := store.NewHist()
 	var sumAvail, sloSum float64
-	var withData, verdictN int
+	var withData, verdictN, clientChecks int
 	var checks int64
 	for _, t := range s.Cfg.Targets {
-		row := overviewTarget{ID: t.ID, Name: t.Name, Provider: t.Provider, Category: t.Category, SLO: t.SLO,
+		row := overviewTarget{ID: t.ID, Name: t.Name, Provider: t.Provider, Docs: t.Docs, Category: t.Category, SLO: t.SLO,
 			Status: "unknown", Availability: -1, Spark: make([]*int64, n), States: make([]int, n)}
 		for i := range row.States {
 			row.States[i] = -1
@@ -126,6 +131,9 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 			withData++
 		}
 		row.Checks = counted
+		row.ClientChecks = clients[t.ID]
+		row.Coverage = coverage(counted, row.ClientChecks)
+		clientChecks += row.ClientChecks
 		verdictN += counted
 		row.BudgetLeft = budgetLeft(row.Availability, t.SLO)
 		for i, h := range hists[t.ID] {
@@ -149,6 +157,7 @@ func (s *Server) overviewRollup(ctx context.Context, w http.ResponseWriter, name
 	}
 	out.Fleet = fleetSummary(sumAvail, sloSum, withData, fleet.Quantile(0.5), fleet.Quantile(0.95), fleet.Quantile(0.99),
 		float64(checks)/to.Sub(from).Minutes(), len(open), verdictN)
+	out.Fleet["coverage"], out.Fleet["clientChecks"] = coverage(verdictN, clientChecks), clientChecks
 	writeJSON(w, out)
 }
 

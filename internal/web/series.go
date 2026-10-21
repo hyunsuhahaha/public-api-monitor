@@ -81,6 +81,7 @@ type overviewTarget struct {
 	ID           string     `json:"id"`
 	Name         string     `json:"name"`
 	Provider     string     `json:"provider"`
+	Docs         string     `json:"docs,omitempty"`
 	Category     string     `json:"category"`
 	Status       string     `json:"status"`
 	Reason       string     `json:"reason,omitempty"`
@@ -92,6 +93,8 @@ type overviewTarget struct {
 	Spark        []*int64   `json:"spark"`  // p95 per bucket (null = no answer)
 	States       []int      `json:"states"` // per bucket
 	Checks       int        `json:"checks"`
+	ClientChecks int        `json:"clientChecks"`
+	Coverage     float64    `json:"coverage"` // counted / (counted + client), -1 without observations; maintenance excluded
 	Locations    []locState `json:"locations"`
 	// error-budget burn rate over the last hour and six hours (bad share / (1 - SLO)):
 	// the same windows as the Prometheus page (14.4x) and ticket (6x) rules; -1 without data
@@ -101,6 +104,13 @@ type overviewTarget struct {
 	// both are over, so it stops as soon as the API recovers
 	Burn5m  float64 `json:"burn5m"`
 	Burn30m float64 `json:"burn30m"`
+}
+
+func coverage(counted, client int) float64 {
+	if counted+client == 0 {
+		return -1
+	}
+	return float64(counted) / float64(counted+client)
 }
 
 // burnRates: per target, the 1 h, 6 h, 5 m and 30 m burn rates up to now.
@@ -231,6 +241,11 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
 		return
 	}
+	clients, err := s.Store.ClientCounts(ctx, from, to)
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
 	samples, err := s.Store.Samples(ctx, "", from, to)
 	if err != nil {
 		http.Error(w, "internal error", 500)
@@ -263,10 +278,10 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	out := overviewResponse{Range: name, From: from.Unix(), To: to.Unix(), Step: int64(step.Seconds()), Counts: map[string]int{}, Maintenance: s.maintenance(from, time.Now()), Silences: s.silences(ctx), GeneratedAt: time.Now()}
 
 	var sumAvail float64
-	var withData, checks int
+	var withData, checks, clientChecks int
 	var sloSum float64
 	for _, t := range s.Cfg.Targets {
-		row := overviewTarget{ID: t.ID, Name: t.Name, Provider: t.Provider, Category: t.Category, SLO: t.SLO,
+		row := overviewTarget{ID: t.ID, Name: t.Name, Provider: t.Provider, Docs: t.Docs, Category: t.Category, SLO: t.SLO,
 			Status: "unknown", Availability: -1, Spark: make([]*int64, n), States: make([]int, n)}
 		for i := range row.States {
 			row.States[i] = -1
@@ -289,6 +304,9 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			withData++
 		}
 		row.Checks = counted
+		row.ClientChecks = clients[t.ID]
+		row.Coverage = coverage(counted, row.ClientChecks)
+		clientChecks += row.ClientChecks
 		checks += counted
 		row.BudgetLeft = budgetLeft(row.Availability, t.SLO)
 		for i, l := range lat[t.ID] {
@@ -309,6 +327,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Fleet = fleetSummary(sumAvail, sloSum, withData, pctl(fleetLat, 0.5), pctl(fleetLat, 0.95), pctl(fleetLat, 0.99),
 		float64(len(samples))/to.Sub(from).Minutes(), len(open), checks)
+	out.Fleet["coverage"], out.Fleet["clientChecks"] = coverage(checks, clientChecks), clientChecks
 	writeJSON(w, out)
 }
 

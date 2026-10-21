@@ -1,0 +1,17 @@
+name: watchdog
+# Independent of monitor.yml's next-beat chain and its database/cache/build.
+# GitHub-wide scheduling failures still require a monitor outside GitHub.
+on:
+  schedule:
+    - cron: "2-59/5 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: monitor snapshot must be no more than 10 minutes old
+        run: python3 deploy/watchdog.py https://hyunsuhahaha.github.io/public-api-monitor/data/api/v1/overview.json
