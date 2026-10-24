@@ -63,7 +63,7 @@ func New(location string) *Prober {
 				IdleConnTimeout:     90 * time.Second,
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 3 || req.URL.Host != via[0].URL.Host {
+				if len(via) >= 3 || req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
 					return http.ErrUseLastResponse
 				}
 				return nil
@@ -77,7 +77,7 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	start := p.Now()
 	r := Result{TargetID: t.ID, Location: p.Location, At: start}
 	if !t.HasKey() {
-		r.Status, r.Reason = StatusClient, "service key not set ("+t.KeyEnv+")"
+		r.Status, r.Reason = StatusClient, "credential not set ("+t.MissingCredential()+")"
 		return r
 	}
 	u, err := t.Render(start)
@@ -95,6 +95,10 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	}
 	req.Header.Set("User-Agent", "public-api-monitor/0.1 (+https://github.com/hyunsuhahaha/public-api-monitor)")
 	req.Header.Set("Accept", "application/json, application/xml;q=0.9, */*;q=0.5")
+	if err := t.ApplyHeaders(req); err != nil {
+		r.Status, r.Reason = StatusClient, err.Error()
+		return r
+	}
 
 	// The HTTP span is made by hand, not by otelhttp: that records the full URL, and the
 	// query string carries the service key. Host and path only, and the path redacted too:
@@ -120,7 +124,12 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		o.Err = errors.New(t.Redact(err.Error()))
 		o.Timeout = errors.Is(err, context.DeadlineExceeded) || isTimeout(err)
 	}
-	v := Classify(o, t.SlowAfter.Duration)
+	v := classifyTarget(o, t)
+	if v.Status.Healthy() && len(t.JSONExpect) > 0 {
+		if status, reason := checkJSON(o.Body, t.JSONExpect); status != StatusOK {
+			v.Status, v.Reason = status, reason
+		}
+	}
 	r.Phases = clock.phases()
 	if o.Timeout {
 		v.Reason = "timeout: " + stalledText[clock.stalled()]
@@ -149,7 +158,7 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 			v.Status, v.Reason = StatusStale, why
 		}
 	}
-	r.Status, r.Code, r.Reason = v.Status, v.Code, v.Reason
+	r.Status, r.Code, r.Reason = v.Status, v.Code, t.Redact(v.Reason)
 	if v.Status.Healthy() {
 		r.Shape = Shape(o.Body)
 	}

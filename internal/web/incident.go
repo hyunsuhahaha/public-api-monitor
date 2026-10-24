@@ -69,7 +69,7 @@ func (s *Server) incidentDetail(w http.ResponseWriter, r *http.Request) {
 	var t any
 	for _, c := range s.Cfg.Targets {
 		if c.ID == in.TargetID {
-			t = map[string]any{"id": c.ID, "name": c.Name, "provider": c.Provider, "category": c.Category, "docs": c.Docs,
+			t = map[string]any{"id": c.ID, "name": c.Name, "provider": c.Provider, "category": c.Category, "docs": c.Docs, "classifier": c.Classifier,
 				"slo": c.SLO, "interval": c.Interval.String()}
 		}
 	}

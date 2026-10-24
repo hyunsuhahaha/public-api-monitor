@@ -345,15 +345,23 @@ func dumpTarget(cfg *config.Config, id string) int {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), t.Timeout.Duration)
 		defer cancel()
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		resp, err := http.DefaultClient.Do(req)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "request: invalid URL")
+			return 1
+		}
+		if err := t.ApplyHeaders(req); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		resp, err := probe.New("dump").Client.Do(req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "request:", t.Redact(err.Error()))
 			return 1
 		}
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 3<<10))
-		fmt.Printf("HTTP %d %s\n%s\n", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+		fmt.Printf("HTTP %d %s\n%s\n", resp.StatusCode, resp.Header.Get("Content-Type"), t.Redact(string(body)))
 		return 0
 	}
 	fmt.Fprintln(os.Stderr, "no target", id)

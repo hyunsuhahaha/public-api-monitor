@@ -30,6 +30,72 @@ key_env: DATA_GO_KR_KEY
 maintenance: []
 
 targets:
+  # Developer map APIs. Credentials are sent only in headers.
+  # Fixed canaries: Seoul City Hall and Seoul Station; bounds tolerate map updates.
+  - id: kakao-address
+    name: 카카오맵 주소 검색
+    provider: 카카오
+    category: 지도·위치
+    docs: https://developers.kakao.com/docs/ko/kakaomap/rest-api
+    auth: headers
+    classifier: kakao
+    headers:
+      Authorization: {env: KAKAO_REST_API_KEY, prefix: "KakaoAK "}
+    url: https://dapi.kakao.com/v2/local/search/address.json?query={{esc "서울특별시 중구 세종대로 110"}}&size=1
+    json_expect:
+      - {path: documents, min_items: 1}
+      - {path: documents.0.x, min: 126.96, max: 126.99}
+      - {path: documents.0.y, min: 37.55, max: 37.58}
+
+  - id: kakao-place
+    name: 카카오맵 장소 검색
+    provider: 카카오
+    category: 지도·위치
+    docs: https://developers.kakao.com/docs/ko/kakaomap/rest-api
+    auth: headers
+    classifier: kakao
+    headers:
+      Authorization: {env: KAKAO_REST_API_KEY, prefix: "KakaoAK "}
+    url: https://dapi.kakao.com/v2/local/search/keyword.json?query={{esc "서울역"}}&x=126.9706&y=37.5547&radius=1000&size=1&sort=distance
+    json_expect:
+      - {path: documents, min_items: 1}
+      - {path: documents.0.x, min: 126.95, max: 126.99}
+      - {path: documents.0.y, min: 37.54, max: 37.57}
+
+  - id: naver-geocode
+    name: 네이버 Maps 주소 검색
+    provider: 네이버클라우드
+    category: 지도·위치
+    docs: https://api.ncloud-docs.com/docs/application-maps-geocoding
+    auth: headers
+    classifier: naver_maps
+    headers:
+      x-ncp-apigw-api-key-id: {env: NAVER_MAPS_CLIENT_ID}
+      x-ncp-apigw-api-key: {env: NAVER_MAPS_CLIENT_SECRET}
+    url: https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={{esc "서울특별시 중구 세종대로 110"}}&count=1
+    json_expect:
+      - {path: status, equals: OK}
+      - {path: addresses, min_items: 1}
+      - {path: addresses.0.x, min: 126.96, max: 126.99}
+      - {path: addresses.0.y, min: 37.55, max: 37.58}
+
+  - id: naver-directions
+    name: 네이버 Maps 자동차 길찾기
+    provider: 네이버클라우드
+    category: 지도·위치
+    docs: https://api.ncloud-docs.com/docs/application-maps-directions5
+    auth: headers
+    classifier: naver_maps
+    headers:
+      x-ncp-apigw-api-key-id: {env: NAVER_MAPS_CLIENT_ID}
+      x-ncp-apigw-api-key: {env: NAVER_MAPS_CLIENT_SECRET}
+    url: https://maps.apigw.ntruss.com/map-direction/v1/driving?start=126.9784,37.5663&goal=126.9706,37.5547&option=traoptimal
+    json_expect:
+      - {path: code, min: 0, max: 0}
+      - {path: route.traoptimal, min_items: 1}
+      - {path: route.traoptimal.0.summary.distance, min: 100, max: 20000}
+      - {path: route.traoptimal.0.summary.duration, min: 1000, max: 14400000}
+
   # ── 날씨 (기상청) ─────────────────────────────────────────────────────────
   - id: kma-ultra-ncst
     name: 기상청 초단기실황

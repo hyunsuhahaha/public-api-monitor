@@ -1,10 +1,10 @@
-# pamon: 공공 API 상태판
+# pamon: 개발자가 의존하는 API 상태판
 
 ### 👉 [실시간 상태판 열기](https://hyunsuhahaha.github.io/public-api-monitor/)
 
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)
 
-공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **실제 공공 API 77개**가 지금 살아 있는지, 느린지, 엉뚱한 값을 주는지를 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
+공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**이 지금 살아 있는지, 느린지, 엉뚱한 값을 주는지를 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다. 지도 API는 별도 인증키가 필요하며, 키가 없으면 '확인 불가'로 표시하고 가용률에서 제외합니다. 공공 API는 기존과 같이 동작합니다.
 
 ![dashboard](docs/img/dashboard.png)
 
@@ -32,7 +32,7 @@
 
 | | |
 |---|---|
-| **감시 대상** | 실제 공공 API 77개 (기상청, 에어코리아, 국토부 실거래가, 응급실 실시간 병상, 서울 지하철·버스·하천 수위·강우량, 나라장터 등) |
+| **감시 대상** | 공공 API 77개 + 카카오 주소·장소 검색, 네이버 주소 검색·자동차 길찾기 4개 기능 (총 81개) |
 | **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
 | **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
@@ -163,6 +163,35 @@ go run ./cmd/pamon       # http://localhost:8080
 docker compose up        # pamon + Prometheus(:9090) + Grafana(:3000, 대시보드 자동 등록) + Jaeger(:16686, 트레이스)
 go run ./cmd/pamon -report 2026-10   # 월간 리포트를 마크다운으로 (블로그·GeekNews 게시용)
 ```
+
+Go 프로그램은 `.env`를 자동으로 읽지 않습니다. 직접 실행할 때는 셸 환경변수로 키를 전달하세요. Docker Compose는 `env_file`로, WSL 실행 스크립트는 `.env`를 읽어 전달합니다.
+
+## 카카오맵·네이버 Maps 감시
+
+카카오의 주소·장소 검색과 네이버의 주소 검색·자동차 길찾기를 별도 대상으로 감시합니다. HTTP 성공뿐 아니라 서울시청 주소의 좌표 범위, 서울역 장소 검색 결과, 시청→서울역 자동차 경로의 거리·소요시간 범위까지 검사합니다. 결과 순위·좌표 소수점·교통 상황에 따른 정확한 경로 일치는 요구하지 않습니다. 이 결과는 해당 기능의 검사이며 공급자 전체 서비스의 정상 여부를 보장하지 않습니다.
+
+1. 카카오 Developers 앱에서 카카오맵을 활성화하고 REST API 키를 발급합니다.
+2. NCP Maps 앱에서 **Geocoding과 Directions 5**를 선택하고 Client ID/Secret을 발급합니다. API를 선택하지 않아도 429가 날 수 있습니다.
+3. `.env` 또는 실행 환경에 `KAKAO_REST_API_KEY`, `NAVER_MAPS_CLIENT_ID`, `NAVER_MAPS_CLIENT_SECRET`을 등록합니다. GitHub Pages 운영은 같은 이름의 Actions Secrets를 등록합니다. Ansible 환경은 `vault.yml.example`의 지도 키 항목을 사용합니다.
+4. `pamon -check`로 설정을 확인하고 `pamon -dump kakao-address`, `pamon -dump naver-geocode`, `pamon -dump naver-directions`로 실제 결과를 검증합니다. `-dump`도 인증 헤더를 적용하고 키를 가립니다.
+
+키 누락·앱 권한·쿼터·금액 한도·잘못된 요청은 `client`(가용률 제외), 공급자 처리 오류는 `error`, 타임아웃·5xx는 `down`입니다. HTTP 200이어도 빈 결과나 잘못된 좌표·경로는 `stale`(데이터 이상)로 표시합니다. 카카오 `-1/-7/-603`은 HTTP 400이어도 공급자 오류이고 `-10/-11`은 우리 쿼터 문제입니다. 코드에는 `KAKAO:`/`NAVER:` 접두사를 붙여 공공 API 코드와 충돌하지 않게 합니다.
+
+대상마다 5분 주기는 30일 기준 8,640회이며 지역 수·재확인에 따라 증가합니다. 키 발급 시 무료 쿼터 적용 앱·호출 요금·금액 한도를 확인하세요. 기존 `-once -paths`의 더미 키 검사는 공공 API 주소 검사이며 인증이 필요한 지도 API의 기능 검증을 대신하지 않습니다.
+
+확장 설정 예:
+
+```yaml
+auth: headers                 # 기본 key: 기존 URL 키 / none: 키 없는 HTTP API
+classifier: kakao             # 기본 public / naver_maps
+headers:
+  Authorization: {env: KAKAO_REST_API_KEY, prefix: "KakaoAK "}
+json_expect:
+  - {path: documents, min_items: 1}
+  - {path: documents.0.x, min: 126.96, max: 126.99}
+```
+
+`json_expect`는 점으로 구분한 객체 키·배열 인덱스(`documents.0.x`)를 사용합니다. 문자열 `equals`, 숫자(또는 숫자 문자열) `min/max`, 배열 `min_items`를 지원하고 누락·null·잘못된 타입도 검사합니다. 헤더 값은 환경변수에서만 읽고 다른 호스트나 프로토콜로 리다이렉트될 때 전달하지 않습니다. [지도 API 런북](docs/runbooks/maps.md)을 참고하세요.
 
 ## 지금의 운영: GitHub Actions + GitHub Pages (서버 없음)
 
