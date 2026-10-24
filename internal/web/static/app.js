@@ -109,6 +109,9 @@ function why(r) {
   if ((m = r.match(/^slow: (.+)$/))) return `응답이 ${dur(m[1])} 걸림`;
   if ((m = r.match(/^stale: newest data (.+) old$/))) return `최신 데이터가 ${dur(m[1])} 전 것 (갱신 멈춤)`;
   if ((m = r.match(/^bad value: (.+)$/))) return `값 이상: ${m[1].replace(/ missing \(.*\)$/, " 항목이 응답에 없음")}`;
+  if (r === "artifact: SHA256 mismatch") return "다운로드한 파일의 SHA-256이 고정 버전과 다름";
+  if (r === "artifact: incomplete or undersized download") return "패키지 파일이 비어 있거나 일부만 내려옴";
+  if (r === "artifact: download exceeds byte limit") return "패키지 파일이 고정 버전의 예상 크기를 초과함";
   if ((m = r.match(/^timeout: (.+)$/))) return `응답 없음 (시간 초과) — ${m[1]}`;
   if ((m = r.match(/^http (\d+)/))) return `HTTP ${m[1]} 응답` + (r.includes(":") ? " — " + r.split(":").slice(1).join(":").trim() : "");
   if ((m = r.match(/^code (\S+): (.+)$/))) return `오류 코드 ${m[1]} — ${m[2]}`;

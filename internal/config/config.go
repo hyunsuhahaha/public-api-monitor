@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"net/http"
@@ -71,6 +72,13 @@ type JSONExpect struct {
 	MinItems *int     `yaml:"min_items"`
 }
 
+// Artifact pins a small immutable download; the full body must match SHA256.
+type Artifact struct {
+	SHA256   string `yaml:"sha256"`
+	MinBytes int64  `yaml:"min_bytes"`
+	MaxBytes int64  `yaml:"max_bytes"`
+}
+
 // Target is one monitored API call.
 type Target struct {
 	ID         string            `yaml:"id"`
@@ -82,8 +90,9 @@ type Target struct {
 	KeyEnv     string            `yaml:"key_env"`
 	Auth       string            `yaml:"auth"` // key (legacy query key), headers, or none
 	Headers    map[string]Header `yaml:"headers"`
-	Classifier string            `yaml:"classifier"` // public (default), kakao, naver_maps
+	Classifier string            `yaml:"classifier"` // public (default), kakao, naver_maps, http
 	JSONExpect []JSONExpect      `yaml:"json_expect"`
+	Artifact   *Artifact         `yaml:"artifact"`
 	Timeout    Duration          `yaml:"timeout"`
 	SlowAfter  Duration          `yaml:"slow_after"`
 	Interval   Duration          `yaml:"interval"`
@@ -199,11 +208,18 @@ func Parse(raw []byte) (*Config, error) {
 		if t.Classifier == "" {
 			t.Classifier = "public"
 		}
-		if t.Classifier != "public" && t.Classifier != "kakao" && t.Classifier != "naver_maps" {
+		if t.Classifier != "public" && t.Classifier != "kakao" && t.Classifier != "naver_maps" && t.Classifier != "http" {
 			return nil, fmt.Errorf("target %q: invalid classifier", t.ID)
 		}
 		if t.Auth == "headers" && len(t.Headers) == 0 {
 			return nil, fmt.Errorf("target %q: headers auth needs headers", t.ID)
+		}
+		if a := t.Artifact; a != nil {
+			digest, err := hex.DecodeString(a.SHA256)
+			if err != nil || len(digest) != 32 || a.MinBytes < 1 || a.MaxBytes < a.MinBytes || a.MaxBytes > 1<<20 || t.Classifier != "http" || len(t.JSONExpect) > 0 || len(t.Expect) > 0 || t.Freshness != nil {
+				return nil, fmt.Errorf("target %q: artifact needs HTTP, SHA256 and byte limits (1..1048576), without JSON/freshness rules", t.ID)
+			}
+			a.SHA256 = strings.ToLower(a.SHA256)
 		}
 		seenHeaders := map[string]bool{}
 		for name, h := range t.Headers {

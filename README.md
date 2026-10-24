@@ -4,7 +4,7 @@
 
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)
 
-공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**이 지금 살아 있는지, 느린지, 엉뚱한 값을 주는지를 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다. 지도 API는 별도 인증키가 필요하며, 키가 없으면 '확인 불가'로 표시하고 가용률에서 제외합니다. 공공 API는 기존과 같이 동작합니다.
+공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI의 정보 조회와 다운로드 4개 기능**이 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다. 지도 API는 별도 인증키가 필요하며, 키가 없으면 '확인 불가'로 표시하고 가용률에서 제외합니다. 패키지 검사는 키 없이 동작합니다.
 
 ![dashboard](docs/img/dashboard.png)
 
@@ -32,7 +32,7 @@
 
 | | |
 |---|---|
-| **감시 대상** | 공공 API 77개 + 카카오 주소·장소 검색, 네이버 주소 검색·자동차 길찾기 4개 기능 (총 81개) |
+| **감시 대상** | 공공 API 77개 + 지도 4개 기능 + npm·PyPI 4개 기능 (총 85개) |
 | **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
 | **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
@@ -192,6 +192,30 @@ json_expect:
 ```
 
 `json_expect`는 점으로 구분한 객체 키·배열 인덱스(`documents.0.x`)를 사용합니다. 문자열 `equals`, 숫자(또는 숫자 문자열) `min/max`, 배열 `min_items`를 지원하고 누락·null·잘못된 타입도 검사합니다. 헤더 값은 환경변수에서만 읽고 다른 호스트나 프로토콜로 리다이렉트될 때 전달하지 않습니다. [지도 API 런북](docs/runbooks/maps.md)을 참고하세요.
+
+## npm·PyPI 패키지 의존성 감시
+
+패키지 정보 조회와 다운로드를 독립된 대상으로 검사합니다. 고정 버전을 사용하므로 새 버전 출시나 릴리스 중단을 서버 장애로 오판하지 않으며, 메타데이터 조회가 실패해도 파일 전달 검사는 계속합니다.
+
+| 대상 | 검사 |
+|---|---|
+| `npm-metadata` | `is-number@7.0.0`의 이름·버전·배포 URL·shasum |
+| `npm-download` | 해당 tarball 전체 3,730바이트와 고정 SHA-256 |
+| `pypi-metadata` | `sampleproject==4.0.0`의 이름·버전·배포 파일 목록 |
+| `pypi-download` | 해당 wheel 전체 4,661바이트와 공식 메타데이터의 SHA-256 |
+
+추가 키가 필요하지 않습니다. 내려받은 코드는 설치·실행·압축 해제하지 않습니다. 한 번에 각 파일 약 4KB를 읽고, 예상 최대 크기+1바이트에서 읽기를 중단해 잘못된 응답이 무한정 메모리를 쓰지 않게 합니다. 체크섬 불일치·잘린 파일·초과 크기는 `error`(가용률 실패), 5xx·연결 실패는 `down`, 429는 `client`(공유 IP의 호출 제한 등)로 처리합니다. 메타데이터가 JSON이 아니거나 필수 필드가 다르면 기존 JSON 검증 규칙으로 표시합니다.
+
+다운로드 설정은 `classifier: http`와 다음을 사용합니다. `sha256`은 64자리 16진수, `min_bytes/max_bytes`는 1..1MiB 범위이며 다운로드와 JSON·신선도 검증은 혼용하지 않습니다. 공식 배포 파일을 별도로 내려받아 크기·해시를 확인한 뒤 설정하세요. 정상 결과는 그 고정 파일의 조회·전달 경로를 의미하며 신규 배포·로그인·전체 패키지 설치 성공을 보장하지 않습니다. [패키지 런북](docs/runbooks/packages.md)을 참고하세요.
+
+```yaml
+auth: none
+classifier: http
+artifact:
+  sha256: 7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e
+  min_bytes: 3730
+  max_bytes: 3730
+```
 
 ## 지금의 운영: GitHub Actions + GitHub Pages (서버 없음)
 

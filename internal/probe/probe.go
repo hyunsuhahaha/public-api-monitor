@@ -111,7 +111,11 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	resp, err := p.Client.Do(req)
 	if err == nil {
 		o.HTTPStatus = resp.StatusCode
-		o.Body, err = io.ReadAll(io.LimitReader(resp.Body, MaxBody))
+		limit := int64(MaxBody)
+		if t.Artifact != nil {
+			limit = t.Artifact.MaxBytes + 1
+		}
+		o.Body, err = io.ReadAll(io.LimitReader(resp.Body, limit))
 		resp.Body.Close()
 		span.SetAttributes(attribute.Int("http.response.status_code", o.HTTPStatus), attribute.Int("http.response.body.size", len(o.Body)))
 	}
@@ -125,6 +129,11 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		o.Timeout = errors.Is(err, context.DeadlineExceeded) || isTimeout(err)
 	}
 	v := classifyTarget(o, t)
+	if v.Status.Healthy() && t.Artifact != nil {
+		if reason := checkArtifact(o.Body, t.Artifact); reason != "" {
+			v.Status, v.Reason = StatusError, reason
+		}
+	}
 	if v.Status.Healthy() && len(t.JSONExpect) > 0 {
 		if status, reason := checkJSON(o.Body, t.JSONExpect); status != StatusOK {
 			v.Status, v.Reason = status, reason
@@ -159,7 +168,7 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		}
 	}
 	r.Status, r.Code, r.Reason = v.Status, v.Code, t.Redact(v.Reason)
-	if v.Status.Healthy() {
+	if v.Status.Healthy() && t.Artifact == nil {
 		r.Shape = Shape(o.Body)
 	}
 	r.HTTPStatus = o.HTTPStatus

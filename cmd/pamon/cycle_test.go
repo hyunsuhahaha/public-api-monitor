@@ -73,7 +73,7 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	}
 	maps := cfg.Targets[:0]
 	for _, target := range cfg.Targets {
-		if target.Classifier != "public" {
+		if target.Classifier == "kakao" || target.Classifier == "naver_maps" {
 			maps = append(maps, target)
 		}
 	}

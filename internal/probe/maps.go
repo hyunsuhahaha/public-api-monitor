@@ -14,6 +14,9 @@ import (
 // classifyTarget keeps vendor codes separate: Kakao -10 and the public gateway's
 // 10 have different meanings. HTTP 400 can mean a provider outage or our quota.
 func classifyTarget(o Observation, t *config.Target) Verdict {
+	if t.Classifier == "http" {
+		return classifyHTTP(o, t.SlowAfter.Duration)
+	}
 	if t.Classifier == "" || t.Classifier == "public" || o.Err != nil || o.Timeout {
 		return Classify(o, t.SlowAfter.Duration)
 	}

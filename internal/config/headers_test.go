@@ -23,6 +23,11 @@ func TestHeaderConfigValidation(t *testing.T) {
 		"json_expect: [{path: a, min: 2, max: 1}]",
 		"json_expect: [{path: a, min_items: -1}]",
 		"json_expect: [{path: a, min: .nan}]",
+		"artifact: {sha256: bad, min_bytes: 1, max_bytes: 100}",
+		"classifier: http\n    artifact: {sha256: '" + strings.Repeat("a", 64) + "', min_bytes: 1, max_bytes: 1048577}",
+		"classifier: http\n    artifact: {sha256: '" + strings.Repeat("a", 64) + "', min_bytes: 0, max_bytes: 100}",
+		"classifier: http\n    artifact: {sha256: '" + strings.Repeat("a", 64) + "', min_bytes: 10, max_bytes: 1}",
+		"classifier: http\n    json_expect: [{path: a, min: 1}]\n    artifact: {sha256: '" + strings.Repeat("a", 64) + "', min_bytes: 1, max_bytes: 100}",
 	} {
 		if _, err := Parse([]byte("targets:\n  - id: a\n    url: https://example.com\n    " + extra + "\n")); err == nil {
 			t.Errorf("accepted %s", extra)
