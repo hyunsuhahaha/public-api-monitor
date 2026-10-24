@@ -3,10 +3,14 @@ package config
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
+	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -53,21 +57,48 @@ type Expect struct {
 	Re *regexp.Regexp `yaml:"-"`
 }
 
+// Header keeps credentials in the environment, never in the exported target config.
+type Header struct {
+	Env    string `yaml:"env"`
+	Prefix string `yaml:"prefix"`
+}
+
+// JSONExpect uses dot-separated object keys and array indexes, e.g. documents.0.x.
+type JSONExpect struct {
+	Path     string   `yaml:"path"`
+	Equals   *string  `yaml:"equals"`
+	Min      *float64 `yaml:"min"`
+	Max      *float64 `yaml:"max"`
+	MinItems *int     `yaml:"min_items"`
+}
+
+// Artifact pins a small immutable download; the full body must match SHA256.
+type Artifact struct {
+	SHA256   string `yaml:"sha256"`
+	MinBytes int64  `yaml:"min_bytes"`
+	MaxBytes int64  `yaml:"max_bytes"`
+}
+
 // Target is one monitored API call.
 type Target struct {
-	ID        string     `yaml:"id"`
-	Name      string     `yaml:"name"`
-	Provider  string     `yaml:"provider"`
-	Category  string     `yaml:"category"`
-	Docs      string     `yaml:"docs"`
-	URL       string     `yaml:"url"` // text/template, see Render
-	KeyEnv    string     `yaml:"key_env"`
-	Timeout   Duration   `yaml:"timeout"`
-	SlowAfter Duration   `yaml:"slow_after"`
-	Interval  Duration   `yaml:"interval"`
-	Freshness *Freshness `yaml:"freshness"`
-	Expect    []Expect   `yaml:"expect"`
-	SLO       float64    `yaml:"slo"` // availability objective, e.g. 0.999
+	ID         string            `yaml:"id"`
+	Name       string            `yaml:"name"`
+	Provider   string            `yaml:"provider"`
+	Category   string            `yaml:"category"`
+	Docs       string            `yaml:"docs"`
+	URL        string            `yaml:"url"` // text/template, see Render
+	KeyEnv     string            `yaml:"key_env"`
+	Auth       string            `yaml:"auth"` // key (legacy query key), headers, or none
+	Headers    map[string]Header `yaml:"headers"`
+	Classifier string            `yaml:"classifier"` // public (default), kakao, naver_maps, http
+	JSONExpect []JSONExpect      `yaml:"json_expect"`
+	Artifact   *Artifact         `yaml:"artifact"`
+	Timeout    Duration          `yaml:"timeout"`
+	SlowAfter  Duration          `yaml:"slow_after"`
+	Interval   Duration          `yaml:"interval"`
+	Freshness  *Freshness        `yaml:"freshness"`
+	Expect     []Expect          `yaml:"expect"`
+	SLO        float64           `yaml:"slo"` // availability objective, e.g. 0.999
 
 	tmpl *template.Template
 }
@@ -167,6 +198,52 @@ func Parse(raw []byte) (*Config, error) {
 		}
 		if t.KeyEnv == "" {
 			t.KeyEnv = c.KeyEnv
+		}
+		if t.Auth == "" {
+			t.Auth = "key"
+		}
+		if t.Auth != "key" && t.Auth != "headers" && t.Auth != "none" {
+			return nil, fmt.Errorf("target %q: invalid auth", t.ID)
+		}
+		if t.Classifier == "" {
+			t.Classifier = "public"
+		}
+		if t.Classifier != "public" && t.Classifier != "kakao" && t.Classifier != "naver_maps" && t.Classifier != "http" {
+			return nil, fmt.Errorf("target %q: invalid classifier", t.ID)
+		}
+		if t.Auth == "headers" && len(t.Headers) == 0 {
+			return nil, fmt.Errorf("target %q: headers auth needs headers", t.ID)
+		}
+		if a := t.Artifact; a != nil {
+			digest, err := hex.DecodeString(a.SHA256)
+			if err != nil || len(digest) != 32 || a.MinBytes < 1 || a.MaxBytes < a.MinBytes || a.MaxBytes > 1<<20 || t.Classifier != "http" || len(t.JSONExpect) > 0 || len(t.Expect) > 0 || t.Freshness != nil {
+				return nil, fmt.Errorf("target %q: artifact needs HTTP, SHA256 and byte limits (1..1048576), without JSON/freshness rules", t.ID)
+			}
+			a.SHA256 = strings.ToLower(a.SHA256)
+		}
+		seenHeaders := map[string]bool{}
+		for name, h := range t.Headers {
+			canonical := http.CanonicalHeaderKey(name)
+			if !validHeaderName(name) || seenHeaders[canonical] || h.Env == "" || invalidHeaderValue(h.Prefix) {
+				return nil, fmt.Errorf("target %q: invalid or duplicate header", t.ID)
+			}
+			switch canonical {
+			case "Host", "Connection", "Content-Length", "Transfer-Encoding":
+				return nil, fmt.Errorf("target %q: unsupported header", t.ID)
+			}
+			seenHeaders[canonical] = true
+		}
+		for _, e := range t.JSONExpect {
+			if e.Path == "" || strings.Contains(e.Path, "..") || strings.HasPrefix(e.Path, ".") || strings.HasSuffix(e.Path, ".") ||
+				(e.Equals == nil && e.Min == nil && e.Max == nil && e.MinItems == nil) ||
+				(e.Min != nil && e.Max != nil && *e.Min > *e.Max) || (e.MinItems != nil && *e.MinItems < 0) {
+				return nil, fmt.Errorf("target %q: invalid json_expect", t.ID)
+			}
+			for _, bound := range []*float64{e.Min, e.Max} {
+				if bound != nil && (math.IsNaN(*bound) || math.IsInf(*bound, 0)) {
+					return nil, fmt.Errorf("target %q: non-finite json_expect bound", t.ID)
+				}
+			}
 		}
 		if t.Timeout.Duration == 0 {
 			t.Timeout = c.Timeout
@@ -283,14 +360,74 @@ func (t *Target) Render(now time.Time) (string, error) {
 	return b.String(), err
 }
 
-// HasKey reports whether the target's key variable is set.
-func (t *Target) HasKey() bool { return strings.TrimSpace(os.Getenv(t.KeyEnv)) != "" }
+// HasKey reports whether every required credential is set; none needs no key.
+func (t *Target) HasKey() bool { return t.MissingCredential() == "" }
+
+func (t *Target) MissingCredential() string {
+	if t.Auth != "none" && t.Auth != "headers" && t.KeyEnv == "" {
+		return "key_env"
+	}
+	if t.Auth != "none" && t.Auth != "headers" && strings.TrimSpace(os.Getenv(t.KeyEnv)) == "" {
+		return t.KeyEnv
+	}
+	for _, h := range t.Headers {
+		if strings.TrimSpace(os.Getenv(h.Env)) == "" {
+			return h.Env
+		}
+	}
+	return ""
+}
+
+func validHeaderName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range name {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", c)) {
+			return false
+		}
+	}
+	return true
+}
+
+func invalidHeaderValue(value string) bool {
+	return strings.IndexFunc(value, func(c rune) bool { return c < 32 || c == 127 }) >= 0
+}
+
+// ApplyHeaders never returns credential values in an error.
+func (t *Target) ApplyHeaders(req *http.Request) error {
+	if missing := t.MissingCredential(); missing != "" {
+		return fmt.Errorf("credential not set (%s)", missing)
+	}
+	for name, h := range t.Headers {
+		value := h.Prefix + strings.TrimSpace(os.Getenv(h.Env))
+		if invalidHeaderValue(value) {
+			return fmt.Errorf("invalid credential header (%s)", name)
+		}
+		req.Header.Set(name, value)
+	}
+	return nil
+}
 
 // Redact hides the key in a rendered URL for logs and the public page.
 func (t *Target) Redact(u string) string {
-	k := url.QueryEscape(strings.TrimSpace(os.Getenv(t.KeyEnv)))
-	if k == "" {
-		return u
+	envs := []string{}
+	if t.Auth != "headers" && t.Auth != "none" {
+		envs = append(envs, t.KeyEnv)
 	}
-	return strings.ReplaceAll(u, k, "REDACTED")
+	for _, h := range t.Headers {
+		envs = append(envs, h.Env)
+	}
+	secrets := []string{}
+	for _, env := range envs {
+		if k := strings.TrimSpace(os.Getenv(env)); k != "" {
+			secrets = append(secrets, k, url.QueryEscape(k))
+		}
+	}
+	// Redact longer overlapping credentials before their shorter prefixes.
+	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
+	for _, secret := range secrets {
+		u = strings.ReplaceAll(u, secret, "REDACTED")
+	}
+	return u
 }

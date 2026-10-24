@@ -30,6 +30,127 @@ key_env: DATA_GO_KR_KEY
 maintenance: []
 
 targets:
+  # Immutable, small package canaries. Metadata and downloads are independent:
+  # registry failure must not suppress detection of a working/broken file host.
+  - id: npm-metadata
+    name: npm 패키지 정보 조회
+    provider: npm
+    category: 패키지·빌드
+    docs: https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md
+    auth: none
+    classifier: http
+    url: https://registry.npmjs.org/is-number/7.0.0
+    json_expect:
+      - {path: name, equals: is-number}
+      - {path: version, equals: 7.0.0}
+      - {path: dist.tarball, equals: 'https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz'}
+      - {path: dist.shasum, equals: 7535345b896734d5f80c4d06c50955527a14f12b}
+
+  - id: npm-download
+    name: npm 패키지 다운로드
+    provider: npm
+    category: 패키지·빌드
+    docs: https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md
+    auth: none
+    classifier: http
+    url: https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz
+    artifact:
+      sha256: 7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e
+      min_bytes: 3730
+      max_bytes: 3730
+
+  - id: pypi-metadata
+    name: PyPI 패키지 정보 조회
+    provider: PyPI
+    category: 패키지·빌드
+    docs: https://docs.pypi.org/api/json/
+    auth: none
+    classifier: http
+    url: https://pypi.org/pypi/sampleproject/4.0.0/json
+    json_expect:
+      - {path: info.name, equals: sampleproject}
+      - {path: info.version, equals: 4.0.0}
+      - {path: urls, min_items: 1}
+
+  - id: pypi-download
+    name: PyPI 패키지 다운로드
+    provider: PyPI
+    category: 패키지·빌드
+    docs: https://docs.pypi.org/api/json/
+    auth: none
+    classifier: http
+    url: https://files.pythonhosted.org/packages/d7/73/c16e5f3f0d37c60947e70865c255a58dc408780a6474de0523afd0ec553a/sampleproject-4.0.0-py3-none-any.whl
+    artifact:
+      sha256: c23e447ea90d796d1e645c35c4b2de125040add12a845825546f91c93f391b6b
+      min_bytes: 4661
+      max_bytes: 4661
+
+  # Developer map APIs. Credentials are sent only in headers.
+  # Fixed canaries: Seoul City Hall and Seoul Station; bounds tolerate map updates.
+  - id: kakao-address
+    name: 카카오맵 주소 검색
+    provider: 카카오
+    category: 지도·위치
+    docs: https://developers.kakao.com/docs/ko/kakaomap/rest-api
+    auth: headers
+    classifier: kakao
+    headers:
+      Authorization: {env: KAKAO_REST_API_KEY, prefix: "KakaoAK "}
+    url: https://dapi.kakao.com/v2/local/search/address.json?query={{esc "서울특별시 중구 세종대로 110"}}&size=1
+    json_expect:
+      - {path: documents, min_items: 1}
+      - {path: documents.0.x, min: 126.96, max: 126.99}
+      - {path: documents.0.y, min: 37.55, max: 37.58}
+
+  - id: kakao-place
+    name: 카카오맵 장소 검색
+    provider: 카카오
+    category: 지도·위치
+    docs: https://developers.kakao.com/docs/ko/kakaomap/rest-api
+    auth: headers
+    classifier: kakao
+    headers:
+      Authorization: {env: KAKAO_REST_API_KEY, prefix: "KakaoAK "}
+    url: https://dapi.kakao.com/v2/local/search/keyword.json?query={{esc "서울역"}}&x=126.9706&y=37.5547&radius=1000&size=1&sort=distance
+    json_expect:
+      - {path: documents, min_items: 1}
+      - {path: documents.0.x, min: 126.95, max: 126.99}
+      - {path: documents.0.y, min: 37.54, max: 37.57}
+
+  - id: naver-geocode
+    name: 네이버 Maps 주소 검색
+    provider: 네이버클라우드
+    category: 지도·위치
+    docs: https://api.ncloud-docs.com/docs/application-maps-geocoding
+    auth: headers
+    classifier: naver_maps
+    headers:
+      x-ncp-apigw-api-key-id: {env: NAVER_MAPS_CLIENT_ID}
+      x-ncp-apigw-api-key: {env: NAVER_MAPS_CLIENT_SECRET}
+    url: https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={{esc "서울특별시 중구 세종대로 110"}}&count=1
+    json_expect:
+      - {path: status, equals: OK}
+      - {path: addresses, min_items: 1}
+      - {path: addresses.0.x, min: 126.96, max: 126.99}
+      - {path: addresses.0.y, min: 37.55, max: 37.58}
+
+  - id: naver-directions
+    name: 네이버 Maps 자동차 길찾기
+    provider: 네이버클라우드
+    category: 지도·위치
+    docs: https://api.ncloud-docs.com/docs/application-maps-directions5
+    auth: headers
+    classifier: naver_maps
+    headers:
+      x-ncp-apigw-api-key-id: {env: NAVER_MAPS_CLIENT_ID}
+      x-ncp-apigw-api-key: {env: NAVER_MAPS_CLIENT_SECRET}
+    url: https://maps.apigw.ntruss.com/map-direction/v1/driving?start=126.9784,37.5663&goal=126.9706,37.5547&option=traoptimal
+    json_expect:
+      - {path: code, min: 0, max: 0}
+      - {path: route.traoptimal, min_items: 1}
+      - {path: route.traoptimal.0.summary.distance, min: 100, max: 20000}
+      - {path: route.traoptimal.0.summary.duration, min: 1000, max: 14400000}
+
   # ── 날씨 (기상청) ─────────────────────────────────────────────────────────
   - id: kma-ultra-ncst
     name: 기상청 초단기실황

@@ -109,6 +109,9 @@ function why(r) {
   if ((m = r.match(/^slow: (.+)$/))) return `응답이 ${dur(m[1])} 걸림`;
   if ((m = r.match(/^stale: newest data (.+) old$/))) return `최신 데이터가 ${dur(m[1])} 전 것 (갱신 멈춤)`;
   if ((m = r.match(/^bad value: (.+)$/))) return `값 이상: ${m[1].replace(/ missing \(.*\)$/, " 항목이 응답에 없음")}`;
+  if (r === "artifact: SHA256 mismatch") return "다운로드한 파일의 SHA-256이 고정 버전과 다름";
+  if (r === "artifact: incomplete or undersized download") return "패키지 파일이 비어 있거나 일부만 내려옴";
+  if (r === "artifact: download exceeds byte limit") return "패키지 파일이 고정 버전의 예상 크기를 초과함";
   if ((m = r.match(/^timeout: (.+)$/))) return `응답 없음 (시간 초과) — ${m[1]}`;
   if ((m = r.match(/^http (\d+)/))) return `HTTP ${m[1]} 응답` + (r.includes(":") ? " — " + r.split(":").slice(1).join(":").trim() : "");
   if ((m = r.match(/^code (\S+): (.+)$/))) return `오류 코드 ${m[1]} — ${m[2]}`;
@@ -173,7 +176,11 @@ function correlate(targets) {
 
 // Prefer the body's code over the HTTP status: a 403 can carry quota code 22.
 function clientAdvice(reason = "") {
-  const code = (reason.match(/\bcode ([\w-]+)/) || [])[1];
+  const code = (reason.match(/\bcode ([A-Z_]+:-?[\w]+|[\w-]+)/) || [])[1];
+  if (reason.startsWith("credential not set") || reason.startsWith("invalid credential header")) return ["인증 설정 필요", "실행 환경의 해당 환경변수를 설정하세요. 키가 없는 대상은 가용률과 장애 판정에서 제외됩니다."];
+  if (["KAKAO:-10", "KAKAO:-11", "NAVER:400"].includes(code)) return ["쿼터·이용 한도 확인", "공급자 콘솔에서 쿼터·금액 한도와 사용 API 활성화 상태를 확인하세요."];
+  if (["NAVER:410", "NAVER:420"].includes(code)) return ["호출 속도 제한", "동시 호출과 재시도 간격을 늘리고 공급자별 호출 제한을 확인하세요."];
+  if (code && /^(KAKAO|NAVER):/.test(code)) return ["인증·요청 설정 확인", "해당 공급자 콘솔의 키·앱 권한과 API 명세의 요청값을 확인하세요."];
   if (["22", "BUS-8"].includes(code)) return ["일일 호출 한도", "마이페이지 → Open API → 활용신청 현황 → 해당 API → 운영계정 신청으로 트래픽 증설. 이미 운영계정이면 제공기관에 추가 증설 문의."];
   if (code === "23") return ["초당 호출 제한", "동시 호출·재시도 간격을 늘리세요. 일일 한도 증설과는 별개입니다."];
   if (["30", "INFO-100", "BUS-5", "BUS-6", "BUS-7"].includes(code)) return ["인증키 확인", "실행 환경에 등록된 키와 해당 API의 활용신청·승인 상태를 확인하세요."];
@@ -201,7 +208,7 @@ function renderCorrel() {
   }
   const openBy = {};
   for (const i of state.incidents) if (isOpen(i)) openBy[i.target] = i;
-  if (wide) box.append(el("div", "cg wide-out", "⚠ 여러 기관 API가 동시에 이상 — 공공데이터포털 게이트웨이 또는 이 모니터 쪽 네트워크 문제일 가능성"));
+  if (wide) box.append(el("div", "cg wide-out", "⚠ 여러 공급자 API가 동시에 이상 — 공통 의존성 또는 이 모니터 쪽 네트워크 문제 확인"));
   // our side: the key, approval or quota, not the provider; a to-do list for the operator
   const ours = state.data.targets.filter((t) => t.status === "client");
   if (ours.length) {
