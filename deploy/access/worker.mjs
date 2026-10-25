@@ -2,6 +2,10 @@ import { adminHTML } from './admin.mjs';
 
 const ORIGIN = 'https://hyunsuhahaha.github.io';
 const PREFIX = '/public-api-monitor/';
+// Search-engine ownership files (public by design: the engine fetches them anonymously).
+const VERIFY_FILES = {
+  '/google63ebdd653ecf9466.html': 'google-site-verification: google63ebdd653ecf9466.html',
+};
 const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const json = (data, status=200) => new Response(JSON.stringify(data), {status, headers});
 
@@ -71,6 +75,9 @@ export function createWorker(originFetch=fetch) {
       }
       let response;
       if (!['GET','HEAD'].includes(request.method)) response=json({error:'method not allowed'},405);
+      else if (Object.hasOwn(VERIFY_FILES,u.pathname)) {
+        response=new Response(VERIFY_FILES[u.pathname],{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});
+      }
       else if (u.pathname==='/robots.txt') {
         // Crawlers and AI fetchers are welcome everywhere but the private log screen.
         response=new Response(`User-agent: *\nDisallow: /__access\nAllow: /\n\nSitemap: ${u.origin}/sitemap.xml\n`,
