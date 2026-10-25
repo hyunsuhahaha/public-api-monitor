@@ -6,7 +6,7 @@ const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-cont
 const json = (data, status=200) => new Response(JSON.stringify(data), {status, headers});
 
 export function classify(ua) {
-  const ai = /GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-User|Claude-SearchBot|PerplexityBot|Perplexity-User|CCBot|Amazonbot/i.exec(ua);
+  const ai = /GPTBot|OAI-SearchBot|ChatGPT-User|ChatGPT Agent|ClaudeBot|Claude-User|Claude-SearchBot|Claude-Code|anthropic-ai|PerplexityBot|Perplexity-User|Google-CloudVertexBot|Gemini|MistralAI-User|Meta-ExternalAgent|Meta-ExternalFetcher|DuckAssistBot|cohere-ai|Cursor|YouBot|Bytespider|CCBot|Amazonbot/i.exec(ua);
   if (ai) return { kind:'ai_claimed', agent:ai[0].toLowerCase() };
   const bot = /Googlebot|bingbot|DuckDuckBot|YandexBot|Baiduspider|Applebot|crawler|spider|bot/i.exec(ua);
   if (bot) return { kind:'bot_claimed', agent:bot[0].toLowerCase() };
