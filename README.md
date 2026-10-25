@@ -340,6 +340,8 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 
 ## API
 
+Go에서 호출 전에 pamon을 확인하는 서킷 브레이커: [pkg/pamonclient](pkg/pamonclient) (재시도 폭주로 IP가 차단되는 문제와 게임 데이 결과).
+
 | 경로 | 내용 |
 |---|---|
 | `GET /api/v1/overview?range=1h…30d` | 전체 가용률·에러 버짓·p50/p95/p99, API별 가용률·버짓·스파크라인·구간별 상태 |

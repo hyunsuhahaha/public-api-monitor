@@ -10,6 +10,10 @@
 // HTTP check misses), html (HTTP 200 with an error page), slow (adds ms milliseconds),
 // hang (never answers), stale (data timestamp 6 hours old), nokey (code 30), newfield (a
 // healthy answer with one more field: a schema change).
+//
+// With -ban-after N it also behaves like a provider's rate limiter: after N requests
+// answered with a failure, every request gets 403 "IP blocked", even once the API is
+// back, until DELETE /admin/ban (pkg/pamonclient's game day: retry storms get banned).
 package main
 
 import (
@@ -24,10 +28,13 @@ import (
 )
 
 var (
-	mu    sync.Mutex
-	mode  = "ok"
-	delay time.Duration
-	kst   = time.FixedZone("KST", 9*3600)
+	mu       sync.Mutex
+	banAfter int
+	failures int
+	banned   bool
+	mode     = "ok"
+	delay    time.Duration
+	kst      = time.FixedZone("KST", 9*3600)
 )
 
 func current() (string, time.Duration) {
@@ -38,6 +45,19 @@ func current() (string, time.Duration) {
 
 func api(w http.ResponseWriter, r *http.Request) {
 	m, d := current()
+	if banAfter > 0 {
+		mu.Lock()
+		if !banned && m != "ok" && m != "newfield" && m != "slow" {
+			failures++
+			banned = failures > banAfter
+		}
+		b := banned
+		mu.Unlock()
+		if b {
+			http.Error(w, "IP blocked: too many requests", http.StatusForbidden)
+			return
+		}
+	}
 	now := time.Now().In(kst)
 	switch m {
 	case "hang":
@@ -69,6 +89,17 @@ func api(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, `{"response":{"header":{"resultCode":"00","resultMsg":"NORMAL SERVICE."},"body":{"items":{"item":[{"dataTime":"%s","value":"42"%s}]},"totalCount":1}}}`,
 		now.Format("2006-01-02 15:04"), extra)
+}
+
+func unban(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "DELETE to lift the ban", http.StatusMethodNotAllowed)
+		return
+	}
+	mu.Lock()
+	banned, failures = false, 0
+	mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) {
@@ -113,9 +144,11 @@ func hook(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	addr := flag.String("addr", ":9000", "listen address")
+	flag.IntVar(&banAfter, "ban-after", 0, "block every request after this many failed ones (0: never)")
 	flag.Parse()
 	http.HandleFunc("/api", api)
 	http.HandleFunc("/admin/mode", admin)
+	http.HandleFunc("/admin/ban", unban)
 	http.HandleFunc("/hook", hook)
 	log.Printf("fakeapi on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
