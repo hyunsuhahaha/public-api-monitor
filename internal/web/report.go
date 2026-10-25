@@ -54,6 +54,7 @@ var reportTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 	"inc":  func(i int) int { return i + 1 },
 	"sub":  func(a, b int) int { return a - b },
 	"bad":  func(v float64) bool { return v >= 0 && v < 0.99 },
+	"lead": report.SignedMinutes,
 }).Parse(`<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.From.Year}}년 {{printf "%d" .From.Month}}월 공공 API 가용성 리포트</title>
@@ -92,6 +93,12 @@ tr:last-child td{border-bottom:0}.bad{color:var(--bad);font-weight:600}.note{col
 <div class="wrap"><table><tr><th>API</th><th>재확인</th><th>재시도로 바로 됨</th><th>늦게 응답</th><th>응답 없음</th><th>응답까지 (중앙값)</th></tr>
 {{range .Timeouts}}<tr><td>{{.Name}}</td><td>{{.Checked}}</td><td>{{.Retried}}</td><td>{{.Late}}</td><td{{if .Hung}} class="bad"{{end}}>{{.Hung}}</td><td>{{if .MedianMs}}{{.MedianMs}}ms{{else}}–{{end}}</td></tr>
 {{end}}</table></div>{{end}}
+{{with .LeadTime}}{{if .Total.Episodes}}<h2>공식 상태 페이지와 비교</h2>
+<p class="note">공식 상태 페이지가 있는 서비스의 장애 {{.Total.Episodes}}건 중 비교할 수 있었던 {{.Total.Counted}}건입니다. 진행 중이거나 공식 페이지 기록이 비었던 {{.Total.Excluded}}건은 뺐습니다. 값은 pamon의 장애 확정이 공식 발표보다 빠른(먼저)·느린(늦게) 정도입니다. <a href="../lead-time.html">재는 방법</a></p>
+<div class="wrap"><table><tr><th>제공자</th><th>비교</th><th>중앙값</th><th>평균</th><th>먼저·비슷·늦게</th><th>발표 없음</th></tr>
+<tr><td><b>전체</b></td><td>{{.Total.Counted}}</td><td>{{if .Total.Announced}}{{lead .Total.MedianMinutes}}{{else}}–{{end}}</td><td>{{if .Total.Announced}}{{lead .Total.MeanMinutes}}{{else}}–{{end}}</td><td>{{.Total.PamonFirst}} · {{.Total.Tie}} · {{.Total.OfficialFirst}}</td><td>{{.Total.Never}}</td></tr>
+{{range .Providers}}<tr><td>{{.Provider}}</td><td>{{.Counted}}</td><td>{{if .Announced}}{{lead .MedianMinutes}}{{else}}–{{end}}</td><td>{{if .Announced}}{{lead .MeanMinutes}}{{else}}–{{end}}</td><td>{{.PamonFirst}} · {{.Tie}} · {{.OfficialFirst}}</td><td>{{.Never}}</td></tr>
+{{end}}</table></div>{{end}}{{end}}
 <h2>기관별</h2>
 <div class="wrap"><table><tr><th>기관</th><th>API 수</th><th>평균 가용률</th><th>장애 시간</th></tr>
 {{range .Providers}}<tr><td>{{.Name}}</td><td>{{.APIs}}</td><td{{if bad .Availability}} class="bad"{{end}}>{{pct .Availability}}</td><td>{{dur .DowntimeMin}}</td></tr>

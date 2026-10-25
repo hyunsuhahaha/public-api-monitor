@@ -127,6 +127,7 @@ type answerPage struct {
 	Problems   []answerItem // failing or degraded now, worst first (index page)
 	Official   *officialView
 	Advice     Advice
+	More       answerMore // lead time, maintenance, feeds (answer_more.go)
 }
 
 // Advice is what a developer whose service calls this one can do about its failures,
@@ -306,6 +307,7 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 	if st, ok := s.Official[p.T.Provider]; ok {
 		p.Official = compareOfficial(st, p.V.Tone)
 	}
+	p.More = s.answerMore(ctx, p.T, now)
 	if p.T.CheckedAt != nil {
 		p.Checked = kst(*p.T.CheckedAt)
 	}
@@ -483,6 +485,7 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 {{if .Incidents}}<table><tr><th>시작 (KST)</th><th>길이</th><th>내용</th></tr>
 {{range .Incidents}}<tr><td>{{.Start}}</td><td>{{.Duration}}</td><td><b>{{.Status}}</b> {{.Reason}}</td></tr>{{end}}</table>
 {{else}}<p>지난 30일 동안 기록된 장애가 없습니다.</p>{{end}}
+{{template "more" .More}}
 
 <h2>이 API에 의존한다면: {{.Advice.Title}}</h2>
 <ul>{{range .Advice.Points}}<li>{{.}}</li>{{end}}</ul>
@@ -508,6 +511,6 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 {{range .Categories}}<section class="cat"><h2>{{.Name}}</h2>
 {{range .Services}}<div class="svc"><a href="{{.ID}}.html">{{.Name}} <span class="sub">{{.Provider}}</span></a><span class="h {{.Tone}}">{{.Headline}}<span class="sub" data-report="{{.ID}}" hidden></span></span></div>{{end}}
 </section>{{end}}
-<footer><a href="../">운영자 대시보드</a> · <a href="../status.html">공개 상태 요약</a> · <a href="../llms.txt">AI용 안내</a></footer>
+<footer><a href="../">운영자 대시보드</a> · <a href="../status.html">공개 상태 요약</a> · <a href="../lead-time.html">공식 발표보다 얼마나 빨랐나</a> · <a href="../llms.txt">AI용 안내</a></footer>
 </main><script src="../report.js"></script></body></html>{{end}}
 `))

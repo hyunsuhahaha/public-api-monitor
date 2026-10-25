@@ -12,6 +12,7 @@ import (
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/leadtime"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 )
 
@@ -71,6 +72,14 @@ type Report struct {
 	Providers    []Provider `json:"providers"` // worst first
 	Longest      []Outage   `json:"longest"`
 	Timeouts     []Timeouts `json:"timeouts"` // most followed-up first
+	// LeadTime: this month's outages compared with the providers' own status pages
+	LeadTime *LeadTime `json:"leadTime"`
+}
+
+// LeadTime is the month's comparison with official status pages (internal/leadtime).
+type LeadTime struct {
+	Total     leadtime.Stats   `json:"total"`
+	Providers []leadtime.Stats `json:"providers"`
 }
 
 // MonthRange parses YYYY-MM as a KST calendar month.
@@ -189,7 +198,27 @@ func Build(ctx context.Context, st *store.Store, cfg *config.Config, month strin
 		}
 		return r.Timeouts[i].ID < r.Timeouts[j].ID
 	})
+	lt, err := leadtime.Load(ctx, st, cfg, from, to, now)
+	if err != nil {
+		return nil, err
+	}
+	r.LeadTime = &LeadTime{Total: lt.Total, Providers: lt.Providers}
 	return r, nil
+}
+
+// SignedMinutes says a lead: "12분 먼저", "3분 늦게".
+func SignedMinutes(v float64) string {
+	m := int(v + 0.5)
+	if v < 0 {
+		m = -int(-v + 0.5)
+	}
+	switch {
+	case m > 0:
+		return Dur(m) + " 먼저"
+	case m < 0:
+		return Dur(-m) + " 늦게"
+	}
+	return "동시"
 }
 
 func minutes(in *incident.Incident, from, end time.Time) int {
@@ -327,6 +356,23 @@ func (r *Report) Markdown(publicURL string) string {
 		b.WriteString("\n## 타임아웃 뒤 재확인\n\n타임아웃이 나면 같은 요청을 한 번 더 길게 기다려 봤습니다. 바로 응답하면 그 요청만 걸린 것(재시도하면 됨), 늦게 응답하면 서버가 느린 것, 끝까지 응답이 없으면 서버가 멈춘 것입니다.\n\n| API | 재확인 | 재시도로 바로 됨 | 늦게 응답 | 응답 없음 | 응답까지 (중앙값) |\n|---|---|---|---|---|---|\n")
 		for _, x := range r.Timeouts {
 			fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %s |\n", x.Name, x.Checked, x.Retried, x.Late, x.Hung, msOrDash(x.MedianMs))
+		}
+	}
+
+	if lt := r.LeadTime; lt != nil && lt.Total.Episodes > 0 {
+		b.WriteString("\n## 공식 상태 페이지와 비교\n\n")
+		t := lt.Total
+		fmt.Fprintf(&b, "공식 상태 페이지가 있는 서비스의 장애 %d건 중 비교할 수 있었던 %d건: 공식 발표가 있던 %d건, 발표 없이 끝난 %d건 (제외 %d건: 진행 중, 공식 페이지 기록 공백, 이미 다른 문제를 알리던 중).\n", t.Episodes, t.Counted(), t.Announced, t.Never, t.Excluded)
+		if t.Announced > 0 {
+			fmt.Fprintf(&b, "발표가 있던 장애에서 pamon의 장애 확정은 공식 발표보다 중앙값 %s, 평균 %s였습니다 (5분 이상 먼저 %d건, 5분 이내 %d건, 5분 이상 늦게 %d건).\n", SignedMinutes(t.MedianMinutes), SignedMinutes(t.MeanMinutes), t.PamonFirst, t.Tie, t.OfficialFirst)
+		}
+		b.WriteString("\n| 제공자 | 비교 | 중앙값 | 평균 | 발표 없음 | 제외 |\n|---|---|---|---|---|---|\n")
+		for _, p := range lt.Providers {
+			med, mean := "–", "–"
+			if p.Announced > 0 {
+				med, mean = SignedMinutes(p.MedianMinutes), SignedMinutes(p.MeanMinutes)
+			}
+			fmt.Fprintf(&b, "| %s | %d | %s | %s | %d | %d |\n", p.Provider, p.Counted(), med, mean, p.Never, p.Excluded)
 		}
 	}
 

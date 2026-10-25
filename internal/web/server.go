@@ -51,6 +51,7 @@ type Server struct {
 	Official map[string]official.Status
 
 	cache      respCache
+	lead       leadCache
 	mu         sync.Mutex
 	cachedView *StatusView
 	cached     []byte
@@ -91,6 +92,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/silences", s.addSilence)
 	mux.HandleFunc("DELETE /api/v1/silences/{id}", s.endSilence)
 	s.reportRoutes(mux)
+	mux.HandleFunc("GET /lead-time", s.leadPage)
+	mux.HandleFunc("GET /lead-time.html", s.leadPage)
+	mux.HandleFunc("GET /api/v1/lead-time", s.leadJSON)
+	mux.HandleFunc("GET /data/api/v1/lead-time.json", s.leadJSON) // the exported file's path
 	mux.HandleFunc("GET /badge/{id}", s.badge)
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"version": s.Version, "go": runtime.Version(), "startedAt": s.StartedAt,

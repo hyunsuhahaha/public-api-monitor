@@ -59,11 +59,15 @@ func runCycle(log *slog.Logger, cfg *config.Config, prober *probe.Prober, dbPath
 	if n, err := st.Prune(ctx, time.Now().Add(-keep)); err == nil && n > 0 {
 		log.Info("pruned old rows", "rows", n)
 	}
+	// providers' own status pages, read every beat so the lead-time comparison knows when
+	// each one changed (and when pamon was not reading it)
+	off := official.Fetch(ctx, prober.Client)
+	recordOfficial(ctx, log, st, off, cfg.Interval.Duration)
 	if exportDir == "" {
 		return nil
 	}
 	srv := &web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck, SlowLimit: prober.Baseline.Limit,
-		Official:  official.Fetch(ctx, prober.Client),
+		Official:  off,
 		PublicURL: os.Getenv("PAMON_PUBLIC_URL"), Version: version, StartedAt: started}
 	start := time.Now()
 	spent, err := exportSite(srv.Handler(), cfg, exportDir)
@@ -73,6 +77,16 @@ func runCycle(log *slog.Logger, cfg *config.Config, prober *probe.Prober, dbPath
 	}
 	log.Info("export done", attrs...)
 	return err
+}
+
+func recordOfficial(ctx context.Context, log *slog.Logger, st *store.Store, off map[string]official.Status, every time.Duration) {
+	for _, p := range slices.Sorted(maps.Keys(off)) {
+		o := off[p]
+		// a run continues across one missed beat, not across a longer hole
+		if err := st.RecordOfficial(ctx, p, o.Indicator, o.Description, o.FetchedAt, 3*every); err != nil {
+			log.Error("record official status", "provider", p, "err", err)
+		}
+	}
 }
 
 // exportKind groups an exported URL for the timing log: the path, plus the range for series.
@@ -288,6 +302,10 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 		}
 		indexed = append(indexed, "s/"+t.ID+".html")
 	}
+	if err := page("/lead-time", "lead-time.html"); err != nil {
+		return spent, err
+	}
+	indexed = append(indexed, "lead-time.html")
 	month := time.Now().In(config.KST)
 	for i, m := range []string{month.Format("2006-01"), month.AddDate(0, -1, 0).Format("2006-01")} {
 		b, err := get("/report/" + m)
@@ -308,7 +326,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 	if b, err := get("/feed.xml"); err == nil {
 		put("feed.xml", b)
 	}
-	urls := []string{"/api/v1/status", "/api/v1/incidents", "/api/v1/schema-events", "/api/v1/silences", "/api/v1/overview", "/version"}
+	urls := []string{"/api/v1/status", "/api/v1/incidents", "/api/v1/schema-events", "/api/v1/silences", "/api/v1/overview", "/api/v1/lead-time", "/version"}
 	for _, r := range exportRanges {
 		urls = append(urls, "/api/v1/overview?range="+r)
 		for _, t := range cfg.Targets {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 )
@@ -130,4 +131,24 @@ func fetchOne(ctx context.Context, client *http.Client, src source) (Status, boo
 	}
 	st.Indicator, st.Description = v.Status.Indicator, v.Status.Description
 	return st, true
+}
+
+// Has reports whether pamon reads the provider's own status page.
+func Has(provider string) bool {
+	for _, s := range Sources {
+		if s.provider == provider {
+			return true
+		}
+	}
+	return false
+}
+
+// Providers are the providers whose status page pamon reads, sorted.
+func Providers() []string {
+	var out []string
+	for _, s := range Sources {
+		out = append(out, s.provider)
+	}
+	sort.Strings(out)
+	return out
 }

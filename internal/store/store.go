@@ -132,7 +132,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // one writer; SQLite serialises anyway
-	if _, err := db.Exec(schema + rollupSchema); err != nil {
+	if _, err := db.Exec(schema + rollupSchema + officialSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
