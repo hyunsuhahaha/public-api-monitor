@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -26,6 +27,44 @@ func classifyHTTP(o Observation, slowAfter time.Duration) Verdict {
 		return Verdict{Status: StatusSlow, Reason: "slow: " + o.Latency.Round(time.Millisecond).String()}
 	}
 	return Verdict{Status: StatusOK}
+}
+
+// classifyExpected is classifyHTTP with the target's expected status and text: an API
+// asked without credentials must answer its own 401 (not a CDN's), a page must still be
+// the page.
+func classifyExpected(o Observation, t *config.Target) Verdict {
+	want := t.ExpectStatus
+	if want == 0 || want == 200 || o.Err != nil || o.Timeout || o.HTTPStatus >= 500 {
+		v := classifyHTTP(o, t.SlowAfter.Duration)
+		if v.Status.Healthy() {
+			if reason := missingText(o.Body, t.Contains); reason != "" {
+				return Verdict{Status: StatusError, Reason: reason}
+			}
+		}
+		return v
+	}
+	if o.HTTPStatus != want {
+		return Verdict{Status: StatusError, Reason: fmt.Sprintf("http %d: expected %d from the service itself", o.HTTPStatus, want)}
+	}
+	if len(o.Body) == 0 {
+		return Verdict{Status: StatusError, Reason: fmt.Sprintf("http %d without a body: not the service's own answer", o.HTTPStatus)}
+	}
+	if reason := missingText(o.Body, t.Contains); reason != "" {
+		return Verdict{Status: StatusError, Reason: reason}
+	}
+	if t.SlowAfter.Duration > 0 && o.Latency > t.SlowAfter.Duration {
+		return Verdict{Status: StatusSlow, Reason: "slow: " + o.Latency.Round(time.Millisecond).String()}
+	}
+	return Verdict{Status: StatusOK}
+}
+
+func missingText(body []byte, want []string) string {
+	for _, w := range want {
+		if !bytes.Contains(body, []byte(w)) {
+			return fmt.Sprintf("answer lacks %q: an error or block page, not the service", w)
+		}
+	}
+	return ""
 }
 
 func checkArtifact(body []byte, expected *config.Artifact) string {

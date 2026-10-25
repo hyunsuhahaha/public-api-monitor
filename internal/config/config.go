@@ -100,7 +100,14 @@ type Target struct {
 	Interval         Duration          `yaml:"interval"`
 	Freshness        *Freshness        `yaml:"freshness"`
 	Expect           []Expect          `yaml:"expect"`
-	SLO              float64           `yaml:"slo"` // availability objective, e.g. 0.999
+	// ExpectStatus (http classifier): the answer a healthy service gives this request,
+	// when that is not 200, e.g. 401 from an API asked without credentials: it proves
+	// the service's own gateway answered. 5xx is never accepted.
+	ExpectStatus int `yaml:"expect_status"`
+	// Contains (http classifier): text a healthy answer includes, so a 200 error page
+	// (maintenance notice, blocked page) is not taken for the service.
+	Contains []string `yaml:"contains"`
+	SLO      float64  `yaml:"slo"` // availability objective, e.g. 0.999
 
 	tmpl *template.Template
 }
@@ -212,6 +219,17 @@ func Parse(raw []byte) (*Config, error) {
 		}
 		if t.Classifier != "public" && t.Classifier != "kakao" && t.Classifier != "naver_maps" && t.Classifier != "http" && t.Classifier != "git" && t.Classifier != "docker_token" && t.Classifier != "docker_manifest" {
 			return nil, fmt.Errorf("target %q: invalid classifier", t.ID)
+		}
+		if (t.ExpectStatus != 0 || len(t.Contains) > 0) && t.Classifier != "http" {
+			return nil, fmt.Errorf("target %q: expect_status and contains need the http classifier", t.ID)
+		}
+		if t.ExpectStatus != 0 && (t.ExpectStatus < 200 || t.ExpectStatus > 499 || t.Artifact != nil) {
+			return nil, fmt.Errorf("target %q: expect_status must be 200..499, without an artifact", t.ID)
+		}
+		for _, c := range t.Contains {
+			if c == "" {
+				return nil, fmt.Errorf("target %q: empty contains", t.ID)
+			}
 		}
 		if t.Auth == "headers" && len(t.Headers) == 0 {
 			return nil, fmt.Errorf("target %q: headers auth needs headers", t.ID)

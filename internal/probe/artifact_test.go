@@ -51,6 +51,41 @@ func TestArtifactFullBodyValidation(t *testing.T) {
 	}
 }
 
+// An API asked without credentials answers its own 401; a CDN's bare 403, a 5xx or a
+// page without the expected text is not that service answering.
+func TestExpectedStatusAndText(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		body   string
+		want   Status
+		reason string
+	}{
+		{"own 401 with its error envelope", 401, `{"resultcode":"024","message":"Authentication failed"}`, StatusOK, ""},
+		{"bare 403 from a CDN", 403, "", StatusError, "expected 401"},
+		{"401 without a body", 401, "", StatusError, "without a body"},
+		{"401 without the envelope", 401, "<html>blocked</html>", StatusError, "lacks"},
+		{"outage", 503, `{"resultcode":"024"}`, StatusDown, "503"},
+		{"200 instead of 401", 200, `{"resultcode":"024"}`, StatusError, "expected 401"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(c.status); w.Write([]byte(c.body)) }))
+			defer srv.Close()
+			tg := target(t, fmt.Sprintf("targets:\n  - id: api\n    auth: none\n    classifier: http\n    expect_status: 401\n    contains: ['\"resultcode\"']\n    url: %s\n", srv.URL))
+			r := New("test").Check(context.Background(), tg)
+			if r.Status != c.want || !strings.Contains(r.Reason, c.reason) {
+				t.Fatalf("%+v", r)
+			}
+		})
+	}
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>점검 중입니다</html>")) }))
+	defer page.Close()
+	tg := target(t, fmt.Sprintf("targets:\n  - id: page\n    auth: none\n    classifier: http\n    contains: ['로그인']\n    url: %s\n", page.URL))
+	if r := New("test").Check(context.Background(), tg); r.Status != StatusError || !strings.Contains(r.Reason, "로그인") {
+		t.Fatalf("maintenance page taken for the login page: %+v", r)
+	}
+}
+
 func TestHTTPClassifierDoesNotUsePublicResultCodes(t *testing.T) {
 	for _, body := range []string{`{"code":"ERROR-500"}`, `{"resultCode":"30"}`, "<html>file content</html>", "binary\x00\xff"} {
 		v := classifyHTTP(Observation{HTTPStatus: 200, Body: []byte(body)}, time.Second)

@@ -131,6 +131,185 @@ targets:
       min_bytes: 4661
       max_bytes: 4661
 
+  # Services people and developers get stuck on. None needs credentials: a page must
+  # still be the page (contains), an API asked without credentials must give its own
+  # error envelope (expect_status + contains), never a CDN's bare refusal. Checked from
+  # the host on 2026-10-25. Toss Payments and PASS answer a US address with a bare 403 /
+  # an error page: they wait for a probe in Korea.
+  - id: kakao-login
+    name: 카카오 로그인 (OpenID 설정)
+    provider: 카카오
+    category: 로그인·인증
+    docs: https://developers.kakao.com/docs/latest/ko/kakaologin/utilize#oidc-find-metadata
+    auth: none
+    classifier: http
+    url: https://kauth.kakao.com/.well-known/openid-configuration
+    json_expect:
+      - {path: issuer, equals: 'https://kauth.kakao.com'}
+      - {path: authorization_endpoint, equals: 'https://kauth.kakao.com/oauth/authorize'}
+
+  - id: naver-login-page
+    name: 네이버 로그인 페이지
+    provider: 네이버
+    category: 로그인·인증
+    docs: https://nid.naver.com/nidlogin.login
+    auth: none
+    classifier: http
+    url: https://nid.naver.com/nidlogin.login
+    contains: ['NAVER 로그인']
+
+  - id: naver-login-api
+    name: 네이버 로그인 API (회원 프로필)
+    provider: 네이버
+    category: 로그인·인증
+    docs: https://developers.naver.com/docs/login/profile/profile.md
+    auth: none
+    classifier: http
+    url: https://openapi.naver.com/v1/nid/me
+    expect_status: 401
+    contains: ['"resultcode"']
+
+  - id: hometax
+    name: 홈택스
+    provider: 국세청
+    category: 정부 서비스
+    docs: https://www.hometax.go.kr/
+    auth: none
+    classifier: http
+    timeout: 15s
+    url: https://www.hometax.go.kr/
+    contains: ['홈택스']
+
+  - id: gov24
+    name: 정부24
+    provider: 행정안전부
+    category: 정부 서비스
+    docs: https://plus.gov.kr/
+    auth: none
+    classifier: http
+    timeout: 15s
+    url: https://plus.gov.kr/
+    contains: ['정부24']
+
+  - id: kb-bank
+    name: KB국민은행 웹
+    provider: KB국민은행
+    category: 은행·결제
+    docs: https://www.kbstar.com/
+    auth: none
+    classifier: http
+    timeout: 15s
+    url: https://www.kbstar.com/
+    contains: ['kbstar']
+
+  - id: shinhan-bank
+    name: 신한은행 웹
+    provider: 신한은행
+    category: 은행·결제
+    docs: https://www.shinhan.com/
+    auth: none
+    classifier: http
+    timeout: 15s
+    url: https://www.shinhan.com/
+    contains: ['Shinhan Bank']
+
+  - id: toss-bank
+    name: 토스뱅크 웹
+    provider: 토스뱅크
+    category: 은행·결제
+    docs: https://www.tossbank.com/
+    auth: none
+    classifier: http
+    url: https://www.tossbank.com/
+    contains: ['토스뱅크']
+
+  - id: kakaopay-api
+    name: 카카오페이 결제 API
+    provider: 카카오페이
+    category: 은행·결제
+    docs: https://developers.kakaopay.com/docs/payment/online/single-payment
+    auth: none
+    classifier: http
+    url: https://open-api.kakaopay.com/online/v1/payment/ready
+    expect_status: 400
+    contains: ['"error_code"']
+
+  - id: aws-sts-seoul
+    name: AWS 서울 리전 인증(STS)
+    provider: AWS
+    category: 클라우드
+    docs: https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html
+    auth: none
+    classifier: http
+    url: https://sts.ap-northeast-2.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15
+    expect_status: 403
+    contains: ['MissingAuthenticationToken']
+
+  - id: aws-s3-seoul
+    name: AWS 서울 리전 S3
+    provider: AWS
+    category: 클라우드
+    docs: https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
+    auth: none
+    classifier: http
+    url: https://s3.ap-northeast-2.amazonaws.com/pamon-no-such-bucket-7f3a
+    expect_status: 404
+    contains: ['NoSuchBucket']
+
+  - id: aws-lambda-seoul
+    name: AWS 서울 리전 Lambda API
+    provider: AWS
+    category: 클라우드
+    docs: https://docs.aws.amazon.com/lambda/latest/api/welcome.html
+    auth: none
+    classifier: http
+    url: https://lambda.ap-northeast-2.amazonaws.com/2015-03-31/functions
+    expect_status: 403
+    contains: ['Missing Authentication Token']
+
+  - id: ncp-api-gateway
+    name: 네이버클라우드 API Gateway
+    provider: 네이버클라우드
+    category: 클라우드
+    docs: https://api.ncloud-docs.com/docs/common-ncpapi
+    auth: none
+    classifier: http
+    url: https://ncloud.apigw.ntruss.com/
+    expect_status: 404
+    contains: ['"errorCode":"300"']
+
+  - id: ncp-object-storage
+    name: 네이버클라우드 Object Storage (한국)
+    provider: 네이버클라우드
+    category: 클라우드
+    docs: https://api.ncloud-docs.com/docs/storage-objectstorage
+    auth: none
+    classifier: http
+    url: https://kr.object.ncloudstorage.com/
+    expect_status: 403
+    contains: ['AccessForbidden']
+
+  - id: slack-api
+    name: Slack Web API
+    provider: Slack
+    category: 협업·메신저
+    docs: https://api.slack.com/methods/api.test
+    auth: none
+    classifier: http
+    url: https://slack.com/api/api.test
+    contains: ['"ok":true']
+
+  - id: discord-api
+    name: Discord API (게이트웨이 주소)
+    provider: Discord
+    category: 협업·메신저
+    docs: https://discord.com/developers/docs/topics/gateway#get-gateway
+    auth: none
+    classifier: http
+    url: https://discord.com/api/v10/gateway
+    json_expect:
+      - {path: url, equals: 'wss://gateway.discord.gg'}
+
   # Developer map APIs. Credentials are sent only in headers.
   # Fixed canaries: Seoul City Hall and Seoul Station; bounds tolerate map updates.
   - id: kakao-address

@@ -29,7 +29,7 @@ func classifyTarget(o Observation, t *config.Target) Verdict {
 		return classifyManifest(o, t.SlowAfter.Duration)
 	}
 	if t.Classifier == "http" {
-		return classifyHTTP(o, t.SlowAfter.Duration)
+		return classifyExpected(o, t)
 	}
 	if t.Classifier == "" || t.Classifier == "public" || o.Err != nil || o.Timeout {
 		return Classify(o, t.SlowAfter.Duration)
