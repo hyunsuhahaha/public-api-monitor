@@ -117,6 +117,37 @@ test('with ORIGIN_URL the site comes from the host at its root, with the gateway
   assert.equal(pages.calls[0][1].headers.get('x-pamon-gateway'),null);
 });
 
+// D1's prepare/bind/all/first/run over node:sqlite, with the real schema.
+async function sqliteD1() {
+  const { DatabaseSync } = await import('node:sqlite');
+  const { readFileSync } = await import('node:fs');
+  const db = new DatabaseSync(':memory:');
+  db.exec(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
+  return {db, prepare(sql) { return {bind(...a) { const st=db.prepare(sql); return {
+    async all() { return {results: st.all(...a)} }, async first() { return st.get(...a) ?? null }, async run() { st.run(...a); return {} } } } } }};
+}
+
+test('"나도 안 돼요" reports: counted once per person per service, no address stored',async()=>{
+  const h=harness(), d1=await sqliteD1();
+  h.env.DB=d1; h.env.REPORT_SALT='salt';
+  const post=(target,ip='203.0.113.9')=>h.get('/__report',{method:'POST',body:JSON.stringify({target}),headers:{'cf-connecting-ip':ip,'user-agent':'Mozilla/5.0'}});
+  assert.equal((await post('../etc')).status,400);
+  let r=await (await post('hometax')).json();
+  assert.equal(r.counted,true); assert.equal(r.counts.hometax.lastHour,1);
+  r=await (await post('hometax')).json();
+  assert.equal(r.counted,false); assert.equal(r.counts.hometax.lastHour,1);
+  r=await (await post('hometax','198.51.100.4')).json();
+  assert.equal(r.counts.hometax.lastHour,2);
+  const all=await (await h.get('/__report/summary')).json();
+  assert.equal(all.counts.hometax.last24h,2);
+  const rows=d1.db.prepare('SELECT * FROM reports').all();
+  assert.ok(!JSON.stringify(rows).includes('203.0.113.9') && !JSON.stringify(rows).includes('Mozilla'));
+  for (let i=0;i<20;i++) await post('svc-'+i,'192.0.2.1');
+  assert.equal((await post('one-more','192.0.2.1')).status,429);
+  assert.equal(h.calls.length,0);
+  assert.equal(d1.db.prepare('SELECT COUNT(*) n FROM access_logs').get().n,0);
+});
+
 test('log storage failure does not break public reads; scheduled retention removes old records',async()=>{
   const h=harness();
   h.env.DB.prepare=()=>({bind(){return {run:async()=>{throw Error('db offline')}}}});

@@ -142,11 +142,56 @@ async function admin(request, env) {
   } catch { return json({error:'log storage unavailable'},503); }
 }
 
+// "나도 안 돼요": a reader says a service fails for them. One per person per service per
+// 30 minutes, 20 an hour in all; nothing that identifies them is stored.
+const REPORT_ID = /^[a-z0-9][a-z0-9-]{0,47}$/;
+async function voter(request, env) {
+  const day = new Date().toISOString().slice(0,10);
+  const who = (request.headers.get('cf-connecting-ip')||'') + '|' + (request.headers.get('user-agent')||'');
+  const digest = await sha(`${env.REPORT_SALT||'pamon'}|${day}|${who}`);
+  return [...digest.slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function reportCounts(env, target) {
+  const hour = new Date(Date.now()-3600000).toISOString(), day = new Date(Date.now()-86400000).toISOString();
+  const q = target
+    ? env.DB.prepare(`SELECT target, SUM(at >= ?) AS lastHour, COUNT(*) AS last24h FROM reports WHERE target = ? AND at >= ? GROUP BY target`).bind(hour, target, day)
+    : env.DB.prepare(`SELECT target, SUM(at >= ?) AS lastHour, COUNT(*) AS last24h FROM reports WHERE at >= ? GROUP BY target`).bind(hour, day);
+  const rows = (await q.all()).results || [];
+  return Object.fromEntries(rows.map(r=>[r.target, {lastHour:Number(r.lastHour), last24h:Number(r.last24h)}]));
+}
+
+async function reports(request, env) {
+  const u = new URL(request.url);
+  if (u.pathname === '/__report/summary' && request.method === 'GET') {
+    const target = u.searchParams.get('target') || '';
+    if (target && !REPORT_ID.test(target)) return json({error:'bad target'},400);
+    return json({counts: await reportCounts(env, target)}, 200, {'cache-control':'no-store'});
+  }
+  if (u.pathname === '/__report' && request.method === 'POST') {
+    let target = '';
+    try { target = String((await request.json()).target || ''); } catch {}
+    if (!REPORT_ID.test(target)) return json({error:'bad target'},400);
+    const v = await voter(request, env), now = new Date();
+    const recent = await env.DB.prepare(`SELECT SUM(target = ? AND at >= ?) AS same, SUM(at >= ?) AS hour FROM reports WHERE voter = ?`)
+      .bind(target, new Date(now-1800000).toISOString(), new Date(now-3600000).toISOString(), v).first();
+    if (Number(recent?.same) > 0) return json({ok:true, counted:false, counts: await reportCounts(env, target)});
+    if (Number(recent?.hour) >= 20) return json({error:'too many reports'},429);
+    await env.DB.prepare(`INSERT INTO reports (target, at, voter, country) VALUES (?, ?, ?, ?)`)
+      .bind(target, now.toISOString(), v, request.cf?.country || '').run();
+    return json({ok:true, counted:true, counts: await reportCounts(env, target)});
+  }
+  return json({error:'not found'},404);
+}
+
 export function createWorker(originFetch=fetch) {
   return {
     async fetch(request,env,ctx) {
       const start=Date.now(), u=new URL(request.url);
       if (u.pathname==='/__access' || u.pathname.startsWith('/__access/')) return admin(request,env);
+      if (u.pathname==='/__report' || u.pathname.startsWith('/__report/')) {
+        try { return await reports(request,env); } catch { return json({error:'report storage unavailable'},503); }
+      }
       // Browsers ask for this on every site; answering here keeps it out of the counts.
       if (u.pathname==='/favicon.ico') return new Response(null,{status:204,headers:{'cache-control':'public, max-age=86400'}});
       let response;
@@ -192,7 +237,9 @@ export function createWorker(originFetch=fetch) {
       return response;
     },
     async scheduled(_event,env,ctx) {
-      ctx.waitUntil(env.DB.prepare('DELETE FROM access_logs WHERE at < ?').bind(new Date(Date.now()-30*86400000).toISOString()).run());
+      const cutoff=new Date(Date.now()-30*86400000).toISOString();
+      ctx.waitUntil(env.DB.prepare('DELETE FROM access_logs WHERE at < ?').bind(cutoff).run());
+      ctx.waitUntil(env.DB.prepare('DELETE FROM reports WHERE at < ?').bind(cutoff).run());
     }
   };
 }

@@ -14,3 +14,14 @@ CREATE TABLE IF NOT EXISTS access_logs (
 );
 CREATE INDEX IF NOT EXISTS access_logs_at ON access_logs(at);
 CREATE INDEX IF NOT EXISTS access_logs_kind_id ON access_logs(kind, id);
+-- "나도 안 돼요" reports. voter is a hash of the address and browser with a salt that
+-- changes daily: it can tell repeats apart for a day, not who anyone is.
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target TEXT NOT NULL,
+  at TEXT NOT NULL,
+  voter TEXT NOT NULL,
+  country TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reports_target_at ON reports(target, at);
+CREATE INDEX IF NOT EXISTS reports_voter_at ON reports(voter, at);

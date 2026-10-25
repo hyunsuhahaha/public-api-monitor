@@ -20,6 +20,7 @@ import (
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/monitor"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/notify"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/official"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/quorum"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
@@ -62,6 +63,7 @@ func runCycle(log *slog.Logger, cfg *config.Config, prober *probe.Prober, dbPath
 		return nil
 	}
 	srv := &web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck, SlowLimit: prober.Baseline.Limit,
+		Official:  official.Fetch(ctx, prober.Client),
 		PublicURL: os.Getenv("PAMON_PUBLIC_URL"), Version: version, StartedAt: started}
 	start := time.Now()
 	spent, err := exportSite(srv.Handler(), cfg, exportDir)
@@ -88,6 +90,8 @@ func exportKind(u string) string {
 		return "incident"
 	case strings.HasPrefix(p, "/ai/targets/"):
 		return "ai_target"
+	case strings.HasPrefix(p, "/s/"):
+		return "answer"
 	case strings.HasPrefix(p, "/report/"):
 		return "report"
 	}
@@ -259,7 +263,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 			return spent, err
 		}
 	}
-	for _, f := range []string{"app.css", "app.js", "ops.js", "status.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
+	for _, f := range []string{"app.css", "app.js", "ops.js", "status.js", "report.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
 		b, err := get("/" + f)
 		if err != nil {
 			return spent, err
@@ -271,7 +275,17 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 			return spent, err
 		}
 	}
-	indexed := []string{"index.html", "status.html", "ai/index.html", "llms.txt"}
+	indexed := []string{"index.html", "status.html", "ai/index.html", "llms.txt", "s/index.html"}
+	// answer pages, the ones people land on from "is X down?"
+	if err := page("/s/", "s/index.html"); err != nil {
+		return spent, err
+	}
+	for _, t := range cfg.Targets {
+		if err := page("/s/"+t.ID, "s/"+t.ID+".html"); err != nil {
+			return spent, err
+		}
+		indexed = append(indexed, "s/"+t.ID+".html")
+	}
 	month := time.Now().In(config.KST)
 	for i, m := range []string{month.Format("2006-01"), month.AddDate(0, -1, 0).Format("2006-01")} {
 		b, err := get("/report/" + m)

@@ -21,7 +21,9 @@ AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) �
 
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![watchdog](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml)
 
-공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI·Docker Hub·GitHub 8개 기능**이 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다. 지도 API는 별도 인증키가 필요하며, 키가 없으면 '확인 불가'로 표시하고 가용률에서 제외합니다. 개발·배포 의존성 8개 검사는 키 없이 동작합니다.
+공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI·Docker Hub·GitHub 8개 기능**, 그리고 사람들이 막히는 **로그인·정부·은행·결제·클라우드·메신저 16개**(카카오·네이버 로그인, 홈택스, 정부24, KB·신한·토스뱅크, 카카오페이, AWS·네이버클라우드 서울, Slack, Discord)가 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다. 인증이 필요한 API는 자격 없이 불러 **그 서비스 자신의 오류 응답**(예: 401과 자체 오류 형식)이 오는지로 확인하고, 페이지는 정상 화면의 문구가 있는지까지 봅니다(점검·차단 페이지를 정상으로 착각하지 않음). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
+
+**서비스별 답 페이지** [`/s/`](https://pamon.hyunsuhahaha.workers.dev/s/): "OO 지금 되나요?"에 한 줄 결론, 나만 그런지에 대한 안내, 마지막 요청이 DNS·연결·TLS·서버 대기 중 어디서 시간을 썼는지, 제공사 공식 상태 발표와의 비교(GitHub·Slack·Discord·npm·PyPI·Docker), 최근 장애, "나도 안 돼요" 제보 수를 보여줍니다. 서버에서 그린 HTML이라 검색엔진과 AI가 그대로 읽습니다.
 
 ![dashboard](docs/img/dashboard.png)
 

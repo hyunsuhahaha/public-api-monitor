@@ -21,6 +21,7 @@ import (
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/official"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/push"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
@@ -46,6 +47,8 @@ type Server struct {
 	StartedAt time.Time
 	// SlowLimit, if set, reports the learned slow limit of a target (probe.Baseline.Limit).
 	SlowLimit func(id string, ceil time.Duration) (limit, usual time.Duration, ok bool)
+	// Official holds providers' own status announcements by provider name (official.Fetch).
+	Official map[string]official.Status
 
 	cache      respCache
 	mu         sync.Mutex
@@ -74,6 +77,9 @@ func (s *Server) Handler() http.Handler {
 		r.SetPathValue("id", strings.TrimSuffix(id, ".json"))
 		s.diagnostics(w, r)
 	})
+	// answer pages: "is X down?" in plain words (answer.go)
+	mux.HandleFunc("GET /s/{$}", s.answer)
+	mux.HandleFunc("GET /s/{id}", s.answer)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
 	mux.HandleFunc("GET /api/v1/overview", s.cache.wrap(s.overview))
