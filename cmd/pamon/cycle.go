@@ -119,6 +119,15 @@ func recordHistory(ctx context.Context, log *slog.Logger, st *store.Store, hist 
 	log.Info("official incidents read", "providers", n)
 }
 
+// embedFiles: each target's badges and widget.
+func embedFiles(cfg *config.Config) []string {
+	var out []string
+	for _, t := range cfg.Targets {
+		out = append(out, "badge/"+t.ID+".svg", "badge/"+t.ID+"-status.svg", "w/"+t.ID+".html")
+	}
+	return out
+}
+
 // exportKind groups an exported URL for the timing log: the path, plus the range for series.
 func exportKind(u string) string {
 	p, q, _ := strings.Cut(u, "?")
@@ -136,6 +145,8 @@ func exportKind(u string) string {
 		return "ai_target"
 	case strings.HasPrefix(p, "/feed/"):
 		return "feed"
+	case strings.HasPrefix(p, "/badge/"), strings.HasPrefix(p, "/w/"):
+		return "embed"
 	case strings.HasPrefix(p, "/s/"):
 		return "answer"
 	case strings.HasPrefix(p, "/report/"):
@@ -372,6 +383,16 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 	}
 	if b, err := get("/feed.xml"); err == nil {
 		put("feed.xml", b)
+	}
+	// badges and the iframe card, for other people's READMEs and blogs
+	for _, f := range append([]string{"badge/summary.svg"}, embedFiles(cfg)...) {
+		b, err := get("/" + f)
+		if err != nil {
+			return spent, err
+		}
+		if err := put(f, b); err != nil {
+			return spent, err
+		}
 	}
 	for _, t := range cfg.Targets {
 		b, err := get("/feed/" + t.ID + ".xml")

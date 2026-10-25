@@ -176,7 +176,8 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 			t.Errorf("sitemap lacks %s", page)
 		}
 	}
-	for _, f := range []string{"lead-time.html", "maintenance.html", "maintenance.json", "maintenance.ics", "data/api/v1/lead-time.json", "retry-advice.html", "data/api/v1/retry-advice.json", "feed.xml", "feed/" + maps[0].ID + ".xml"} {
+	for _, f := range []string{"lead-time.html", "maintenance.html", "maintenance.json", "maintenance.ics", "data/api/v1/lead-time.json", "retry-advice.html", "data/api/v1/retry-advice.json", "feed.xml", "feed/" + maps[0].ID + ".xml",
+		"badge/summary.svg", "badge/" + maps[0].ID + ".svg", "badge/" + maps[0].ID + "-status.svg", "w/" + maps[0].ID + ".html"} {
 		if _, err := os.Stat(filepath.Join(site, f)); err != nil {
 			t.Errorf("export lacks %s", f)
 		}

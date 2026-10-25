@@ -19,7 +19,7 @@ AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) �
 
 ### 👉 [실시간 상태판 열기](https://pamon.hyunsuhahaha.workers.dev/)
 
-[![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![watchdog](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml)
+[![pamon](https://pamon.hyunsuhahaha.workers.dev/badge/summary.svg)](https://pamon.hyunsuhahaha.workers.dev/s/) [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![watchdog](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml)
 
 공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI·Docker Hub·GitHub 8개 기능**, 그리고 사람과 개발자가 막히는 **로그인·정부·은행·결제·AI·클라우드·메신저·SaaS 등 71개**까지 **160개**가 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다. 인증이 필요한 API는 자격 없이 불러 **그 서비스 자신의 거절 응답**(예: 401과 자체 오류 형식)이 오는지로 확인하고, 페이지는 정상 화면의 문구가 있는지까지 봅니다(점검·차단 페이지를 정상으로 착각하지 않음). 분야 목록과 방법은 [분야별 감시 대상과 키 없는 확인](#분야별-감시-대상과-키-없는-확인)에 있습니다. 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
 
@@ -373,7 +373,8 @@ Go에서 호출 전에 pamon을 확인하는 서킷 브레이커: [pkg/pamonclie
 | `GET /retry-advice` · `/api/v1/retry-advice` | `retryAdvice`가 맞았는지: '기다리세요' 뒤 다음 확인도 실패한 비율, '재시도' 뒤 정상이었던 비율 (30일, 서비스별) |
 | `GET /lead-time` · `/api/v1/lead-time` | 공식 상태 페이지 발표보다 pamon이 몇 분 먼저(또는 늦게) 장애를 확정했는지, 제공자별 중앙값·평균과 표본 수 (최근 90일) |
 | `GET /maintenance.json` · `/maintenance.ics` · `/maintenance.html` | 공지된 점검 일정: 서킷 브레이커용 JSON, 캘린더 구독(iCal), 사람용 페이지 ([docs/maintenance.md](docs/maintenance.md)) |
-| `GET /badge/{id}.svg` | 30일 가용률 배지 |
+| `GET /badge/{id}.svg` · `/badge/{id}-status.svg` · `/badge/summary.svg` | README·블로그용 배지: 30일 가용률, 지금 상태(정상·느림·데이터 이상·장애·점검 중·확인 불가, `?label=`로 이름 변경), 전체 요약. 관측이 10분 넘게 묵으면 '확인 불가' |
+| `GET /w/{id}.html` | iframe으로 넣는 상태 카드 (360×170, 밝은·어두운 테마). 각 답변 페이지의 "내 README·블로그에 붙이기"에 복사할 코드가 있음 |
 | `GET /metrics` | Prometheus 지표 (`pamon_checks_total`, `pamon_check_latency_seconds`, `pamon_target_up`, `pamon_check_phase_seconds`, `pamon_check_timeouts_total`, `pamon_build_info`, …) |
 | `POST /api/v1/ingest` | 원격 감시기 결과 수신 (`Authorization: Bearer $PAMON_INGEST_TOKEN`) |
 | `GET /api/v1/incidents/{id}` | 장애 하나: 그 구간의 원시 확인(요청 구간 포함), 판정, 운영자 메모 |

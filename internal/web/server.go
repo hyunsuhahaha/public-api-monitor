@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"runtime"
@@ -108,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /maintenance.html", s.maintPage)
 	mux.HandleFunc("GET /maintenance", s.maintPage)
 	mux.HandleFunc("GET /badge/{id}", s.badge)
+	mux.HandleFunc("GET /w/{id}", s.widget)
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"version": s.Version, "go": runtime.Version(), "startedAt": s.StartedAt,
 			"uptimeSec": int64(time.Since(s.StartedAt).Seconds())})
@@ -374,51 +374,4 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(out)
-}
-
-// badge: a shields-style SVG with the target's 30-day uptime, coloured by current status.
-func (s *Server) badge(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimSuffix(r.PathValue("id"), ".svg")
-	var found bool
-	for _, t := range s.Cfg.Targets {
-		if t.ID == id {
-			found = true
-		}
-	}
-	if !found {
-		http.NotFound(w, r)
-		return
-	}
-	var targets []TargetView
-	if v, _, err := s.view(r.Context()); err == nil {
-		targets = v.Targets
-	}
-	value, colour := "unknown", "#9f9f9f"
-	for _, t := range targets {
-		if t.ID != id {
-			continue
-		}
-		if t.Uptime30d >= 0 {
-			value = fmt.Sprintf("%.2f%%", t.Uptime30d*100)
-		}
-		switch t.Status.Severity() {
-		case 0:
-			if t.Status == probe.StatusOK {
-				colour = "#3fb950"
-			}
-		case 1:
-			colour = "#d29922"
-		case 2:
-			colour = "#f85149"
-		}
-	}
-	label := "uptime 30d"
-	lw, vw := 7*len(label)+10, 7*len(value)+10
-	w.Header().Set("Content-Type", "image/svg+xml")
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	fmt.Fprintf(w, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="20" role="img" aria-label="%s: %s">`+
-		`<rect width="%d" height="20" fill="#555"/><rect x="%d" width="%d" height="20" fill="%s"/>`+
-		`<g fill="#fff" font-family="Verdana,DejaVu Sans,sans-serif" font-size="11" text-anchor="middle">`+
-		`<text x="%d" y="14">%s</text><text x="%d" y="14">%s</text></g></svg>`,
-		lw+vw, label, value, lw, lw, vw, colour, lw/2, label, lw+vw/2, value)
 }

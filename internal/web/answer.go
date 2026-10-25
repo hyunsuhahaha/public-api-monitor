@@ -347,23 +347,7 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 			p.PhaseNote = "이전 연결을 다시 써서 DNS·TCP·TLS 단계가 없었습니다."
 		}
 	}
-	days := p.T.Days
-	if len(days) > 30 {
-		days = days[len(days)-30:]
-	}
-	for _, d := range days {
-		c := dayCell{Date: d.Date, Tone: "none", Title: d.Date + " 기록 없음"}
-		if d.Counted > 0 {
-			up := float64(d.Healthy) / float64(d.Counted)
-			c.Tone, c.Title = "ok", fmt.Sprintf("%s 가용률 %.2f%%", d.Date, up*100)
-			if d.Outage > 0 {
-				c.Tone = "bad"
-			} else if d.Degraded > 0 {
-				c.Tone = "warn"
-			}
-		}
-		p.Days = append(p.Days, c)
-	}
+	p.Days = dayCells(p.T.Days)
 	list, _ := s.Store.Incidents(ctx, id, now.Add(-30*24*time.Hour), 10)
 	for _, in := range list {
 		p.Incidents = append(p.Incidents, incidentRow{Start: kst(in.Started), Duration: incidentLength(in, now),
