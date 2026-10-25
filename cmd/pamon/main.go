@@ -80,6 +80,7 @@ func main() {
 		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
 		cycle    = flag.Bool("cycle", false, "check every target once into -db (incidents included) and exit; for a cron job instead of a server")
 		export   = flag.String("export", "", "with -cycle: write the dashboard and status page with their data as static files into this directory")
+		snapshot = flag.String("snapshot", "", "check -db for corruption, write a consistent compacted copy to this file and exit (for backups)")
 	)
 	flag.Parse()
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})).With("location", *location)
@@ -99,6 +100,13 @@ func main() {
 	prober := probe.New(*location)
 	if *month != "" {
 		os.Exit(printReport(cfg, *dbPath, *month))
+	}
+	if *snapshot != "" {
+		if err := writeSnapshot(*dbPath, *snapshot); err != nil {
+			log.Error("snapshot", "err", err)
+			os.Exit(1)
+		}
+		return
 	}
 	if *once {
 		os.Exit(runOnce(cfg, prober, *paths))
@@ -263,6 +271,21 @@ func shutdown(srv *http.Server) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(ctx)
+}
+
+// writeSnapshot copies dbPath to out through Store.Snapshot; a missing dbPath is an
+// error rather than a new empty database.
+func writeSnapshot(dbPath, out string) error {
+	if _, err := os.Stat(dbPath); err != nil {
+		return err
+	}
+	os.Remove(out) // VACUUM INTO refuses an existing file
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	return st.Snapshot(context.Background(), out)
 }
 
 // printReport writes the month's report as Markdown (for a blog post or GeekNews).

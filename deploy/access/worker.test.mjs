@@ -102,6 +102,34 @@ test('signing in sets an HMAC session cookie that authorizes stats and keeps the
   assert.match((await h.get('/__access/logout',{method:'POST'})).headers.get('set-cookie'),/Max-Age=0/);
 });
 
+test('database snapshots go to rotating KV slots behind their own token and are never logged',async()=>{
+  const h=harness(), kv=new Map();
+  h.env.BACKUP_TOKEN='backup-secret';
+  h.env.BACKUP={
+    async put(k,v,o){kv.set(k,{v,m:o.metadata})},
+    async getWithMetadata(k){const e=kv.get(k);return e?{value:e.v,metadata:e.m}:{value:null,metadata:null}},
+    async list({prefix}){return {keys:[...kv].filter(([k])=>k.startsWith(prefix)).map(([name,e])=>({name,metadata:e.m}))}},
+  };
+  const auth={authorization:'Bearer backup-secret'};
+  assert.equal((await h.get('/__backup/slot/1',{method:'PUT',body:'x'})).status,401);
+  assert.equal((await h.get('/__backup/slot/1',{method:'PUT',body:'x',headers:{authorization:'Bearer private-admin'}})).status,401);
+  assert.equal((await h.get('/__backup/slot/7',{method:'PUT',body:'x',headers:auth})).status,404);
+  assert.equal((await h.get('/__backup/slot/1',{method:'PUT',body:'',headers:auth})).status,400);
+  assert.equal((await h.get('/__backup/slot/1',{method:'PUT',body:'older',headers:auth})).status,200);
+  await new Promise(r=>setTimeout(r,5));
+  assert.equal((await h.get('/__backup/slot/2',{method:'PUT',body:'newer',headers:{...auth,'x-pamon-run':'42'}})).status,200);
+  const {slots}=await (await h.get('/__backup/list',{headers:auth})).json();
+  assert.deepEqual(slots.map(s=>s.slot),['2','1']);
+  assert.equal(slots[0].run,'42');
+  const got=await h.get('/__backup/slot/2',{headers:auth});
+  assert.equal(await got.text(),'newer');
+  assert.equal((await h.get('/__backup/slot/0',{headers:auth})).status,404);
+  assert.equal(h.writes.length,0);
+  assert.equal(h.calls.length,0);
+  h.env.BACKUP_TOKEN='';
+  assert.equal((await h.get('/__backup/list',{headers:auth})).status,401);
+});
+
 test('log storage failure does not break public reads; scheduled retention removes old records',async()=>{
   const h=harness();
   h.env.DB.prepare=()=>({bind(){return {run:async()=>{throw Error('db offline')}}}});

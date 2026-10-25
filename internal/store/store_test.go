@@ -41,6 +41,33 @@ func TestOpenIncidentRoundTrip(t *testing.T) {
 	}
 }
 
+// A snapshot taken while the write still sits in the WAL must carry it: the backup
+// used to gzip pamon.db alone.
+func TestSnapshotIncludesWAL(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "live.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	if err := st.SaveCheck(ctx, probe.Result{TargetID: "a", Location: "l", At: time.Now(), Status: probe.StatusOK, LatencyMS: 5, HTTPStatus: 200}); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "copy.db")
+	if err := st.Snapshot(ctx, out); err != nil {
+		t.Fatal(err)
+	}
+	cp, err := Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cp.Close()
+	if rs, err := cp.RecentChecks(ctx, "a", 5); err != nil || len(rs) != 1 {
+		t.Fatalf("snapshot lost the check: %+v %v", rs, err)
+	}
+}
+
 func TestCheckPhasesRoundTrip(t *testing.T) {
 	st, err := Open(filepath.Join(t.TempDir(), "p.db"))
 	if err != nil {

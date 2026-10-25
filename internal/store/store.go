@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -169,6 +170,20 @@ func Open(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// Snapshot writes a consistent, compacted copy of the database to path (WAL content
+// included) after checking it is not corrupt, so a backup is never a half-written file.
+func (s *Store) Snapshot(ctx context.Context, path string) error {
+	var ok string
+	if err := s.db.QueryRowContext(ctx, `PRAGMA quick_check`).Scan(&ok); err != nil {
+		return err
+	}
+	if ok != "ok" {
+		return fmt.Errorf("database check: %s", ok)
+	}
+	_, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path)
+	return err
+}
 
 // backfillLatest fills the latest_* tables once, for a database from before them.
 func (s *Store) backfillLatest(ctx context.Context) error {
