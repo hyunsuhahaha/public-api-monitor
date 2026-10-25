@@ -1,6 +1,6 @@
 name: watchdog
-# Independent of monitor.yml's next-beat chain and its database/cache/build.
-# GitHub-wide scheduling failures still require a monitor outside GitHub.
+# Watches the GCP host from outside: a different company, so a host that stops
+# entirely is still noticed. Reads the public address through the gateway.
 on:
   schedule:
     - cron: "2-59/5 * * * *"
@@ -14,4 +14,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: monitor snapshot must be no more than 10 minutes old
-        run: python3 deploy/watchdog.py https://hyunsuhahaha.github.io/public-api-monitor/data/api/v1/overview.json
+        run: python3 deploy/watchdog.py https://pamon.hyunsuhahaha.workers.dev/data/api/v1/overview.json

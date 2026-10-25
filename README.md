@@ -4,7 +4,7 @@
 
 AI에게 장애 진단을 맡길 때: **https://pamon.hyunsuhahaha.workers.dev/llms.txt** 를 읽고 오류 시각·호스트와 비교하라고 하세요.
 
-접속 기록: 아래 주소들은 [로그 입구](deploy/access/README.md)(Cloudflare Worker)를 거쳐 사람·AI의 HTML/JSON 요청을 D1에 남기고 비공개 관리자 화면에서 조회합니다. User-Agent 기준 추정이며, github.io로 직접 온 요청은 포함하지 않습니다.
+접속 기록: 아래 주소들은 [로그 입구](deploy/access/README.md)(Cloudflare Worker)를 거쳐 사람·AI의 HTML/JSON 요청을 D1에 남기고 비공개 관리자 화면에서 조회합니다. User-Agent 기준 추정입니다.
 
 ## AI 장애 진단에 사용하기
 
@@ -19,7 +19,7 @@ AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) �
 
 ### 👉 [실시간 상태판 열기](https://pamon.hyunsuhahaha.workers.dev/)
 
-[![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)
+[![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![watchdog](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml)
 
 공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI·Docker Hub·GitHub 8개 기능**이 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다. 지도 API는 별도 인증키가 필요하며, 키가 없으면 '확인 불가'로 표시하고 가용률에서 제외합니다. 개발·배포 의존성 8개 검사는 키 없이 동작합니다.
 
@@ -54,7 +54,7 @@ AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) �
 | **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
 | **관측성** | Prometheus 지표, OpenTelemetry 트레이스(확인 1건 = 트레이스 1개: 대기 → HTTP 호출 → 판정, 로그에 trace_id), 구조화 로그 |
-| **인프라** | Go 단일 바이너리, SQLite, Prometheus·Grafana·Jaeger, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions |
+| **인프라** | Go 단일 바이너리, SQLite + Litestream(GCS), GCP e2-micro, Cloudflare Workers·D1, Secret Manager, Prometheus·Grafana·Jaeger, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions(CI·외부 감시) |
 | **운영 중 잡은 것** | 에어코리아 API 타임아웃은 우리 네트워크가 아니라 기관 서버 쪽: 대부분은 일부 요청만 걸려 재시도하면 바로 되고, 가끔 기관 전체가 30~57초씩 느려짐. 출근 시간대 버스 API 지연, 내 모니터의 오탐 3종 (아래) |
 
 ## 실데이터가 알려준 것, 그리고 고친 것
@@ -189,7 +189,7 @@ Go 프로그램은 `.env`를 자동으로 읽지 않습니다. 직접 실행할 
 
 1. 카카오 Developers 앱에서 카카오맵을 활성화하고 REST API 키를 발급합니다.
 2. NCP Maps 앱에서 **Geocoding과 Directions 5**를 선택하고 Client ID/Secret을 발급합니다. API를 선택하지 않아도 429가 날 수 있습니다.
-3. `.env` 또는 실행 환경에 `KAKAO_REST_API_KEY`, `NAVER_MAPS_CLIENT_ID`, `NAVER_MAPS_CLIENT_SECRET`을 등록합니다. GitHub Pages 운영은 같은 이름의 Actions Secrets를 등록합니다. Ansible 환경은 `vault.yml.example`의 지도 키 항목을 사용합니다.
+3. `.env` 또는 실행 환경에 `KAKAO_REST_API_KEY`, `NAVER_MAPS_CLIENT_ID`, `NAVER_MAPS_CLIENT_SECRET`을 등록합니다. 운영 서버는 같은 이름을 Secret Manager `pamon-env`에 둡니다. Ansible 환경은 `vault.yml.example`의 지도 키 항목을 사용합니다.
 4. `pamon -check`로 설정을 확인하고 `pamon -dump kakao-address`, `pamon -dump naver-geocode`, `pamon -dump naver-directions`로 실제 결과를 검증합니다. `-dump`도 인증 헤더를 적용하고 키를 가립니다.
 
 키 누락·앱 권한·쿼터·금액 한도·잘못된 요청은 `client`(가용률 제외), 공급자 처리 오류는 `error`, 타임아웃·5xx는 `down`입니다. HTTP 200이어도 빈 결과나 잘못된 좌표·경로는 `stale`(데이터 이상)로 표시합니다. 카카오 `-1/-7/-603`은 HTTP 400이어도 공급자 오류이고 `-10/-11`은 우리 쿼터 문제입니다. 코드에는 `KAKAO:`/`NAVER:` 접두사를 붙여 공공 API 코드와 충돌하지 않게 합니다.
@@ -249,14 +249,25 @@ Docker는 이미지 레이어를 내려받거나 컨테이너를 실행하지 �
 
 공식 상태 정보는 직접 관측과 별도로 확인합니다. [Docker](https://www.dockerstatus.com/), [GitHub](https://www.githubstatus.com/), [운영 런북](docs/runbooks/dependencies.md).
 
-## 지금의 운영: GitHub Actions + GitHub Pages (서버 없음)
+## 지금의 운영: GCP 서버 한 대 + Cloudflare 입구
 
-[`.github/workflows/monitor.yml`](.github/workflows/monitor.yml)이 5분마다 `pamon -cycle -export site`를 실행합니다.
+```
+방문자·AI ─▶ Cloudflare Worker (pamon.hyunsuhahaha.workers.dev)
+               │  요청마다 D1에 접속 기록, /__access 통계 대시보드
+               ▼  비밀 헤더를 붙여서만
+             GCP e2-micro (us-west1) ── Caddy(HTTPS) ── 정적 사이트
+               │  pamon-cycle.timer: 5분마다 pamon -cycle -export
+               ▼
+             SQLite (VM 디스크) ── Litestream ──▶ Cloud Storage (1초 안에 복제, 7일 보관)
+```
 
-- **한 바퀴 실행:** 모든 대상을 한 번씩 검사해 SQLite에 쌓고 끝납니다. 장애 판정은 서버와 같습니다. 연속 실패 횟수는 메모리에 있던 값이라, 시작할 때 최근 1시간 판정을 다시 넣어 실행이 바뀌어도 "연속 2번 실패"가 이어집니다.
-- **DB 보관:** 실행마다 `pamon -snapshot`이 손상 검사(`quick_check`) 뒤 WAL까지 합친 일관된 사본(`VACUUM INTO`)을 만들고, gpg로 암호화해 Cloudflare KV의 슬롯 3개 중 하나에 돌려 씁니다([deploy/backup/db.sh](deploy/backup/db.sh)). 다음 실행은 복호화와 손상 검사를 통과하는 가장 최신 슬롯에서 시작하므로, 무엇이 날아가도 잃는 건 최대 한 실행(5분)입니다. 업로드는 슬롯 하나만 바꾸니 실패하거나 깨진 쓰기에도 나머지 둘이 남습니다. 백업 저장소에 닿지 못하면 더 오래된 사본으로 이어 쓰지 않고 그 실행을 멈춥니다(이력을 되감지 않기 위해). 하루 한 번은 날짜가 붙은 사본을 `db-seed` 릴리스에 올리고 7개를 보관합니다(새 것을 올린 뒤에 옛 것을 지워 빈틈이 없음). 동시 실행은 `concurrency`로 줄 세워 쓰는 쪽이 늘 하나뿐입니다.
-- **정적 내보내기:** 상태판과 공개 페이지, 그 페이지들이 읽는 JSON(범위별 개요, API별 시계열, 장애 상세)을 파일로 떠서 Pages에 올립니다. 페이지 안의 작은 fetch 심이 `/api/v1/...` 요청을 그 파일로 돌립니다. 화면의 "N분 전"은 데이터가 만들어진 시각(`generatedAt`) 기준이고, 10분(검사 주기 두 번)을 넘기면 경고색으로 바뀝니다.
-- **알려진 한계:** GitHub이 붐비면 예약 실행이 몇 분씩 밀립니다. 검사는 미국 러너에서 나가므로 응답 시간에 태평양 왕복이 더해집니다(느림 판정 기준은 위치별로 따로 학습). 공지 노트·알림 끄기처럼 서버에 쓰는 기능은 정적 페이지에서는 동작하지 않습니다.
+- **서버:** [deploy/gcp/host](deploy/gcp/host)에 있는 것이 전부입니다. systemd 타이머가 5분마다 이미지(`ghcr.io/.../public-api-monitor:latest`)로 한 바퀴를 돌리고, 결과 사이트를 한 번에 바꿔 끼웁니다(`rsync`). 한 바퀴는 89개 검사 약 15초, 내보내기 약 5초입니다.
+- **DB:** VM 디스크에 계속 있고, Litestream이 바뀐 WAL을 1초 간격으로 Cloud Storage에 올립니다. 새 디스크는 시작할 때 복제본에서 자동 복원합니다(`restore` 컨테이너, DB가 이미 있으면 건드리지 않음). 복제본을 따로 복원해 손상 검사와 행 수까지 운영 DB와 같은 것을 확인했습니다.
+- **입구만 통과:** Caddy는 Worker가 붙이는 `X-Pamon-Gateway` 헤더가 없는 요청에 403을 줍니다. 그래서 모든 방문이 접속 기록에 남습니다. Worker는 `ORIGIN_URL`이 있으면 거기서, 없으면 GitHub Pages에서 읽습니다.
+- **설정과 비밀값:** 원본은 GCP Secret Manager 하나입니다(`pamon-env`, `caddy-env`, 백업 암호 `pamon-seed-key`). `setup.sh`가 시작할 때 읽어 root만 읽는 파일로 둡니다. VM의 서비스 계정은 자기 버킷 쓰기와 이 두 비밀 읽기만 할 수 있고, 키 파일은 없습니다. Worker 쪽 비밀(관리자 토큰, 게이트웨이 헤더)은 Worker Secret입니다.
+- **바깥 감시:** [watchdog.yml](.github/workflows/watchdog.yml)이 GitHub에서 5분마다 공개 주소의 `generatedAt`이 10분 안쪽인지 봅니다. 서버와 다른 회사라, 서버가 통째로 멈춰도 알 수 있습니다.
+- **알려진 한계:** 검사는 미국 서부에서 나가므로 응답 시간에 태평양 왕복이 더해집니다(느림 판정 기준은 위치별로 따로 학습). e2-micro는 지속 CPU가 작아서, 내보내기는 URL 종류별 소요 시간을 `export done` 로그로 남깁니다.
+- **이전 방식:** 2026-10-25까지는 GitHub Actions가 5분마다 돌고 DB를 실행 사이에 옮겨 담았습니다(캐시, 이후 KV). 실행이 끝날 때마다 파일을 어딘가로 옮겨야 하는 구조 자체가 문제라 서버로 옮겼습니다. 날짜가 붙은 옛 사본은 `db-seed` 릴리스에 남아 있습니다.
 
 ## 내 PC에서 계속 돌리기 (WSL)
 

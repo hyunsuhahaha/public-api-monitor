@@ -8,10 +8,7 @@
     "database_name": "pamon-access",
     "database_id": "478cc99a-c3d0-4985-8a78-46bdc65babbf"
   }],
-  // the monitor's encrypted database snapshots (see /__backup in worker.mjs)
-  "kv_namespaces": [{
-    "binding": "BACKUP",
-    "id": "e2c4cca7d7614f9ba87d1e68de5cdc47"
-  }],
+  // the site comes from the GCP host (deploy/gcp); GATEWAY_SECRET is a Worker secret
+  "vars": {"ORIGIN_URL": "https://34-82-180-182.sslip.io"},
   "triggers": {"crons": ["0 3 * * *"]}
 }

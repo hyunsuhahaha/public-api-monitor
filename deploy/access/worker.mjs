@@ -32,8 +32,9 @@ function resource(path) {
 async function record(request, env, response, start) {
   const url = new URL(request.url);
   const ua = (request.headers.get('user-agent') || '').slice(0,512);
-  // The owner's own browsing (signed-in admin cookie) and the deploy self-test are not traffic.
-  if (ua === 'pamon-selftest' || await hasSession(request, env.ACCESS_ADMIN_TOKEN)) return;
+  // The owner's own browsing (signed-in admin cookie), the deploy self-test and the
+  // freshness watchdog are not traffic.
+  if (ua === 'pamon-selftest' || ua === 'pamon-watchdog' || await hasSession(request, env.ACCESS_ADMIN_TOKEN)) return;
   const who = classify(ua);
   let referrer = '';
   try { referrer = new URL(request.headers.get('referer')).origin; } catch {}
@@ -141,46 +142,11 @@ async function admin(request, env) {
   } catch { return json({error:'log storage unavailable'},503); }
 }
 
-// The monitor's database lives here between runs: each run uploads a gpg-encrypted
-// snapshot into one of three rotating slots and the next run restores the newest one
-// that decrypts and checks clean. A failed upload never touches the other two slots.
-export const BACKUP_SLOTS = ['0','1','2'];
-const BACKUP_MAX = 24*1024*1024; // KV values stop at 25 MiB
-
-async function backup(request, env) {
-  const u=new URL(request.url);
-  if (!await tokenMatches((request.headers.get('authorization')||'').replace(/^Bearer /,''), env.BACKUP_TOKEN)) return json({error:'unauthorized'},401);
-  const slot=/^\/__backup\/slot\/(\d)$/.exec(u.pathname)?.[1];
-  if (u.pathname==='/__backup/list' && request.method==='GET') {
-    const list=await env.BACKUP.list({prefix:'slot:'});
-    const slots=list.keys.map(k=>({slot:k.name.slice(5), ...k.metadata})).sort((a,b)=>String(b.at).localeCompare(String(a.at)));
-    return json({slots});
-  }
-  if (!slot || !BACKUP_SLOTS.includes(slot)) return json({error:'not found'},404);
-  if (request.method==='GET') {
-    const {value, metadata}=await env.BACKUP.getWithMetadata('slot:'+slot,{type:'arrayBuffer'});
-    if (!value) return json({error:'empty slot'},404);
-    return new Response(value,{headers:{'content-type':'application/octet-stream','cache-control':'no-store','x-pamon-at':metadata?.at||''}});
-  }
-  if (request.method==='PUT') {
-    const body=await request.arrayBuffer();
-    if (!body.byteLength) return json({error:'empty body'},400);
-    if (body.byteLength>BACKUP_MAX) return json({error:'snapshot too large for KV',bytes:body.byteLength},413);
-    const metadata={at:new Date().toISOString(), bytes:body.byteLength, run:(request.headers.get('x-pamon-run')||'').slice(0,40)};
-    await env.BACKUP.put('slot:'+slot, body, {metadata});
-    return json({slot, ...metadata});
-  }
-  return json({error:'method not allowed'},405);
-}
-
 export function createWorker(originFetch=fetch) {
   return {
     async fetch(request,env,ctx) {
       const start=Date.now(), u=new URL(request.url);
       if (u.pathname==='/__access' || u.pathname.startsWith('/__access/')) return admin(request,env);
-      if (u.pathname.startsWith('/__backup/')) {
-        try { return await backup(request,env); } catch { return json({error:'backup storage unavailable'},503); }
-      }
       // Browsers ask for this on every site; answering here keeps it out of the counts.
       if (u.pathname==='/favicon.ico') return new Response(null,{status:204,headers:{'cache-control':'public, max-age=86400'}});
       let response;
@@ -190,7 +156,7 @@ export function createWorker(originFetch=fetch) {
       }
       else if (u.pathname==='/robots.txt') {
         // Crawlers and AI fetchers are welcome everywhere but the private log screen.
-        response=new Response(`User-agent: *\nDisallow: /__access\nDisallow: /__backup\nAllow: /\n\nSitemap: ${u.origin}/sitemap.xml\n`,
+        response=new Response(`User-agent: *\nDisallow: /__access\nAllow: /\n\nSitemap: ${u.origin}/sitemap.xml\n`,
           {headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});
       }
       // The gateway serves the site at its root; old /public-api-monitor/ links move there.
