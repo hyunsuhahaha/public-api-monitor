@@ -68,11 +68,7 @@ func humanDuration(d time.Duration) string {
 // SchemaMessage is the text for a response-field change.
 func SchemaMessage(e store.SchemaEvent, t *config.Target, publicURL string) string {
 	var b strings.Builder
-	label := "필드 추가"
-	if e.Kind == "removed" {
-		label = "필드 사라짐"
-	}
-	fmt.Fprintf(&b, "🧩 [응답 형식 변경: %s] %s — %s", label, t.Name, strings.Join(e.Paths, ", "))
+	fmt.Fprintf(&b, "🧩 [응답 형식 변경: %s] %s — %s", store.SchemaLabel(e.Kind), t.Name, strings.Join(e.Paths, ", "))
 	if publicURL != "" {
 		fmt.Fprintf(&b, "\n%s/#t=%s", strings.TrimRight(publicURL, "/"), t.ID)
 	}

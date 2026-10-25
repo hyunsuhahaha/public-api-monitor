@@ -305,7 +305,7 @@ function handoffMarkdown(hours) {
   const sch = state.schema.filter((e) => Date.parse(e.at) >= from);
   if (sch.length) {
     L.push(`## 응답 형식 변경 (${sch.length}건)`, "");
-    for (const e of sch) L.push(`- ${at(e.at)} ${nm(e.target)}: ${e.kind === "removed" ? "필드 사라짐" : "필드 추가"} ${e.paths.join(", ")}`);
+    for (const e of sch) L.push(`- ${at(e.at)} ${nm(e.target)}: ${({ added: "필드 추가", removed: "필드 사라짐", type_changed: "값 형식 바뀜" })[e.kind] || e.kind} ${e.paths.join(", ")}`);
     L.push("");
   }
   L.push("## 다음 당번에게", "", "- ", "", `상태판: ${location.origin}/`);

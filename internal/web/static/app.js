@@ -461,7 +461,7 @@ function renderReliability() {
 function schemaRow(e, withName) {
   const names = Object.fromEntries(state.data.targets.map((t) => [t.id, t.name]));
   const r = el("div", "schema");
-  r.append(el("span", "kind " + e.kind, e.kind === "added" ? "필드 추가" : "필드 사라짐"));
+  r.append(el("span", "kind " + e.kind, ({ added: "필드 추가", removed: "필드 사라짐", type_changed: "값 형식 바뀜" })[e.kind] || e.kind));
   const body = el("div");
   if (withName) { const n = el("div", "", names[e.target] || e.target); n.style.marginBottom = "3px"; body.append(n); }
   for (const p of e.paths.slice(0, 12)) body.append(el("code", "", p));

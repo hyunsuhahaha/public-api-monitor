@@ -156,3 +156,24 @@ func TestSilencedPagesNobody(t *testing.T) {
 		t.Fatalf("the incident is still recorded: %+v", open)
 	}
 }
+
+// A price that turns from a number into a string after the warm-up is a schema event;
+// a field that is sometimes null is not.
+func TestValueKindChange(t *testing.T) {
+	c, _ := newCentral(t)
+	c.Cfg.SchemaWarmup.Duration = time.Hour
+	ctx := context.Background()
+	tg := &c.Cfg.Targets[0]
+	at := time.Now().Add(-3 * time.Hour)
+	answer := func(at time.Time, body string) {
+		c.Record(ctx, tg, probe.Result{TargetID: "a", Location: "central", At: at, Status: probe.StatusOK,
+			Shape: probe.Shape([]byte(body)), Types: probe.ShapeTypes([]byte(body))})
+	}
+	answer(at, `{"price":42,"memo":"x"}`)
+	answer(at.Add(2*time.Hour), `{"price":42,"memo":null}`)
+	answer(at.Add(2*time.Hour+5*time.Minute), `{"price":"42","memo":"y"}`)
+	ev, _ := c.Store.SchemaEvents(ctx, "a", at, 10)
+	if len(ev) != 1 || ev[0].Kind != "type_changed" || len(ev[0].Paths) != 1 || ev[0].Paths[0] != "price: 숫자 → 문자열" {
+		t.Fatalf("events: %+v", ev)
+	}
+}

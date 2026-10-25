@@ -119,6 +119,29 @@ func (c *Central) learnShape(ctx context.Context, t *config.Target, r probe.Resu
 	if had && len(added) > 0 {
 		c.schemaChange(ctx, t, store.SchemaEvent{Target: t.ID, At: r.At, Kind: "added", Paths: added})
 	}
+	if r.Types == nil {
+		return
+	}
+	changed, err := c.Store.ObserveTypes(ctx, t.ID, r.Types, r.At, c.Cfg.SchemaWarmup.Duration)
+	if err != nil {
+		mStoreErrors.Inc()
+		c.Log.Error("save value kinds", "err", err)
+		return
+	}
+	if len(changed) > 0 {
+		e := store.SchemaEvent{Target: t.ID, At: r.At, Kind: "type_changed"}
+		for _, ch := range changed {
+			// a field that is sometimes null is optional, not changed: only real kind
+			// changes count (number to string, a list that now comes empty, ...)
+			if ch.Now == "null" || (len(ch.Was) == 1 && ch.Was[0] == "null") {
+				continue
+			}
+			e.Paths = append(e.Paths, ch.String(probe.KindName))
+		}
+		if len(e.Paths) > 0 {
+			c.schemaChange(ctx, t, e)
+		}
+	}
 }
 
 func (c *Central) schemaChange(ctx context.Context, t *config.Target, e store.SchemaEvent) {

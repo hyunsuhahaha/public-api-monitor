@@ -11,6 +11,7 @@ import (
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/report"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 )
 
 // Atom feeds of what a developer wants to hear about an API they depend on: incidents
@@ -97,9 +98,12 @@ func (s *Server) buildFeed(ctx context.Context, base, id string) (*atomFeed, err
 		return nil, err
 	}
 	for _, e := range sch {
-		label, what := "필드 추가", "새로 생긴 필드"
-		if e.Kind == "removed" {
-			label, what = "필드 사라짐", "더 이상 오지 않는 필드"
+		label, what := store.SchemaLabel(e.Kind), "새로 생긴 필드"
+		switch e.Kind {
+		case "removed":
+			what = "더 이상 오지 않는 필드"
+		case "type_changed":
+			what = "값의 형식이 바뀐 필드"
 		}
 		f.Entries = append(f.Entries, atomEntry{
 			Title: fmt.Sprintf("[응답 형식 변경: %s] %s", label, name(e.Target)), ID: fmt.Sprintf("%s/schema/%d", base, e.ID), at: e.At,

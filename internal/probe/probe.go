@@ -32,8 +32,9 @@ type Result struct {
 	HTTPStatus int
 	Code       string
 	Reason     string
-	Shape      []string // field paths of a healthy answer (schema-change detection), not sent to the central
-	Phases     Phases   // where the time went (DNS, connect, TLS, server wait)
+	Shape      []string          // field paths of a healthy answer (schema-change detection), not sent to the central
+	Types      map[string]string // JSON value kind per path (ShapeTypes), not sent either
+	Phases     Phases            // where the time went (DNS, connect, TLS, server wait)
 }
 
 // Prober runs checks.
@@ -187,6 +188,9 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	r.Status, r.Code, r.Reason = v.Status, v.Code, t.Redact(v.Reason)
 	if v.Status.Healthy() && t.Artifact == nil && t.Classifier != "git" && t.Classifier != "docker_token" {
 		r.Shape = Shape(o.Body)
+		if r.Shape != nil {
+			r.Types = ShapeTypes(o.Body)
+		}
 	}
 	r.HTTPStatus = o.HTTPStatus
 	r.LatencyMS = o.Latency.Milliseconds()

@@ -132,7 +132,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // one writer; SQLite serialises anyway
-	if _, err := db.Exec(schema + rollupSchema + officialSchema); err != nil {
+	if _, err := db.Exec(schema + rollupSchema + officialSchema + typesSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -820,8 +820,19 @@ type SchemaEvent struct {
 	ID     int64     `json:"id"`
 	Target string    `json:"target"`
 	At     time.Time `json:"at"`
-	Kind   string    `json:"kind"` // added | removed
+	Kind   string    `json:"kind"` // added | removed | type_changed
 	Paths  []string  `json:"paths"`
+}
+
+// SchemaLabel names an event kind: added, removed, type_changed.
+func SchemaLabel(kind string) string {
+	switch kind {
+	case "removed":
+		return "필드 사라짐"
+	case "type_changed":
+		return "값 형식 바뀜"
+	}
+	return "필드 추가"
 }
 
 func (s *Store) SaveSchemaEvent(ctx context.Context, e *SchemaEvent) error {
