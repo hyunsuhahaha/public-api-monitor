@@ -66,6 +66,7 @@ table { border-collapse: collapse; width: 100%; }
 .svc .name { font-weight: 500; }
 .svc .prov { color: var(--muted); font-size: 11px; }
 .num { text-align: right; }
+.svc th.num { text-align: right; } /* numeric headers line up with their right-aligned values */
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
 .dot.ok { background: var(--ok); box-shadow: 0 0 6px rgba(115,191,105,.6); }
 .dot.slow, .dot.stale { background: var(--deg); box-shadow: 0 0 6px rgba(250,222,42,.5); }
