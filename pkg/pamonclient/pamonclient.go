@@ -40,6 +40,13 @@ type Observation struct {
 	FreshUntil time.Time     `json:"freshUntil"`
 	Interval   time.Duration `json:"-"`
 	FetchedAt  time.Time     `json:"-"`
+	// RetryAdvice is pamon's "retry now?": Action retry, backoff, wait, skip or unknown.
+	RetryAdvice struct {
+		Action     string     `json:"action"`
+		RetryAfter *time.Time `json:"retryAfter"`
+		Until      *time.Time `json:"until"`
+		Reason     string     `json:"reason"`
+	} `json:"retryAdvice"`
 }
 
 // Fresh: the observation still describes now (pamon recomputes nothing for you: an old

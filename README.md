@@ -350,6 +350,7 @@ Go에서 호출 전에 pamon을 확인하는 서킷 브레이커: [pkg/pamonclie
 | `GET /api/v1/incidents?target=id` | 최근 90일 장애 |
 | `GET /report/YYYY-MM` · `/api/v1/report/YYYY-MM` | 월간 가용성 리포트 (가용률 낮은 API, 최장 장애, 기관별) |
 | `GET /feed.xml` · `/feed/{id}.xml` | 장애·데이터 이상·응답 형식 변경·점검 예정 Atom 피드, 전체 또는 API 하나 (RSS 리더, 슬랙 `/feed subscribe`로 구독) |
+| `GET /ai/targets/{id}.json` | AI·코드용 관측: 판정, `retryAdvice`(지금 재시도해도 되나: retry/backoff/wait/skip/unknown), `incidentPattern`(30일 장애 요약) |
 | `GET /lead-time` · `/api/v1/lead-time` | 공식 상태 페이지 발표보다 pamon이 몇 분 먼저(또는 늦게) 장애를 확정했는지, 제공자별 중앙값·평균과 표본 수 (최근 90일) |
 | `GET /maintenance.json` · `/maintenance.ics` · `/maintenance.html` | 공지된 점검 일정: 서킷 브레이커용 JSON, 캘린더 구독(iCal), 사람용 페이지 ([docs/maintenance.md](docs/maintenance.md)) |
 | `GET /badge/{id}.svg` | 30일 가용률 배지 |

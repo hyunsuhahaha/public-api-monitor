@@ -18,6 +18,8 @@
 <dt>verdict</dt><dd>서비스별 답 페이지(s/{id}.html)와 같은 규칙으로 만든 한국어 결론입니다. tone은 ok(정상)·warn(느림·데이터 이상·점검)·bad(장애)·unknown(기록 없음·만료·감시 설정 문제), headline은 한 줄 결론, detail은 어디서 실패했는지(DNS·연결·TLS·서버 대기·HTTP 코드), yourSide는 사용자 쪽 문제일 가능성에 대한 안내입니다. 데이터 생성 시각 기준이므로 freshUntil이 지났으면 unknown으로 취급하세요.</dd>
 <dt>official</dt><dd>제공자가 기계가 읽을 수 있는 상태 페이지를 공개할 때만 있습니다(없으면 필드 자체가 없음). indicator(none·minor·major·critical, Statuspage 기준), description(제공자 원문), page(사람용 상태 페이지), fetchedAt, operational(indicator가 none인지), comparison(우리 관측과 비교한 한국어 설명)입니다. 공식 발표가 정상이고 우리 관측이 장애라면 발표가 늦거나 확인하는 기능만의 문제일 수 있습니다. 어느 쪽도 다른 쪽을 무효로 만들지 않습니다.</dd>
 <dt>ifYouDependOnIt</dt><dd>이 서비스를 호출하는 개발자가 장애 중에 할 수 있는 일(title, points). 결제는 멱등성 키와 백오프 재시도, 로그인은 세션 유지, 공공 데이터는 마지막 정상 데이터 캐시, 메시지는 큐, AI는 예비 모델처럼 분야별로 다릅니다.</dd>
+<dt>retryAdvice</dt><dd>지금 재시도해도 되는지: <code>action</code>이 <code>retry</code>(외부에서는 정상: 내 쪽의 일시적 문제일 가능성, 백오프로 몇 번 재시도), <code>backoff</code>(느림: 간격을 늘려 드물게), <code>wait</code>(pamon도 실패를 봄: <code>retryAfter</code>까지 재시도하지 않음), <code>skip</code>(공지된 점검: <code>until</code>까지 미루거나 큐에), <code>unknown</code>(새 관측 없음: 자체 서킷 브레이커로 판단). freshUntil이 지났으면 무시하세요.</dd>
+<dt>incidentPattern</dt><dd>최근 30일 장애 요약: 건수, 복구까지 중앙값(<code>medianMinutes</code>), 최장, 15분 안에 끝난 비율, 새벽 시작 비율, <code>kind</code>(none, blips: 짧게 자주, long: 길게, mixed)와 권장 대응.</dd>
 <dt>scope / host / docs</dt><dd>검사 범위, 호출 호스트와 공급자 문서. 고정 읽기 기능의 성공이 로그인·쓰기·다른 API·사용자의 키나 네트워크 성공을 보증하지 않습니다.</dd></dl>
 <h2>AI에게 전달할 요청 예시</h2>
 <pre>내 로그의 오류 시각과 호출 호스트·기능을 확인한 다음, 이 페이지의 diagnostics.json을 조회해 외부 관측과 비교해줘.

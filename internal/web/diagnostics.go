@@ -8,6 +8,7 @@ import (
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/insight"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/official"
 )
 
@@ -50,6 +51,9 @@ type DiagnosticTarget struct {
 	// Official is the provider's own status page, when it publishes one we read.
 	Official *DiagnosticOfficial `json:"official,omitempty"`
 	Advice   Advice              `json:"ifYouDependOnIt"`
+	// RetryAdvice: should a caller retry now (insights.go); IncidentPattern: 30 days.
+	RetryAdvice     insight.Advice  `json:"retryAdvice"`
+	IncidentPattern insight.Pattern `json:"incidentPattern"`
 }
 
 // DiagnosticOfficial is a provider's announcement and how it compares with the verdict.
@@ -132,6 +136,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		if d.RecentIncidents == nil {
 			d.RecentIncidents = []*incident.Incident{}
 		}
+		d.RetryAdvice, d.IncidentPattern = s.retryAdvice(r.Context(), t, d)
 		// Relative URLs resolve against both live and Pages JSON paths.
 		if id == "" {
 			d.EvidenceURL = "../#t=" + url.QueryEscape(t.ID)
