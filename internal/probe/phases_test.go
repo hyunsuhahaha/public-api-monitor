@@ -3,20 +3,30 @@ package probe
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 )
 
-// The server's think time lands in WaitMs; a fresh connection has a connect time.
+// The server's think time lands in WaitMs; every check opens its own connection, so
+// none is reused and each one has its connect phase.
 func TestPhases(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var conns atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(60 * time.Millisecond)
 		fmt.Fprint(w, `{"response":{"header":{"resultCode":"00"}}}`)
 	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	srv.Start()
 	defer srv.Close()
 	t.Setenv("DATA_GO_KR_KEY", "k")
 	cfg, err := config.Parse([]byte("targets:\n  - id: a\n    url: " + srv.URL + "/?k={{.Key}}\n"))
@@ -28,8 +38,8 @@ func TestPhases(t *testing.T) {
 	if r.Phases.WaitMs < 60 || r.Phases.WaitMs > r.LatencyMS || r.Phases.Reused {
 		t.Fatalf("first call: %+v (latency %d)", r.Phases, r.LatencyMS)
 	}
-	if r2 := p.Check(context.Background(), &cfg.Targets[0]); !r2.Phases.Reused || r2.Phases.ConnectMs != 0 {
-		t.Fatalf("second call reuses the connection: %+v", r2.Phases)
+	if r2 := p.Check(context.Background(), &cfg.Targets[0]); r2.Phases.Reused || conns.Load() != 2 {
+		t.Fatalf("second call: %+v, %d connections", r2.Phases, conns.Load())
 	}
 }
 

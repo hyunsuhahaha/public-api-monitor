@@ -680,7 +680,8 @@ async function openDrawer(id) {
   if (!sch.length) dsch.append(el("div", "empty", "응답 필드 변경 기록이 없습니다"));
   for (const e of sch.slice(0, 10)) dsch.append(schemaRow(e, false));
   const log = $("d-log"); log.replaceChildren();
-  const hr = el("tr"); ["시각", "지역", "판정", "응답", "구간", "HTTP", "코드", "사유"].forEach((h) => { const th = el("th", "", h); if (h === "구간") th.title = "보라 DNS · 파랑 TCP 연결 · 청록 TLS · 주황 서버 대기(첫 바이트까지) · 회색 본문 받기"; hr.append(th); }); log.append(hr);
+  phaseLegend($("d-phase-legend"));
+  const hr = el("tr"); ["시각", "지역", "판정", "응답", "구간", "HTTP", "코드", "사유"].forEach((h) => { const th = el("th", "", h); if (h === "구간") th.title = PHASE_HELP; hr.append(th); }); log.append(hr);
   for (const c of s.recent) {
     const tr = el("tr");
     const st = el("td"); st.append(el("span", "dot " + c.status), document.createTextNode(" " + (LABEL[c.status] || c.status)));
@@ -693,21 +694,40 @@ async function openDrawer(id) {
 
 // where one request's time went: DNS, connect, TLS, server wait, then the body, as shares
 // of that request (its total is in the column before)
-const PHASES = [["dnsMs", "DNS", "#b877d9"], ["connectMs", "연결", "#5794f2"], ["tlsMs", "TLS", "#38b2ac"], ["waitMs", "서버 대기", "#ff9830"]];
+// [field, name, color, what it is]; the last row is what is left of the total
+const PHASES = [["dnsMs", "DNS", "#b877d9", "도메인 주소를 IP로 찾기"], ["connectMs", "TCP 연결", "#5794f2", "서버에 접속"],
+  ["tlsMs", "TLS", "#38b2ac", "보안 연결(HTTPS) 맺기"], ["waitMs", "서버 대기", "#ff9830", "요청을 보내고 첫 바이트까지: 서버의 처리 시간"]];
+const PHASE_REST = ["", "본문 받기", "#5d616b", "응답 본문을 다 받기까지 (그 밖의 시간 포함)"];
+const PHASE_HELP = [...PHASES, PHASE_REST].map(([, n, , what]) => `${n}: ${what}`).join("\n") +
+  "\n막대 전체가 응답 시간입니다. 조각에 마우스를 올리면 시간이 나옵니다.";
+
+// the colors above the table, from PHASES so they never drift from the bars
+function phaseLegend(box) {
+  if (!box || box.childElementCount) return;
+  for (const [, name, color, what] of [...PHASES, PHASE_REST]) {
+    const item = el("span", "", name), chip = el("i");
+    chip.style.background = color; item.prepend(chip); item.title = what; box.append(item);
+  }
+  box.append(el("span", "sub", "· 막대 = 응답 시간 전체, 조각에 마우스를 올리면 단계별 시간"));
+}
+
 function phaseCell(c) {
   const td = el("td"), bar = el("div", "phase");
   const p = c.phases, total = c.latencyMs || 0;
   if (!p || !total) { td.textContent = "–"; return td; }
   let used = 0;
   const parts = [];
+  const seg = (v, name, color) => {
+    const s = el("span"); s.style.width = (v / total * 100) + "%"; s.style.background = color;
+    s.title = `${name} ${ms(v)} (${Math.round(v / total * 100)}%)`; bar.append(s);
+  };
   for (const [k, name, color] of PHASES) {
     const v = p[k] || 0; if (!v) continue;
-    used += v; parts.push(`${name} ${ms(v)}`);
-    const seg = el("span"); seg.style.width = (v / total * 100) + "%"; seg.style.background = color; bar.append(seg);
+    used += v; parts.push(`${name} ${ms(v)}`); seg(v, name, color);
   }
   const rest = Math.max(0, total - used);
-  if (rest) { const seg = el("span"); seg.style.width = (rest / total * 100) + "%"; seg.style.background = "#5d616b"; bar.append(seg); parts.push(`나머지 ${ms(rest)}`); }
-  td.title = parts.join(" · ") + (p.reused ? " (연결 재사용: DNS·연결·TLS 없음)" : "");
+  if (rest) { seg(rest, PHASE_REST[1], PHASE_REST[2]); parts.push(`${PHASE_REST[1]} ${ms(rest)}`); }
+  td.title = parts.join(" · ") + (p.reused ? " (이전 연결을 다시 써서 DNS·TCP·TLS 없음)" : "");
   td.append(bar);
   return td;
 }

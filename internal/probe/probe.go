@@ -60,8 +60,12 @@ func New(location string) *Prober {
 				Proxy:               http.ProxyFromEnvironment,
 				DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
 				TLSHandshakeTimeout: 5 * time.Second,
-				MaxIdleConnsPerHost: 4,
-				IdleConnTimeout:     90 * time.Second,
+				// A new connection per check: every check measures what a new caller
+				// meets (DNS, TCP, TLS, then the server), and a target is not faster or
+				// slower for where it falls in the round. With reuse, the first target on
+				// apis.data.go.kr paid the handshakes and the next dozens showed only
+				// the server wait.
+				DisableKeepAlives: true,
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 3 || req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
