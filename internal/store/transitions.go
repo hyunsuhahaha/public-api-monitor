@@ -26,7 +26,6 @@ const TransitionGap = 15 * time.Minute
 
 const dayMS = 24 * 3600 * 1000
 
-
 // countTransition records prev -> v when prev is the target's previous verdict.
 func countTransition(ctx context.Context, x execer, target string, prevAt int64, prevStatus string, at int64, status string) error {
 	if gap := at - prevAt; gap <= 0 || gap > TransitionGap.Milliseconds() {
