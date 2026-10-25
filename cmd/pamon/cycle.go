@@ -94,6 +94,8 @@ func exportKind(u string) string {
 		return "answer"
 	case strings.HasPrefix(p, "/report/"):
 		return "report"
+	case p == "/":
+		return "dashboard"
 	}
 	return strings.Trim(strings.ReplaceAll(p, "/", "_"), "_")
 }

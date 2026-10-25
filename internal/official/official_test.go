@@ -4,7 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
+
+	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 )
 
 func TestFetchReadsStatuspageAndSlack(t *testing.T) {
@@ -37,5 +40,32 @@ func TestFetchReadsStatuspageAndSlack(t *testing.T) {
 	}
 	if _, ok := got["C"]; ok {
 		t.Fatal("a failing page must give no announcement")
+	}
+}
+
+// Announcements are looked up by provider name: a source whose name no target uses
+// never shows on any page.
+func TestSourcesNameConfiguredProviders(t *testing.T) {
+	raw, err := os.ReadFile("../../targets.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers := map[string]bool{}
+	for _, tg := range cfg.Targets {
+		providers[tg.Provider] = true
+	}
+	seen := map[string]bool{}
+	for _, src := range Sources {
+		if !providers[src.provider] {
+			t.Errorf("official source %q matches no provider in targets.yaml", src.provider)
+		}
+		if seen[src.provider] {
+			t.Errorf("%q listed twice", src.provider)
+		}
+		seen[src.provider] = true
 	}
 }

@@ -21,9 +21,9 @@ AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) �
 
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![watchdog](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/watchdog.yml)
 
-공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI·Docker Hub·GitHub 8개 기능**, 그리고 사람들이 막히는 **로그인·정부·은행·결제·클라우드·메신저 16개**(카카오·네이버 로그인, 홈택스, 정부24, KB·신한·토스뱅크, 카카오페이, AWS·네이버클라우드 서울, Slack, Discord)가 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다. 인증이 필요한 API는 자격 없이 불러 **그 서비스 자신의 오류 응답**(예: 401과 자체 오류 형식)이 오는지로 확인하고, 페이지는 정상 화면의 문구가 있는지까지 봅니다(점검·차단 페이지를 정상으로 착각하지 않음). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
+공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI·Docker Hub·GitHub 8개 기능**, 그리고 사람과 개발자가 막히는 **로그인·정부·은행·결제·AI·클라우드·메신저·SaaS 등 71개**까지 **160개**가 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다. 인증이 필요한 API는 자격 없이 불러 **그 서비스 자신의 거절 응답**(예: 401과 자체 오류 형식)이 오는지로 확인하고, 페이지는 정상 화면의 문구가 있는지까지 봅니다(점검·차단 페이지를 정상으로 착각하지 않음). 분야 목록과 방법은 [분야별 감시 대상과 키 없는 확인](#분야별-감시-대상과-키-없는-확인)에 있습니다. 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다.
 
-**서비스별 답 페이지** [`/s/`](https://pamon.hyunsuhahaha.workers.dev/s/): "OO 지금 되나요?"에 한 줄 결론, 나만 그런지에 대한 안내, 마지막 요청이 DNS·연결·TLS·서버 대기 중 어디서 시간을 썼는지, 제공사 공식 상태 발표와의 비교(GitHub·Slack·Discord·npm·PyPI·Docker), 최근 장애, "나도 안 돼요" 제보 수를 보여줍니다. 서버에서 그린 HTML이라 검색엔진과 AI가 그대로 읽습니다.
+**서비스별 답 페이지** [`/s/`](https://pamon.hyunsuhahaha.workers.dev/s/): "OO 지금 되나요?"에 한 줄 결론, 나만 그런지에 대한 안내, 마지막 요청이 DNS·연결·TLS·서버 대기 중 어디서 시간을 썼는지, 제공사 공식 상태 발표와의 비교(GitHub·Slack·OpenAI·Anthropic·Cloudflare 등 24곳), 최근 장애, 이 API에 의존하는 개발자가 할 일(결제는 멱등성 키와 백오프 재시도, 로그인은 세션 유지, 공공 데이터는 마지막 정상 데이터 캐시, 메시지는 큐, AI는 예비 모델), "나도 안 돼요" 제보 수를 보여줍니다. 서버에서 그린 HTML이라 검색엔진과 AI가 그대로 읽습니다.
 
 ![dashboard](docs/img/dashboard.png)
 
@@ -51,13 +51,49 @@ AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) �
 
 | | |
 |---|---|
-| **감시 대상** | 공공 API 77개 + 지도 4개 기능 + 개발·배포 의존성 8개 기능 (총 89개) |
+| **감시 대상** | 공공 API 77개 + 지도 4개 기능 + 개발·배포 의존성 8개 기능 + 로그인·은행·결제·AI·클라우드 등 71개 (총 160개, 26개 분야) |
 | **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
 | **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
 | **관측성** | Prometheus 지표, OpenTelemetry 트레이스(확인 1건 = 트레이스 1개: 대기 → HTTP 호출 → 판정, 로그에 trace_id), 구조화 로그 |
 | **인프라** | Go 단일 바이너리, SQLite + Litestream(GCS), GCP e2-micro, Cloudflare Workers·D1, Secret Manager, Prometheus·Grafana·Jaeger, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions(CI·외부 감시) |
 | **운영 중 잡은 것** | 에어코리아 API 타임아웃은 우리 네트워크가 아니라 기관 서버 쪽: 대부분은 일부 요청만 걸려 재시도하면 바로 되고, 가끔 기관 전체가 30~57초씩 느려짐. 출근 시간대 버스 API 지연, 내 모니터의 오탐 3종 (아래) |
+
+## 분야별 감시 대상과 키 없는 확인
+
+| 분야 | 개수 | 제공자 |
+|---|---|---|
+| 로그인·인증 | 5 | 카카오, 네이버, Google, Apple |
+| 은행·결제 | 7 | KB국민은행, 신한은행, 토스뱅크, 카카오페이, Stripe, PayPal, 포트원 |
+| 정부 서비스 | 2 | 홈택스(국세청), 정부24(행정안전부) |
+| 협업·메신저 | 2 | Slack, Discord |
+| 문자·알림 | 4 | Twilio, SendGrid, Mailgun, Telegram |
+| AI | 6 | OpenAI, Anthropic, Google Gemini, DeepL, ElevenLabs, Hugging Face |
+| 클라우드 | 9 | AWS 서울, 네이버클라우드, Cloudflare, DigitalOcean, Vercel, Supabase |
+| 업무 SaaS | 9 | Jira, Linear, Notion, Airtable, Dropbox, Zoom, Microsoft Graph, Gmail, SmartThings |
+| 소스·배포 | 5 | GitHub, GitLab, Bitbucket, CircleCI |
+| 패키지·빌드 | 6 | Docker Hub, npm, PyPI |
+| 보안·모니터링 | 3 | Sentry, Datadog, VirusTotal |
+| 검색·지식 | 4 | 네이버·카카오 검색, 위키백과, Crossref |
+| 지도·위치 | 5 | 카카오맵, 네이버 Maps, Google Maps |
+| SNS | 2 | Meta, X |
+| 게임·미디어 | 7 | 넥슨, Riot Games, Steam, Spotify, YouTube, Twitch, TMDB |
+| 가상자산·시세 | 3 | 업비트, 빗썸, CoinGecko |
+| 날씨·재해 | 4 | Open-Meteo, OpenWeather, USGS 지진, NASA EONET |
+| 공공 데이터 (날씨·교통·환경·생활·의료·금융·관광·부동산·공공행정) | 77 | 기상청, 에어코리아, 국토교통부, 서울시, 심평원, 금융위원회, 한국관광공사 등 |
+
+토스페이먼츠와 PASS는 미국에서 접속을 막아 한국 감시 지점이 생길 때까지 빠져 있습니다.
+
+**키 없이 확인하는 방법.** 대부분의 API는 키가 있어야 데이터를 줍니다. 감시용 키를 서비스마다 받는 대신, 인증 없이 요청을 보내 **그 서비스 자신이 거절하는지**를 봅니다. 거절 응답을 만들려면 서비스의 앱 서버가 살아서 요청을 읽어야 하므로, 이것이 "동작 중"의 증거가 됩니다.
+
+- `expect_status`: 정상일 때 오는 상태 코드(401 31개, 403 9개, 400 5개, 404 2개). 다른 코드면 오류입니다.
+- `contains`: 그 서비스만의 오류 형식에 있는 문구(예: Stripe `You did not provide an API key`, Telegram `"error_code":401`, S3 `NoSuchBucket`). 문구가 없으면 CDN이나 방화벽이 대신 답한 것으로 보고 정상으로 치지 않습니다.
+- CDN의 빈 403, 본문 없는 응답, 5xx는 증거가 되지 않습니다. 5xx와 시간 초과는 기대 코드와 상관없이 장애입니다.
+- 로그인·은행·정부 사이트는 페이지가 정상 화면의 문구를 담고 있는지 봅니다. 점검 안내나 차단 페이지는 200이어도 정상이 아닙니다.
+- 공개 데이터를 주는 곳(업비트·빗썸 시세, Open-Meteo, USGS 등)은 실제 데이터를 받아 JSON 값까지 확인합니다.
+- 한계: 거절 응답은 앱 서버가 살아 있다는 뜻일 뿐, 로그인된 사용자의 요청이나 결제 승인이 되는지까지 보증하지 않습니다. 답 페이지와 AI용 JSON의 `scope`에 이 범위를 적어 둡니다.
+
+CI의 `endpoints` 작업은 매주와 매 푸시마다 모든 대상을 한 번 불러, 폐기된 주소(코드 12, 기대하지 않은 404)가 생기면 실패합니다. 미국 러너에서는 data.go.kr이 403을 주거나 시간 초과가 나는데, 이것은 폐기가 아니라 접속 제한이므로 실패로 치지 않습니다.
 
 ## 실데이터가 알려준 것, 그리고 고친 것
 

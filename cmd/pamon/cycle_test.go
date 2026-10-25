@@ -71,6 +71,7 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	t.Setenv("NAVER_MAPS_CLIENT_ID", "cycle-naver-id")
 	t.Setenv("NAVER_MAPS_CLIENT_SECRET", "cycle-naver-secret")
 	t.Setenv("PAMON_WEBHOOK_URL", "")
+	t.Setenv("PAMON_SITE_URL", "https://pamon.test")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v2/local") {
 			if r.Header.Get("Authorization") != "KakaoAK cycle-kakao-secret" {
@@ -155,6 +156,26 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	for _, target := range status.Targets {
 		if target.Status != "ok" {
 			t.Errorf("%s exported %s", target.ID, target.Status)
+		}
+	}
+	// answer pages: one per target plus the index, all in the sitemap
+	sm, err := os.ReadFile(filepath.Join(site, "sitemap.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sm), "<loc>https://pamon.test/s/</loc>") {
+		t.Errorf("sitemap lacks s/: %s", sm)
+	}
+	for _, target := range maps {
+		b, err := os.ReadFile(filepath.Join(site, "s", target.ID+".html"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), target.Name+" 지금 되나요?") || !strings.Contains(string(b), "정상입니다") {
+			t.Errorf("s/%s.html: no verdict", target.ID)
+		}
+		if !strings.Contains(string(sm), "<loc>https://pamon.test/s/"+target.ID+".html</loc>") {
+			t.Errorf("sitemap lacks s/%s.html", target.ID)
 		}
 	}
 	if err := filepath.WalkDir(site, func(path string, d os.DirEntry, err error) error {

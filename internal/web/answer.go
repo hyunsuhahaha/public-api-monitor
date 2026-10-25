@@ -23,10 +23,10 @@ import (
 
 // Verdict is the answer at the top of a page.
 type Verdict struct {
-	Tone     string // ok, warn, bad, unknown
-	Headline string // 정상입니다 / 장애가 있습니다 ...
-	Detail   string // one sentence: what we saw
-	YourSide string // what that means for the reader
+	Tone     string `json:"tone"`     // ok, warn, bad, unknown
+	Headline string `json:"headline"` // 정상입니다 / 장애가 있습니다 ...
+	Detail   string `json:"detail"`   // one sentence: what we saw
+	YourSide string `json:"yourSide"` // what that means for the reader
 }
 
 // Explain turns a check's status and reason into the reader's terms.
@@ -126,6 +126,78 @@ type answerPage struct {
 	Categories []answerCategory
 	Problems   []answerItem // failing or degraded now, worst first (index page)
 	Official   *officialView
+	Advice     Advice
+}
+
+// Advice is what a developer whose service calls this one can do about its failures,
+// by category: what keeps their own users working while it is down.
+type Advice struct {
+	Title  string   `json:"title"`
+	Points []string `json:"points"`
+}
+
+// publicData: the data.go.kr and Seoul open-data categories.
+var publicData = map[string]bool{"날씨": true, "날씨·재해": true, "교통": true, "환경": true, "생활": true, "의료": true,
+	"관광": true, "부동산": true, "금융": true, "공공행정": true}
+
+// AdviceFor gives the advice for a category; every category gets some.
+func AdviceFor(category string) Advice {
+	switch {
+	case category == "은행·결제":
+		return Advice{"결제가 실패하거나 응답이 없을 때", []string{
+			"재시도는 간격을 늘려 가며(지수 백오프와 무작위 지연) 몇 번만 합니다. 즉시 반복하면 복구 중인 서버에 부담을 더합니다.",
+			"결제 요청마다 멱등성 키(Idempotency-Key 같은 주문별 고유 값)를 붙여, 응답을 못 받은 요청을 다시 보내도 두 번 결제되지 않게 합니다.",
+			"시간 초과는 실패가 아니라 결과를 모르는 상태입니다. 다시 결제하기 전에 결제 조회 API로 실제로 승인됐는지 먼저 확인합니다.",
+			"장애 중에는 주문을 결제 대기로 남겨 두고, 복구 뒤 조회·대사로 마무리합니다. 사용자에게는 중복 결제가 없다는 점을 알립니다."}}
+	case category == "로그인·인증":
+		return Advice{"로그인 제공자가 안 될 때", []string{
+			"이미 로그인한 사용자의 세션은 그대로 유지합니다. 제공자 장애 중에 토큰 재검증 실패를 이유로 모두 로그아웃시키지 않습니다.",
+			"OpenID 설정과 서명 키(JWKS)는 캐시해 두고, 새로 받지 못하면 마지막으로 받은 값을 계속 씁니다.",
+			"새 로그인만 막히는 상황이므로 다른 로그인 수단(이메일, 다른 소셜 로그인)을 안내합니다.",
+			"콜백 대기에는 짧은 시간 제한을 두고, 실패하면 \"잠시 뒤 다시 시도\" 화면을 보여 줍니다."}}
+	case category == "문자·알림" || category == "협업·메신저":
+		return Advice{"메시지 발송이 실패할 때", []string{
+			"보낼 메시지는 먼저 큐에 넣고 작업자가 꺼내 보내게 합니다. 제공자가 멈춰도 요청 처리는 멈추지 않고, 복구 뒤 쌓인 것을 보냅니다.",
+			"재시도는 지수 백오프로 하고, 메시지마다 고유 ID를 두어 재시도로 같은 알림이 두 번 가지 않게 합니다.",
+			"계속 실패하는 메시지는 별도 큐(dead letter)로 옮겨 나중에 확인합니다.",
+			"인증번호처럼 급한 메시지는 다른 제공자나 다른 채널(문자 ↔ 이메일·앱 푸시)로 보낼 수 있게 해 둡니다."}}
+	case category == "AI":
+		return Advice{"AI API가 느리거나 실패할 때", []string{
+			"다른 모델이나 다른 제공자를 예비로 정해 두고, 오류나 시간 초과가 이어지면 그쪽으로 요청을 돌립니다.",
+			"요청마다 시간 제한을 두고, 429·5xx에는 지수 백오프로 몇 번만 재시도합니다.",
+			"실패가 계속되면 서킷 브레이커로 잠시 호출을 멈춰 대기열이 쌓이지 않게 합니다.",
+			"AI 기능이 없어도 핵심 기능은 동작하게 하고, 사용자에게는 \"AI 응답을 잠시 쓸 수 없습니다\"라고 알립니다."}}
+	case category == "클라우드":
+		return Advice{"클라우드 API가 실패할 때", []string{
+			"SDK의 재시도(지수 백오프)를 켜 두고 요청마다 시간 제한을 둡니다.",
+			"한 리전·가용 영역 장애에 대비해 중요한 데이터와 서비스는 다른 영역에도 둡니다.",
+			"배포·확장처럼 제어 API가 필요한 작업은 장애 중에 미루고, 이미 실행 중인 서버는 건드리지 않습니다."}}
+	case category == "패키지·빌드" || category == "소스·배포":
+		return Advice{"빌드·배포가 이 서비스에 막힐 때", []string{
+			"패키지와 이미지는 사내 미러나 캐시 프록시를 거쳐 받아, 원본 저장소가 멈춰도 이미 받은 버전으로 빌드합니다.",
+			"버전과 다이제스트를 고정(lock 파일)해 같은 결과물을 다시 받을 수 있게 합니다.",
+			"CI 작업은 네트워크 오류에 한해 간격을 두고 재시도하고, 급한 배포는 이미 만든 결과물로 합니다."}}
+	case category == "가상자산·시세":
+		return Advice{"시세 API가 멈출 때", []string{
+			"마지막으로 받은 시세에 받은 시각을 함께 보여 주고, 오래된 값임을 표시합니다.",
+			"오래된 시세로 자동 주문을 내지 않습니다. 기준 시간보다 오래되면 주문을 멈춥니다.",
+			"실시간 연결(WebSocket)이 끊기면 간격을 늘려 가며 다시 연결합니다."}}
+	case category == "지도·위치":
+		return Advice{"지도·위치 API가 실패할 때", []string{
+			"주소 → 좌표 변환 결과는 캐시해 두고 같은 주소는 다시 묻지 않습니다.",
+			"실패하면 다른 지도 제공자나 직접 입력한 주소로 대신합니다.",
+			"재시도는 지수 백오프로 하고, 호출 한도(429)를 넘기지 않게 합니다."}}
+	case publicData[category]:
+		return Advice{"공공 데이터 API가 멈출 때", []string{
+			"마지막으로 받은 정상 데이터를 저장해 두고, 실패하면 그것을 받은 시각과 함께 보여 줍니다. 빈 화면보다 낫습니다.",
+			"공공 API는 갱신 주기가 정해져 있으므로(예: 매시 정각 발표) 그보다 자주 묻지 말고 결과를 캐시합니다.",
+			"오류 응답도 확인합니다. 공공 API는 실패를 HTTP 200 안의 오류 코드로 돌려주는 경우가 많습니다.",
+			"재시도는 간격을 늘려 가며 하고, 일일 호출 한도를 재시도로 다 쓰지 않게 합니다."}}
+	}
+	return Advice{"이 서비스가 실패할 때", []string{
+		"요청마다 시간 제한을 두고, 5xx·시간 초과에만 지수 백오프로 몇 번 재시도합니다. 4xx는 재시도해도 같은 결과입니다.",
+		"실패가 이어지면 서킷 브레이커로 잠시 호출을 멈춰 우리 서비스까지 느려지지 않게 합니다.",
+		"마지막으로 받은 정상 결과를 캐시해 두고, 장애 중에는 그것으로 대신합니다."}}
 }
 
 // officialView is the provider's announcement next to our observation.
@@ -230,6 +302,7 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 		return nil, nil
 	}
 	p.V = Explain(p.T.Status, p.T.Reason, p.T.CheckedAt, now, s.Cfg.Interval.Duration)
+	p.Advice = AdviceFor(p.T.Category)
 	if st, ok := s.Official[p.T.Provider]; ok {
 		p.Official = compareOfficial(st, p.V.Tone)
 	}
@@ -410,6 +483,9 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 {{if .Incidents}}<table><tr><th>시작 (KST)</th><th>길이</th><th>내용</th></tr>
 {{range .Incidents}}<tr><td>{{.Start}}</td><td>{{.Duration}}</td><td><b>{{.Status}}</b> {{.Reason}}</td></tr>{{end}}</table>
 {{else}}<p>지난 30일 동안 기록된 장애가 없습니다.</p>{{end}}
+
+<h2>이 API에 의존한다면: {{.Advice.Title}}</h2>
+<ul>{{range .Advice.Points}}<li>{{.}}</li>{{end}}</ul>
 
 <h2>무엇을 확인하나</h2>
 <p>미국 서부(GCP us-west1)의 감시기가 {{.Every}}마다 <b>{{.T.Name}}</b>에 직접 요청을 보내 응답 코드와 내용까지 확인합니다. 로그인·결제를 실제로 하지는 않으므로, 계정이나 결제 수단에 따른 문제는 보이지 않습니다.{{if .T.Docs}} 확인하는 곳: <a href="{{.T.Docs}}" rel="nofollow">{{.T.Docs}}</a>{{end}}</p>

@@ -10,11 +10,14 @@
 <li>checkedAt과 개발자의 오류 발생 시각을 비교합니다. 현재 상태로 과거 장애를 추정하지 말고 recentIncidents의 시간 범위도 확인합니다.</li>
 <li>evidenceUrl을 현재 JSON URL 기준으로 해석해 출처로 인용하고, 관측 시각·위치·검사 범위를 함께 설명합니다.</li></ol>
 <h2>응답 필드와 해석</h2>
-<dl><dt>schemaVersion / generatedAt</dt><dd>현재 계약 버전 1.0과 데이터 생성 시각(시간대를 포함한 RFC 3339). 생성 시각은 마지막 실제 검사 시각이 아닙니다.</dd>
+<dl><dt>schemaVersion / generatedAt</dt><dd>현재 계약 버전 1.1과 데이터 생성 시각(시간대를 포함한 RFC 3339). 생성 시각은 마지막 실제 검사 시각이 아닙니다.</dd>
 <dt>observedStatus / assessment</dt><dd>ok → no_failure_observed; slow → degraded_observed (정상 응답이지만 지연 기준 초과, 실패 아님); down/error/stale → failure_observed; client → monitor_configuration_issue. 검사 누락·만료·알 수 없는 상태는 unknown입니다. stale은 응답 데이터의 이상이며 관측 시각 만료와 다릅니다.</dd>
 <dt>checkedAt / freshUntil / freshAtGeneration</dt><dd>검사 시각과 두 검사 주기 뒤의 유효 기한. 읽는 시점에 현재 시각 ≥ freshUntil이면 assessment를 unknown으로 취급하세요. 정적 파일의 freshAtGeneration이 true여도 지금은 만료됐을 수 있습니다. checkedAt이 없거나 미래 시각이면 판단할 수 없습니다.</dd>
 <dt>intervalSeconds / locations</dt><dd>설정상 검사 간격과 최근 한 시간 내 위치별 최신 검사. 스케줄 실행·배포는 지연될 수 있습니다. 위치명은 식별자이며 한국·통신사 정보를 보증하지 않습니다. 각 위치의 checkedAt도 개별적으로 확인하세요.</dd>
 <dt>recentIncidents / historySince / historyLimit</dt><dd>최근 24시간에 종료됐거나 아직 열려 있는 장애 중 최대 20건, 시작 시각 내림차순. ended가 0001-01-01T00:00:00Z이면 진행 중입니다. 빈 배열은 모든 요청이 정상이었다는 증거가 아닙니다. 장애는 연속 실패 기준으로 열리므로 단발 실패가 없다는 뜻도 아닙니다.</dd>
+<dt>verdict</dt><dd>서비스별 답 페이지(s/{id}.html)와 같은 규칙으로 만든 한국어 결론입니다. tone은 ok(정상)·warn(느림·데이터 이상·점검)·bad(장애)·unknown(기록 없음·만료·감시 설정 문제), headline은 한 줄 결론, detail은 어디서 실패했는지(DNS·연결·TLS·서버 대기·HTTP 코드), yourSide는 사용자 쪽 문제일 가능성에 대한 안내입니다. 데이터 생성 시각 기준이므로 freshUntil이 지났으면 unknown으로 취급하세요.</dd>
+<dt>official</dt><dd>제공자가 기계가 읽을 수 있는 상태 페이지를 공개할 때만 있습니다(없으면 필드 자체가 없음). indicator(none·minor·major·critical, Statuspage 기준), description(제공자 원문), page(사람용 상태 페이지), fetchedAt, operational(indicator가 none인지), comparison(우리 관측과 비교한 한국어 설명)입니다. 공식 발표가 정상이고 우리 관측이 장애라면 발표가 늦거나 확인하는 기능만의 문제일 수 있습니다. 어느 쪽도 다른 쪽을 무효로 만들지 않습니다.</dd>
+<dt>ifYouDependOnIt</dt><dd>이 서비스를 호출하는 개발자가 장애 중에 할 수 있는 일(title, points). 결제는 멱등성 키와 백오프 재시도, 로그인은 세션 유지, 공공 데이터는 마지막 정상 데이터 캐시, 메시지는 큐, AI는 예비 모델처럼 분야별로 다릅니다.</dd>
 <dt>scope / host / docs</dt><dd>검사 범위, 호출 호스트와 공급자 문서. 고정 읽기 기능의 성공이 로그인·쓰기·다른 API·사용자의 키나 네트워크 성공을 보증하지 않습니다.</dd></dl>
 <h2>AI에게 전달할 요청 예시</h2>
 <pre>내 로그의 오류 시각과 호출 호스트·기능을 확인한 다음, 이 페이지의 diagnostics.json을 조회해 외부 관측과 비교해줘.

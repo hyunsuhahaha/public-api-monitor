@@ -54,7 +54,7 @@ func TestDiagnosticRoutesAndEvidence(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
 				t.Fatal(err)
 			}
-			if v.SchemaVersion != "1.0" || len(v.Targets) == 0 {
+			if v.SchemaVersion != "1.1" || len(v.Targets) == 0 {
 				t.Fatalf("bad response: %+v", v)
 			}
 			if len(v.Targets[0].RecentIncidents) != 1 {
