@@ -17,7 +17,7 @@ npx wrangler secret put ACCESS_ADMIN_TOKEN
 npx wrangler deploy
 ```
 
-관리자 토큰은 충분히 긴 임의 값으로 정하고 Secret으로만 저장합니다. 코드·쿼리 문자열·공개 Pages 산출물에 넣지 않습니다. 관리자 화면은 `https://<배포주소>/__access`, 공개 상태판은 `https://<배포주소>/`입니다(예전 `/public-api-monitor/` 주소는 루트로 301 이동). 로그 화면에서 토큰을 입력하면 최근 24시간의 종류별 요청 수와 최신 접속 목록을 볼 수 있습니다. 종류별 필터와 이전 기록 조회를 지원합니다. 토큰은 브라우저 저장소에 보관하지 않습니다.
+관리자 토큰은 충분히 긴 임의 값으로 정하고 Secret으로만 저장합니다. 코드·쿼리 문자열·공개 Pages 산출물에 넣지 않습니다. 관리자 화면은 `https://<배포주소>/__access`, 공개 상태판은 `https://<배포주소>/`입니다(예전 `/public-api-monitor/` 주소는 루트로 301 이동). 관리자 화면은 다크 대시보드입니다: AI 요청·사람 페이지뷰·스크립트·크롤러 수(이전 기간 대비), 시간대/일별 막대 그래프(KST), AI가 가장 많이 읽은 API, 찾아온 AI, 많이 열린 페이지, 국가·유입 출처, 최근 접속(종류 필터·이전 기록). 기간은 24시간·7일·30일. 토큰을 한 번 넣으면 Worker가 토큰의 HMAC을 HttpOnly·SameSite=Strict 쿠키(30일)로 주고, 그 쿠키를 가진 브라우저의 방문은 기록하지 않습니다(관리자 본인 제외). 토큰 자체는 브라우저에 저장하지 않습니다. `/favicon.ico`는 Worker가 바로 204로 답해 집계에서 빠집니다. API: `GET /__access/stats?range=24h|7d|30d`, `GET /__access/logs`, `POST /__access/session`, `POST /__access/logout`.
 
 ```sh
 curl 'https://<배포주소>/ai/diagnostics.json' -A 'ChatGPT-User/1.0'

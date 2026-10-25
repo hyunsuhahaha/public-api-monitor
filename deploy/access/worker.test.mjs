@@ -79,6 +79,29 @@ test('old /public-api-monitor/ links move to the root; robots.txt points at the 
   assert.equal(h.calls.length,0);
 });
 
+test('signing in sets an HMAC session cookie that authorizes stats and keeps the owner out of the counts',async()=>{
+  const h=harness();
+  assert.equal((await h.get('/__access/session',{method:'POST',body:JSON.stringify({token:'wrong'})})).status,401);
+  const ok=await h.get('/__access/session',{method:'POST',body:JSON.stringify({token:'private-admin'})});
+  assert.equal(ok.status,200);
+  const cookie=ok.headers.get('set-cookie');
+  assert.match(cookie,/^pamon_admin=[0-9a-f]{64}; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Strict$/);
+  assert.ok(!cookie.includes('private-admin'));
+  const session=cookie.split(';')[0];
+  assert.equal((await h.get('/__access/stats?range=7d')).status,401);
+  const stats=await (await h.get('/__access/stats?range=7d',{headers:{cookie:session}})).json();
+  assert.equal(stats.range,'7d');
+  assert.equal(stats.bucket,'day');
+  assert.equal((await h.get('/__access/stats',{headers:{cookie:'pamon_admin='+'0'.repeat(64)}})).status,401);
+  await h.get('/status.html',{headers:{cookie:session,'user-agent':'Mozilla/5.0'}});
+  await h.get('/status.html',{headers:{'user-agent':'pamon-selftest'}});
+  assert.equal((await h.get('/favicon.ico')).status,204);
+  assert.equal(h.writes.length,0);
+  await h.get('/status.html',{headers:{'user-agent':'Mozilla/5.0'}});
+  assert.equal(h.writes.length,1);
+  assert.match((await h.get('/__access/logout',{method:'POST'})).headers.get('set-cookie'),/Max-Age=0/);
+});
+
 test('log storage failure does not break public reads; scheduled retention removes old records',async()=>{
   const h=harness();
   h.env.DB.prepare=()=>({bind(){return {run:async()=>{throw Error('db offline')}}}});
