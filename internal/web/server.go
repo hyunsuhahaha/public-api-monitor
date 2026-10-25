@@ -63,6 +63,16 @@ func (s *Server) Handler() http.Handler {
 	// the public page for people who use the APIs (the root is the operator's dashboard)
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, sub, "status.html") })
 	mux.HandleFunc("GET /api/v1/status", s.status)
+	mux.HandleFunc("GET /ai/diagnostics.json", s.diagnostics)
+	mux.HandleFunc("GET /ai/targets/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !strings.HasSuffix(id, ".json") {
+			http.NotFound(w, r)
+			return
+		}
+		r.SetPathValue("id", strings.TrimSuffix(id, ".json"))
+		s.diagnostics(w, r)
+	})
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
 	mux.HandleFunc("GET /api/v1/overview", s.cache.wrap(s.overview))

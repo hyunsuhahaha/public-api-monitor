@@ -50,6 +50,9 @@ jobs:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           SEOUL_OPENAPI_KEY: ${{ secrets.SEOUL_OPENAPI_KEY }}
           SEOUL_SUBWAY_KEY: ${{ secrets.SEOUL_SUBWAY_KEY }}
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+          NAVER_MAPS_CLIENT_ID: ${{ secrets.NAVER_MAPS_CLIENT_ID }}
+          NAVER_MAPS_CLIENT_SECRET: ${{ secrets.NAVER_MAPS_CLIENT_SECRET }}
           PAMON_WEBHOOK_URL: ${{ secrets.PAMON_WEBHOOK_URL }}
           PAMON_PUBLIC_URL: https://hyunsuhahaha.github.io/public-api-monitor/
         run: ./pamon -cycle -db pamon.db -location github-actions -export site

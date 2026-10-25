@@ -3,22 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pamon · 공공 API 상태판</title>
-<meta name="description" content="한국 공공 API의 실시간 가용성, 응답 시간, SLO와 장애 기록">
+<title>pamon · 개발자 서비스 상태판</title>
+<meta name="description" content="공공 API·지도·npm·PyPI·Docker Hub·GitHub의 가용성, 지연과 실제 기능 검사">
 <link rel="alternate" type="application/atom+xml" title="장애 피드" href="/feed.xml">
 <link rel="stylesheet" href="vendor/uPlot.min.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="logo">◆</span><b>pamon</b><span class="sub">공공 API 상태판</span></div>
+  <div class="brand"><span class="logo">◆</span><b>pamon</b><span class="sub">개발자 서비스 상태판</span></div>
   <div id="fleet-pill" class="pill">…</div>
   <div class="spacer"></div>
   <div class="ranges" id="ranges"></div>
   <button class="btn" id="open-palette" title="명령 팔레트 (Ctrl+K)">⌘ 이동 <kbd>Ctrl K</kbd></button>
   <button class="btn" id="open-handoff" title="교대 인수인계 요약 (h)">인수인계</button>
   <button class="btn" id="refresh" title="새로고침 (r)">⟳ <span id="age">–</span></button>
-  <nav class="links"><a href="/status">공개 상태</a><a href="/report">월간 리포트</a><a href="/feed.xml">피드</a><a href="/api/v1/overview">API</a></nav>
+  <nav class="links"><a href="/status">공개 상태</a><a href="/report">월간 리포트</a><a href="/feed.xml">피드</a><a href="/api/v1/overview">API</a><a href="ai/index.html">AI 진단 데이터</a></nav>
 </header>
 
 <div id="problems" class="problems" hidden></div>

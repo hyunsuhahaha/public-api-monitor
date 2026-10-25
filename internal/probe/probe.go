@@ -63,7 +63,7 @@ func New(location string) *Prober {
 				IdleConnTimeout:     90 * time.Second,
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 3 || req.URL.Host != via[0].URL.Host {
+				if len(via) >= 3 || req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
 					return http.ErrUseLastResponse
 				}
 				return nil
@@ -77,7 +77,7 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	start := p.Now()
 	r := Result{TargetID: t.ID, Location: p.Location, At: start}
 	if !t.HasKey() {
-		r.Status, r.Reason = StatusClient, "service key not set ("+t.KeyEnv+")"
+		r.Status, r.Reason = StatusClient, "credential not set ("+t.MissingCredential()+")"
 		return r
 	}
 	u, err := t.Render(start)
@@ -88,13 +88,30 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	ctx, cancel := context.WithTimeout(ctx, t.Timeout.Duration)
 	defer cancel()
 	clock := &phaseClock{now: p.Now}
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, clock.trace()), http.MethodGet, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		r.Status, r.Reason = StatusClient, "bad url"
 		return r
 	}
 	req.Header.Set("User-Agent", "public-api-monitor/0.1 (+https://github.com/hyunsuhahaha/public-api-monitor)")
 	req.Header.Set("Accept", "application/json, application/xml;q=0.9, */*;q=0.5")
+	if t.Accept != "" {
+		req.Header.Set("Accept", t.Accept)
+	}
+	if err := t.ApplyHeaders(req); err != nil {
+		r.Status, r.Reason = StatusClient, err.Error()
+		return r
+	}
+	if t.RegistryTokenURL != "" {
+		if err := p.ApplyRegistryAuth(req, t.RegistryTokenURL); err != nil {
+			r.Status, r.Reason = StatusClient, "prerequisite: manifest not checked; "+err.Error()
+			r.LatencyMS = p.Now().Sub(start).Milliseconds()
+			return r
+		}
+		// Token health is a separate target. Manifest latency measures its own HTTP request.
+		start = p.Now()
+	}
+	req = req.WithContext(httptrace.WithClientTrace(ctx, clock.trace()))
 
 	// The HTTP span is made by hand, not by otelhttp: that records the full URL, and the
 	// query string carries the service key. Host and path only, and the path redacted too:
@@ -107,7 +124,15 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	resp, err := p.Client.Do(req)
 	if err == nil {
 		o.HTTPStatus = resp.StatusCode
-		o.Body, err = io.ReadAll(io.LimitReader(resp.Body, MaxBody))
+		o.ContentType = resp.Header.Get("Content-Type")
+		limit := int64(MaxBody)
+		if t.Classifier == "docker_token" {
+			limit = 65537
+		}
+		if t.Artifact != nil {
+			limit = t.Artifact.MaxBytes + 1
+		}
+		o.Body, err = io.ReadAll(io.LimitReader(resp.Body, limit))
 		resp.Body.Close()
 		span.SetAttributes(attribute.Int("http.response.status_code", o.HTTPStatus), attribute.Int("http.response.body.size", len(o.Body)))
 	}
@@ -120,7 +145,17 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 		o.Err = errors.New(t.Redact(err.Error()))
 		o.Timeout = errors.Is(err, context.DeadlineExceeded) || isTimeout(err)
 	}
-	v := Classify(o, t.SlowAfter.Duration)
+	v := classifyTarget(o, t)
+	if v.Status.Healthy() && t.Artifact != nil {
+		if reason := checkArtifact(o.Body, t.Artifact); reason != "" {
+			v.Status, v.Reason = StatusError, reason
+		}
+	}
+	if v.Status.Healthy() && len(t.JSONExpect) > 0 {
+		if status, reason := checkJSON(o.Body, t.JSONExpect); status != StatusOK {
+			v.Status, v.Reason = status, reason
+		}
+	}
 	r.Phases = clock.phases()
 	if o.Timeout {
 		v.Reason = "timeout: " + stalledText[clock.stalled()]
@@ -149,8 +184,8 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 			v.Status, v.Reason = StatusStale, why
 		}
 	}
-	r.Status, r.Code, r.Reason = v.Status, v.Code, v.Reason
-	if v.Status.Healthy() {
+	r.Status, r.Code, r.Reason = v.Status, v.Code, t.Redact(v.Reason)
+	if v.Status.Healthy() && t.Artifact == nil && t.Classifier != "git" && t.Classifier != "docker_token" {
 		r.Shape = Shape(o.Body)
 	}
 	r.HTTPStatus = o.HTTPStatus

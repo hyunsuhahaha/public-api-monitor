@@ -17,6 +17,7 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - run: node --test internal/web/app_test.js
+      - run: node --test deploy/access/worker.test.mjs
       - run: python3 -m unittest discover -s deploy -p 'test_watchdog.py'
       - run: CGO_ENABLED=0 go build ./cmd/pamon
 
