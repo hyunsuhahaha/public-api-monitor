@@ -178,3 +178,27 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// -paths in CI: a 404 is "gone" unless the target expects exactly that 404 and got it.
+func TestEndpointGone(t *testing.T) {
+	plain := &config.Target{ID: "plain"}
+	bucket := &config.Target{ID: "bucket", ExpectStatus: http.StatusNotFound}
+	for _, c := range []struct {
+		name string
+		t    *config.Target
+		r    probe.Result
+		want bool
+	}{
+		{"code 12", plain, probe.Result{Code: "12", HTTPStatus: 200, Status: probe.StatusError}, true},
+		{"plain 404", plain, probe.Result{HTTPStatus: 404, Status: probe.StatusClient}, true},
+		{"403 from abroad", plain, probe.Result{HTTPStatus: 403, Status: probe.StatusClient}, false},
+		{"timeout", plain, probe.Result{Status: probe.StatusDown}, false},
+		{"expected 404", bucket, probe.Result{HTTPStatus: 404, Status: probe.StatusOK}, false},
+		{"expected 404, slow", bucket, probe.Result{HTTPStatus: 404, Status: probe.StatusSlow}, false},
+		{"404 without the service's text", bucket, probe.Result{HTTPStatus: 404, Status: probe.StatusError}, true},
+	} {
+		if got := endpointGone(c.t, c.r); got != c.want {
+			t.Errorf("%s: endpointGone = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

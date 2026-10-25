@@ -323,12 +323,24 @@ func runOnce(cfg *config.Config, p *probe.Prober, pathsOnly bool) int {
 			line += "\t" + r.Reason
 		}
 		os.Stdout.WriteString(line + "\n")
-		gone := r.Code == "12" || r.HTTPStatus == http.StatusNotFound
-		if (!pathsOnly && r.Status != probe.StatusOK) || (pathsOnly && gone) {
+		if (!pathsOnly && r.Status != probe.StatusOK) || (pathsOnly && endpointGone(t, r)) {
 			code = 1
 		}
 	}
 	return code
+}
+
+// endpointGone: the gateway says "no such service" (code 12) or the path answers 404. A
+// target whose healthy answer is itself a 404 (expect_status: 404, the service's own "no
+// such bucket") is gone only when the answer stops being that.
+func endpointGone(t *config.Target, r probe.Result) bool {
+	if r.Code == "12" {
+		return true
+	}
+	if r.HTTPStatus != http.StatusNotFound {
+		return false
+	}
+	return t.ExpectStatus != http.StatusNotFound || !r.Status.Healthy()
 }
 
 // printCheck: the config parsed (validation is in config.Parse); say what it monitors and
