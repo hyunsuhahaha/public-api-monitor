@@ -114,19 +114,54 @@ var linkFixes = strings.NewReplacer(
 	`location.href = "/feed.xml"`, `location.href = "feed.xml"`, "${location.origin}/#i=", "${location.origin}${location.pathname}#i=",
 )
 
-// withBeacon adds the Cloudflare Web Analytics beacon to an exported page when
-// PAMON_CF_BEACON holds the site token. Only the static site gets it; the
-// server's own pages keep their strict CSP.
-func withBeacon(s string) string {
-	tok := os.Getenv("PAMON_CF_BEACON")
-	if tok == "" || !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(tok) {
-		return s
+// decorate adds what only the static site carries: a canonical link to the
+// address handed out (PAMON_SITE_URL), search-engine ownership tags
+// (PAMON_GOOGLE_VERIFY, PAMON_NAVER_VERIFY) and the Cloudflare Web Analytics
+// beacon (PAMON_CF_BEACON). The server's own pages keep their strict CSP.
+func decorate(s, name string) string {
+	token := regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
+	var head string
+	if base := siteURL(); base != "" {
+		head += `<link rel="canonical" href="` + base + strings.TrimSuffix(name, "index.html") + `">` + "\n"
 	}
-	tag := `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "` + tok + `"}'></script>` + "\n"
-	if i := strings.LastIndex(s, "</body>"); i >= 0 {
-		return s[:i] + tag + s[i:]
+	for _, m := range []struct{ meta, env string }{{"google-site-verification", "PAMON_GOOGLE_VERIFY"}, {"naver-site-verification", "PAMON_NAVER_VERIFY"}} {
+		if v := os.Getenv(m.env); token.MatchString(v) {
+			head += `<meta name="` + m.meta + `" content="` + v + `">` + "\n"
+		}
 	}
-	return s + tag
+	if i := strings.Index(s, "</head>"); i >= 0 && head != "" {
+		s = s[:i] + head + s[i:]
+	}
+	if tok := os.Getenv("PAMON_CF_BEACON"); regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(tok) {
+		tag := `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "` + tok + `"}'></script>` + "\n"
+		if i := strings.LastIndex(s, "</body>"); i >= 0 {
+			s = s[:i] + tag + s[i:]
+		} else {
+			s += tag
+		}
+	}
+	return s
+}
+
+// siteURL is the public address with a trailing slash, or "" when unset.
+func siteURL() string {
+	u := os.Getenv("PAMON_SITE_URL")
+	if !strings.HasPrefix(u, "https://") {
+		return ""
+	}
+	return strings.TrimSuffix(u, "/") + "/"
+}
+
+// sitemap lists the pages a search engine should index.
+func sitemap(base string, pages []string) []byte {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n" + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	day := time.Now().UTC().Format("2006-01-02")
+	for _, p := range pages {
+		b.WriteString("  <url><loc>" + base + strings.TrimSuffix(p, "index.html") + "</loc><lastmod>" + day + "</lastmod></url>\n")
+	}
+	b.WriteString("</urlset>\n")
+	return []byte(b.String())
 }
 
 func exportSite(h http.Handler, cfg *config.Config, dir string) error {
@@ -154,7 +189,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		if i := strings.Index(s, "<script"); i >= 0 {
 			s = s[:i] + fetchShim + s[i:]
 		}
-		return put(name, []byte(withBeacon(s)))
+		return put(name, []byte(decorate(s, name)))
 	}
 	if err := page("/", "index.html"); err != nil {
 		return err
@@ -171,6 +206,9 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		b, err := get(requestPath)
 		if err != nil {
 			return err
+		}
+		if path == "ai/index.html" {
+			b = []byte(decorate(string(b), path))
 		}
 		if err := put(path, b); err != nil {
 			return err
@@ -198,6 +236,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 			return err
 		}
 	}
+	indexed := []string{"index.html", "status.html", "ai/index.html", "llms.txt"}
 	month := time.Now().In(config.KST)
 	for i, m := range []string{month.Format("2006-01"), month.AddDate(0, -1, 0).Format("2006-01")} {
 		b, err := get("/report/" + m)
@@ -207,9 +246,10 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		s := strings.ReplaceAll(linkFixes.Replace(string(b)), `href="/report/`, `href="../report/`)
 		s = regexp.MustCompile(`href="\.\./report/(\d{4}-\d{2})"`).ReplaceAllString(s, `href="$1.html"`)
 		s = strings.ReplaceAll(s, `href="./"`, `href="../"`)
-		if err := put("report/"+m+".html", []byte(withBeacon(s))); err != nil {
+		if err := put("report/"+m+".html", []byte(decorate(s, "report/"+m+".html"))); err != nil {
 			return err
 		}
+		indexed = append(indexed, "report/"+m+".html")
 		if i == 0 {
 			put("report.html", []byte(`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=report/`+m+`.html">`))
 		}
@@ -250,6 +290,11 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 					}
 				}
 			}
+		}
+	}
+	if base := siteURL(); base != "" {
+		if err := put("sitemap.xml", sitemap(base, indexed)); err != nil {
+			return err
 		}
 	}
 	return put(".nojekyll", nil)

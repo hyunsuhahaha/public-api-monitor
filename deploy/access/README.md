@@ -17,10 +17,10 @@ npx wrangler secret put ACCESS_ADMIN_TOKEN
 npx wrangler deploy
 ```
 
-관리자 토큰은 충분히 긴 임의 값으로 정하고 Secret으로만 저장합니다. 코드·쿼리 문자열·공개 Pages 산출물에 넣지 않습니다. 관리자 화면은 `https://<배포주소>/__access`, 공개 상태판은 `https://<배포주소>/public-api-monitor/`입니다. 로그 화면에서 토큰을 입력하면 최근 24시간의 종류별 요청 수와 최신 접속 목록을 볼 수 있습니다. 종류별 필터와 이전 기록 조회를 지원합니다. 토큰은 브라우저 저장소에 보관하지 않습니다.
+관리자 토큰은 충분히 긴 임의 값으로 정하고 Secret으로만 저장합니다. 코드·쿼리 문자열·공개 Pages 산출물에 넣지 않습니다. 관리자 화면은 `https://<배포주소>/__access`, 공개 상태판은 `https://<배포주소>/`입니다(예전 `/public-api-monitor/` 주소는 루트로 301 이동). 로그 화면에서 토큰을 입력하면 최근 24시간의 종류별 요청 수와 최신 접속 목록을 볼 수 있습니다. 종류별 필터와 이전 기록 조회를 지원합니다. 토큰은 브라우저 저장소에 보관하지 않습니다.
 
 ```sh
-curl 'https://<배포주소>/public-api-monitor/ai/diagnostics.json' -A 'ChatGPT-User/1.0'
+curl 'https://<배포주소>/ai/diagnostics.json' -A 'ChatGPT-User/1.0'
 curl 'https://<배포주소>/__access/logs?kind=ai_claimed&limit=50' \
   -H "Authorization: Bearer $ACCESS_ADMIN_TOKEN"
 ```

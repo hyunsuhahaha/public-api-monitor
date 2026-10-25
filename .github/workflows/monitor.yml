@@ -54,9 +54,13 @@ jobs:
           NAVER_MAPS_CLIENT_ID: ${{ secrets.NAVER_MAPS_CLIENT_ID }}
           NAVER_MAPS_CLIENT_SECRET: ${{ secrets.NAVER_MAPS_CLIENT_SECRET }}
           PAMON_WEBHOOK_URL: ${{ secrets.PAMON_WEBHOOK_URL }}
-          PAMON_PUBLIC_URL: https://hyunsuhahaha.github.io/public-api-monitor/
-          # Cloudflare Web Analytics site token (public, it ships in every page)
+          # The address handed out: the access gateway in front of Pages, so visits are counted.
+          PAMON_PUBLIC_URL: https://pamon.lilycloud-edge.workers.dev/
+          PAMON_SITE_URL: https://pamon.lilycloud-edge.workers.dev/
+          # Public values that ship in every page: Web Analytics token, search-engine ownership tags
           PAMON_CF_BEACON: ${{ vars.PAMON_CF_BEACON }}
+          PAMON_GOOGLE_VERIFY: ${{ vars.PAMON_GOOGLE_VERIFY }}
+          PAMON_NAVER_VERIFY: ${{ vars.PAMON_NAVER_VERIFY }}
         run: ./pamon -cycle -db pamon.db -location github-actions -export site
 
       - name: save database

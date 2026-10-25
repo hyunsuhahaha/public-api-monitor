@@ -71,12 +71,18 @@ export function createWorker(originFetch=fetch) {
       }
       let response;
       if (!['GET','HEAD'].includes(request.method)) response=json({error:'method not allowed'},405);
-      else if (u.pathname==='/') response=new Response(null,{status:302,headers:{location:PREFIX}});
-      else if (!u.pathname.startsWith(PREFIX)) response=json({error:'not found'},404);
+      else if (u.pathname==='/robots.txt') {
+        // Crawlers and AI fetchers are welcome everywhere but the private log screen.
+        response=new Response(`User-agent: *\nDisallow: /__access\nAllow: /\n\nSitemap: ${u.origin}/sitemap.xml\n`,
+          {headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});
+      }
+      // The gateway serves the site at its root; old /public-api-monitor/ links move there.
+      else if (u.pathname.startsWith(PREFIX) || u.pathname===PREFIX.slice(0,-1)) {
+        response=new Response(null,{status:301,headers:{location:'/'+u.pathname.slice(PREFIX.length)+u.search}});
+      }
       else {
         // Fixed origin and prefix: no user-controlled proxy destination, cookies or credentials.
-        const upstream=new URL(ORIGIN+u.pathname);
-        if (u.searchParams.has('m')) upstream.searchParams.set('m',u.searchParams.get('m').slice(0,32));
+        const upstream=new URL(ORIGIN+PREFIX+u.pathname.slice(1));        if (u.searchParams.has('m')) upstream.searchParams.set('m',u.searchParams.get('m').slice(0,32));
         const pass=new Headers();
         for (const key of ['accept','if-none-match','if-modified-since']) {
           if(request.headers.has(key)) pass.set(key,request.headers.get(key));
@@ -87,7 +93,7 @@ export function createWorker(originFetch=fetch) {
           if(result.status>=300 && result.status<400 && result.headers.has('location')) {
             const next=new URL(result.headers.get('location'),upstream);
             if(next.origin!==ORIGIN || !next.pathname.startsWith(PREFIX)) response=json({error:'unexpected origin redirect'},502);
-            else { next.host=u.host; next.protocol=u.protocol; response.headers.set('location',next.toString()); }
+            else { next.host=u.host; next.protocol=u.protocol; next.pathname='/'+next.pathname.slice(PREFIX.length); response.headers.set('location',next.toString()); }
           }
           // A gateway hit must reach the Worker to be counted, including conditional 304s.
           response.headers.set('cache-control','no-store');

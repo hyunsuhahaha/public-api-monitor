@@ -21,7 +21,7 @@ function harness(origin=async()=>new Response('hello',{headers:{'content-type':'
 
 test('JSON requests without JS are proxied and stored without query or credential headers',async()=>{
   const h=harness();
-  const response=await h.get('/public-api-monitor/ai/diagnostics.json?token=secret&m=123',{
+  const response=await h.get('/ai/diagnostics.json?token=secret&m=123',{
     headers:{'user-agent':'ChatGPT-User/1.0',authorization:'Bearer secret',cookie:'session=secret',referer:'https://site.test/path?key=secret'}});
   assert.equal(response.status,200);
   assert.equal(response.headers.get('cache-control'),'no-store');
@@ -56,15 +56,26 @@ test('private logs fail closed, are not themselves recorded, and paginate',async
 
 test('origin errors, redirects and writes remain bounded to the Pages origin',async()=>{
   const failure=harness(async()=>{throw Error('secret exception')});
-  assert.equal((await failure.get('/public-api-monitor/ai/diagnostics.json')).status,502);
+  assert.equal((await failure.get('/ai/diagnostics.json')).status,502);
   assert.equal(failure.writes[0].args[3],502);
   const redirect=harness(async()=>new Response(null,{status:301,headers:{location:'https://hyunsuhahaha.github.io/public-api-monitor/ai/'}}));
-  assert.equal((await redirect.get('/public-api-monitor/ai')).headers.get('location'),'https://gateway.test/public-api-monitor/ai/');
+  assert.equal((await redirect.get('/ai')).headers.get('location'),'https://gateway.test/ai/');
   const external=harness(async()=>new Response(null,{status:302,headers:{location:'https://evil.test/'}}));
-  assert.equal((await external.get('/public-api-monitor/')).status,502);
+  assert.equal((await external.get('/')).status,502);
   const h=harness();
-  assert.equal((await h.get('/public-api-monitor/',{method:'POST',body:'private'})).status,405);
-  assert.equal((await h.get('/https://evil.test')).status,404);
+  assert.equal((await h.get('/',{method:'POST',body:'private'})).status,405);
+  assert.equal(h.calls.length,0);
+  await h.get('//evil.test/x');
+  assert.ok(h.calls[0][0].startsWith('https://hyunsuhahaha.github.io/public-api-monitor/'));
+});
+
+test('old /public-api-monitor/ links move to the root; robots.txt points at the sitemap',async()=>{
+  const h=harness();
+  const moved=await h.get('/public-api-monitor/ai/index.html?x=1');
+  assert.equal(moved.status,301);
+  assert.equal(moved.headers.get('location'),'/ai/index.html?x=1');
+  assert.equal((await h.get('/public-api-monitor')).headers.get('location'),'/');
+  assert.match(await (await h.get('/robots.txt')).text(),/Sitemap: https:\/\/gateway\.test\/sitemap\.xml/);
   assert.equal(h.calls.length,0);
 });
 
@@ -72,7 +83,7 @@ test('log storage failure does not break public reads; scheduled retention remov
   const h=harness();
   h.env.DB.prepare=()=>({bind(){return {run:async()=>{throw Error('db offline')}}}});
   const old=console.error;let diagnostic='';console.error=(s)=>diagnostic=s;
-  try { assert.equal((await h.get('/public-api-monitor/')).status,200); } finally {console.error=old}
+  try { assert.equal((await h.get('/')).status,200); } finally {console.error=old}
   assert.equal(diagnostic,'access_log_write_failed');
   const retention=harness();
   await retention.worker.scheduled({},retention.env,retention.ctx);
