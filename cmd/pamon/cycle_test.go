@@ -171,12 +171,12 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	if !strings.Contains(string(sm), "<loc>https://pamon.test/s/</loc>") {
 		t.Errorf("sitemap lacks s/: %s", sm)
 	}
-	for _, page := range []string{"lead-time.html", "maintenance.html"} {
+	for _, page := range []string{"lead-time.html", "maintenance.html", "retry-advice.html"} {
 		if !strings.Contains(string(sm), "<loc>https://pamon.test/"+page+"</loc>") {
 			t.Errorf("sitemap lacks %s", page)
 		}
 	}
-	for _, f := range []string{"lead-time.html", "maintenance.html", "maintenance.json", "maintenance.ics", "data/api/v1/lead-time.json", "feed.xml", "feed/" + maps[0].ID + ".xml"} {
+	for _, f := range []string{"lead-time.html", "maintenance.html", "maintenance.json", "maintenance.ics", "data/api/v1/lead-time.json", "retry-advice.html", "data/api/v1/retry-advice.json", "feed.xml", "feed/" + maps[0].ID + ".xml"} {
 		if _, err := os.Stat(filepath.Join(site, f)); err != nil {
 			t.Errorf("export lacks %s", f)
 		}

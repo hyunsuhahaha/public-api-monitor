@@ -76,3 +76,23 @@ func TestAdvise(t *testing.T) {
 		t.Fatalf("%+v", a)
 	}
 }
+
+func TestAccuracy(t *testing.T) {
+	tr := store.Transition{
+		"ok":     {"ok": 96, "down": 4, "client": 9},
+		"down":   {"down": 7, "ok": 3},
+		"slow":   {"ok": 1, "slow": 1},
+		"client": {"ok": 5},
+	}
+	a := AccuracyOf(tr, 30)
+	if a.Retry != 100 || a.RetryPct != 96 || a.Wait != 10 || a.WaitPct != 70 || a.Recoveries != 3 || a.Backoff != 2 || a.BackoffPct != 100 {
+		t.Fatalf("%+v", a)
+	}
+	if e := AccuracyOf(nil, 30); e.WaitPct != -1 || e.RetryPct != -1 {
+		t.Fatalf("%+v", e)
+	}
+	m := Merge(map[string]store.Transition{"a": {"ok": {"ok": 1}}, "b": {"ok": {"ok": 2, "down": 1}}})
+	if m["ok"]["ok"] != 3 || m["ok"]["down"] != 1 {
+		t.Fatal(m)
+	}
+}

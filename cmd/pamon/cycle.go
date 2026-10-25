@@ -340,7 +340,10 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 	if err := page("/maintenance.html", "maintenance.html"); err != nil {
 		return spent, err
 	}
-	indexed = append(indexed, "lead-time.html", "maintenance.html")
+	if err := page("/retry-advice", "retry-advice.html"); err != nil {
+		return spent, err
+	}
+	indexed = append(indexed, "lead-time.html", "maintenance.html", "retry-advice.html")
 	for _, f := range []string{"maintenance.json", "maintenance.ics"} {
 		b, err := get("/" + f)
 		if err != nil {
@@ -379,7 +382,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 			return spent, err
 		}
 	}
-	urls := []string{"/api/v1/status", "/api/v1/incidents", "/api/v1/schema-events", "/api/v1/silences", "/api/v1/overview", "/api/v1/lead-time", "/version"}
+	urls := []string{"/api/v1/status", "/api/v1/incidents", "/api/v1/schema-events", "/api/v1/silences", "/api/v1/overview", "/api/v1/lead-time", "/api/v1/retry-advice", "/version"}
 	for _, r := range exportRanges {
 		urls = append(urls, "/api/v1/overview?range="+r)
 		for _, t := range cfg.Targets {

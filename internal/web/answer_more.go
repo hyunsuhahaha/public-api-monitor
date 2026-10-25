@@ -11,19 +11,20 @@ import (
 // answerMore is what an answer page shows under its incidents: the comparison with the
 // provider's status page, announced maintenance, and where to subscribe.
 type answerMore struct {
-	ID      string
-	Lead    *answerLead
-	Maint   []maintRow
-	Pattern insight.Pattern
-	Peaks   *peakView
+	ID       string
+	Lead     *answerLead
+	Maint    []maintRow
+	Pattern  insight.Pattern
+	Peaks    *peakView
+	Accuracy *insight.Accuracy
 }
 
 func (s *Server) answerMore(ctx context.Context, t TargetView, now time.Time) answerMore {
-	return answerMore{ID: t.ID, Pattern: s.pattern(ctx, t.ID, now), Peaks: s.peaks(ctx, t.ID, now), Lead: s.answerLead(ctx, t), Maint: s.maintFor(t.ID, now)}
+	return answerMore{ID: t.ID, Pattern: s.pattern(ctx, t.ID, now), Peaks: s.peaks(ctx, t.ID, now), Accuracy: s.accuracyFor(ctx, t.ID), Lead: s.answerLead(ctx, t), Maint: s.maintFor(t.ID, now)}
 }
 
 func init() {
-	template.Must(answerTmpl.Parse(`{{define "more"}}{{template "pattern" .Pattern}}{{template "peaks" .Peaks}}{{template "maint" .Maint}}{{template "lead" .Lead}}
+	template.Must(answerTmpl.Parse(`{{define "more"}}{{template "pattern" .Pattern}}{{template "accuracyLine" .Accuracy}}{{template "peaks" .Peaks}}{{template "maint" .Maint}}{{template "lead" .Lead}}
 <h2 id="subscribe">이 API가 바뀌거나 이상해지면 알림 받기</h2>
 <p>장애, 데이터 이상(응답은 오지만 데이터가 멈췄거나 틀림), 응답 형식 변경(필드 추가·사라짐), 공지된 점검을 Atom 피드로 받을 수 있습니다. 가입이나 키는 필요 없습니다.</p>
 <ul>

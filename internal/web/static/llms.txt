@@ -6,6 +6,7 @@ Developer dependency monitoring evidence for incident diagnosis. These are indep
 - [Diagnostic catalog](ai/diagnostics.json): match target id, name, provider or exact host; follow each target's jsonUrl resolved against the catalog URL.
 - [Status dashboard](status.html): human-readable status.
 - [Maintenance windows](maintenance.json): announced maintenance per target (start, end, state, targets[].id); also as iCalendar (maintenance.ics). Announcements, not observations: skip or queue calls inside a window instead of retrying.
+- [Retry advice record](retry-advice.html): how often retryAdvice was right over 30 days (after "wait" the next check failed too; after "retry" it worked), overall and per target (JSON: data/api/v1/retry-advice.json).
 - [Lead time](lead-time.html): how many minutes pamon confirmed outages before or after the provider's own status page (JSON: data/api/v1/lead-time.json), with sample sizes and excluded cases.
 - [Change feeds](feed.xml): Atom feed of incidents, data problems (answers that arrive stale or wrong), response format changes and upcoming maintenance; feed/{id}.xml for one target.
 - [Per-service answers](s/index.html): one page per service (s/{id}.html) with a plain-language verdict, where the last request spent its time (DNS, TCP, TLS, server wait), the provider's own status announcement when it publishes one, and recent incidents.

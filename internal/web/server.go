@@ -52,6 +52,7 @@ type Server struct {
 
 	cache      respCache
 	lead       leadCache
+	acc        accuracyCache
 	mu         sync.Mutex
 	cachedView *StatusView
 	cached     []byte
@@ -98,6 +99,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /data/api/v1/lead-time.json", s.leadJSON) // the exported file's path
 	mux.HandleFunc("GET /feed.xml", s.feed)
 	mux.HandleFunc("GET /feed/{id}", s.feed)
+	mux.HandleFunc("GET /retry-advice", s.accuracyPage)
+	mux.HandleFunc("GET /retry-advice.html", s.accuracyPage)
+	mux.HandleFunc("GET /api/v1/retry-advice", s.accuracyJSON)
+	mux.HandleFunc("GET /data/api/v1/retry-advice.json", s.accuracyJSON) // the exported file's path
 	mux.HandleFunc("GET /maintenance.json", s.maintJSON)
 	mux.HandleFunc("GET /maintenance.ics", s.maintICS)
 	mux.HandleFunc("GET /maintenance.html", s.maintPage)

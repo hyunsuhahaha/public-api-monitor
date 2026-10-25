@@ -132,7 +132,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // one writer; SQLite serialises anyway
-	if _, err := db.Exec(schema + rollupSchema + officialSchema + officialIncidentsSchema + typesSchema); err != nil {
+	if _, err := db.Exec(schema + rollupSchema + officialSchema + officialIncidentsSchema + typesSchema + transitionsSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -163,6 +163,10 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	if err := st.backfillRollups(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := st.backfillTransitions(context.Background()); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -288,6 +292,13 @@ func (s *Store) SaveVerdict(ctx context.Context, v Verdict) error {
 	if _, err := tx.ExecContext(ctx, `INSERT INTO verdicts(target, at, status, reason, voters) VALUES(?,?,?,?,?)`,
 		v.TargetID, ms(v.At), string(v.Status), v.Reason, v.Voters); err != nil {
 		return err
+	}
+	var prevAt int64
+	var prevStatus string
+	if tx.QueryRowContext(ctx, `SELECT at, status FROM latest_verdicts WHERE target=?`, v.TargetID).Scan(&prevAt, &prevStatus) == nil {
+		if err := countTransition(ctx, tx, v.TargetID, prevAt, prevStatus, ms(v.At), string(v.Status)); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO latest_verdicts(target, at, status, reason, voters) VALUES(?,?,?,?,?)
 		ON CONFLICT(target) DO UPDATE SET at=excluded.at, status=excluded.status, reason=excluded.reason, voters=excluded.voters
