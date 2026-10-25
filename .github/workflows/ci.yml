@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-go@v5
         with: {go-version-file: go.mod}
       # the config itself first: a bad maintenance window or target fails here, not on deploy
-      - run: go run ./cmd/pamon -check && go run ./cmd/pamon -check -config deploy/gameday/targets.yaml
+      - run: go run ./cmd/pamon -check && go run ./cmd/pamon -check -config deploy/gameday/targets.yaml && go run ./cmd/pamon -check -config selfhost/targets.yaml
       - run: go run ./cmd/pamon -once -paths
         env:
           DATA_GO_KR_KEY: dummy-not-a-key

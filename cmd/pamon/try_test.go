@@ -71,3 +71,31 @@ func TestTryNeverPrintsAConfiguredURL(t *testing.T) {
 		t.Fatalf("%s", s)
 	}
 }
+
+// The self-hosting example parses, and with its keys set every target can be called
+// (a header target without auth: headers would sit at "client" forever).
+func TestSelfhostExample(t *testing.T) {
+	raw, err := os.ReadFile("../../selfhost/targets.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"GITHUB_TOKEN", "STRIPE_SECRET_KEY", "OPENAI_API_KEY", "DATA_GO_KR_KEY"} {
+		t.Setenv(k, "set")
+	}
+	env, _ := os.ReadFile("../../selfhost/.env.example")
+	for i := range cfg.Targets {
+		tg := &cfg.Targets[i]
+		if !tg.HasKey() {
+			t.Errorf("%s: %s missing although every key is set", tg.ID, tg.MissingCredential())
+		}
+		for _, h := range tg.Headers {
+			if !strings.Contains(string(env), h.Env+"=") {
+				t.Errorf("%s: .env.example lacks %s", tg.ID, h.Env)
+			}
+		}
+	}
+}

@@ -1,0 +1,84 @@
+# 내 서비스가 의존하는 API를 내 키로 감시합니다. 공개 pamon과 달리 "내 계정·내 키로
+# 부를 때" 되는지를 봅니다. 키는 .env에만 두고 여기에는 환경 변수 이름만 씁니다(pamon은
+# 키를 화면·로그·피드에 내보내지 않습니다).
+#
+# 고친 뒤 확인:  docker compose run --rm pamon -check
+# 한 개 시험:    docker compose run --rm pamon -try github-rate-limit
+# 새 API 추가:   docker compose run --rm pamon -try https://api.example.com/v1/health
+#               (판정과 json_expect 규칙 제안, 붙여 넣을 항목을 출력합니다)
+#
+# 아래는 예시입니다. 쓰지 않는 항목은 지우세요. 키가 없는 항목은 '판정 불가'로 남고
+# 가용률에서 빠집니다.
+interval: 5m
+timeout: 10s
+slow_after: 3s
+
+# 공지된 점검: 이 시간의 실패는 장애·알림에서 빠지고 /maintenance.json에 나옵니다.
+maintenance: []
+
+targets:
+  # GitHub: 내 토큰의 호출 한도가 바닥나기 전에 알기 (한도 소진은 '데이터 이상'으로)
+  - id: github-rate-limit
+    name: GitHub API (내 토큰)
+    provider: GitHub
+    category: 소스·배포
+    docs: https://docs.github.com/rest/rate-limit
+    auth: headers
+    classifier: http
+    headers:
+      Authorization: {env: GITHUB_TOKEN, prefix: "Bearer "}
+    url: https://api.github.com/rate_limit
+    json_expect:
+      - {path: resources.core.remaining, min: 500}
+
+  # Stripe: 테스트 키(sk_test_...)로 잔액 조회. 결제는 만들지 않습니다.
+  - id: stripe-balance
+    name: Stripe API (내 계정)
+    provider: Stripe
+    category: 은행·결제
+    docs: https://docs.stripe.com/api/balance/balance_retrieve
+    auth: headers
+    classifier: http
+    headers:
+      Authorization: {env: STRIPE_SECRET_KEY, prefix: "Bearer "}
+    url: https://api.stripe.com/v1/balance
+    json_expect:
+      - {path: object, equals: balance}
+      - {path: available, min_items: 1}
+
+  # OpenAI: 내 키로 모델 목록이 오는지 (요금이 나가지 않는 호출)
+  - id: openai-models
+    name: OpenAI API (내 키)
+    provider: OpenAI
+    category: AI
+    docs: https://platform.openai.com/docs/api-reference/models/list
+    auth: headers
+    classifier: http
+    headers:
+      Authorization: {env: OPENAI_API_KEY, prefix: "Bearer "}
+    url: https://api.openai.com/v1/models
+    json_expect:
+      - {path: data, min_items: 1}
+
+  # 공공데이터포털: 내 서비스 키로 에어코리아 (결과 코드까지 읽어 판정)
+  - id: my-airkorea
+    name: 에어코리아 시도별 실시간 (내 키)
+    provider: 한국환경공단
+    category: 날씨·재해
+    key_env: DATA_GO_KR_KEY
+    url: https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey={{.Key}}&returnType=json&numOfRows=3&pageNo=1&sidoName={{esc "서울"}}&ver=1.0
+    freshness:
+      pattern: '"dataTime"\s*:\s*"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"'
+      layout: "2006-01-02 15:04"
+      max_age: 3h
+
+  # 내 서비스: 상태 확인 주소가 200과 함께 정상 내용을 주는지
+  # - id: my-api
+  #   name: 우리 API
+  #   provider: 우리 회사
+  #   category: 내 서비스
+  #   auth: none
+  #   classifier: http
+  #   url: https://api.example.com/health
+  #   json_expect:
+  #     - {path: status, equals: ok}

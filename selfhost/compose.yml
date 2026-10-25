@@ -1,0 +1,15 @@
+# 내 API 감시: docker compose up -d 후 http://localhost:8080
+services:
+  pamon:
+    image: ghcr.io/hyunsuhahaha/public-api-monitor:latest
+    env_file: .env
+    environment:
+      PAMON_CONFIG: /etc/pamon/my-targets.yaml
+      PAMON_LOCATION: selfhost
+    volumes:
+      - ./targets.yaml:/etc/pamon/my-targets.yaml:ro
+      - pamon-data:/data
+    ports: ["8080:8080"]
+    restart: unless-stopped
+volumes:
+  pamon-data:

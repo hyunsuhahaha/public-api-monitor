@@ -359,7 +359,7 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 
 ## API
 
-Go에서 호출 전에 pamon을 확인하는 서킷 브레이커: [pkg/pamonclient](pkg/pamonclient) (재시도 폭주로 IP가 차단되는 문제와 게임 데이 결과). Node·Python·Java(Resilience4j) 예제: [examples](examples).
+Go에서 호출 전에 pamon을 확인하는 서킷 브레이커: [pkg/pamonclient](pkg/pamonclient) (재시도 폭주로 IP가 차단되는 문제와 게임 데이 결과). Node·Python·Java(Resilience4j) 예제: [examples](examples). 내가 쓰는 API를 내 키로 감시하려면: [selfhost](selfhost) (Docker 한 번).
 
 | 경로 | 내용 |
 |---|---|
