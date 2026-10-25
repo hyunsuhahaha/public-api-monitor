@@ -114,6 +114,21 @@ var linkFixes = strings.NewReplacer(
 	`location.href = "/feed.xml"`, `location.href = "feed.xml"`, "${location.origin}/#i=", "${location.origin}${location.pathname}#i=",
 )
 
+// withBeacon adds the Cloudflare Web Analytics beacon to an exported page when
+// PAMON_CF_BEACON holds the site token. Only the static site gets it; the
+// server's own pages keep their strict CSP.
+func withBeacon(s string) string {
+	tok := os.Getenv("PAMON_CF_BEACON")
+	if tok == "" || !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(tok) {
+		return s
+	}
+	tag := `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "` + tok + `"}'></script>` + "\n"
+	if i := strings.LastIndex(s, "</body>"); i >= 0 {
+		return s[:i] + tag + s[i:]
+	}
+	return s + tag
+}
+
 func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 	get := func(u string) ([]byte, error) {
 		rec := httptest.NewRecorder()
@@ -139,7 +154,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		if i := strings.Index(s, "<script"); i >= 0 {
 			s = s[:i] + fetchShim + s[i:]
 		}
-		return put(name, []byte(s))
+		return put(name, []byte(withBeacon(s)))
 	}
 	if err := page("/", "index.html"); err != nil {
 		return err
@@ -192,7 +207,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		s := strings.ReplaceAll(linkFixes.Replace(string(b)), `href="/report/`, `href="../report/`)
 		s = regexp.MustCompile(`href="\.\./report/(\d{4}-\d{2})"`).ReplaceAllString(s, `href="$1.html"`)
 		s = strings.ReplaceAll(s, `href="./"`, `href="../"`)
-		if err := put("report/"+m+".html", []byte(s)); err != nil {
+		if err := put("report/"+m+".html", []byte(withBeacon(s))); err != nil {
 			return err
 		}
 		if i == 0 {
