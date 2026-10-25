@@ -107,11 +107,12 @@ func findCode(s string) string {
 
 // Observation is what one HTTP call produced.
 type Observation struct {
-	Err        error
-	Timeout    bool
-	HTTPStatus int
-	Body       []byte
-	Latency    time.Duration
+	ContentType string
+	Err         error
+	Timeout     bool
+	HTTPStatus  int
+	Body        []byte
+	Latency     time.Duration
 }
 
 // Verdict is the classification of an observation.

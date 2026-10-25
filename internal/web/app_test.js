@@ -32,6 +32,7 @@ test("map quotas do not inherit public-portal traffic advice", () => {
   assert.equal(advice("code NAVER:410: throttle")[0], "호출 속도 제한");
   assert.equal(advice("code KAKAO:-401: invalid key")[0], "인증·요청 설정 확인");
   assert.equal(advice("credential not set (NAVER_MAPS_CLIENT_SECRET)")[0], "인증 설정 필요");
+  assert.equal(advice("prerequisite: manifest not checked; registry auth http 503")[0], "선행 인증 검사 실패");
 });
 
 test("vendor HTTP 400 processing errors are attributed to the provider", () => {

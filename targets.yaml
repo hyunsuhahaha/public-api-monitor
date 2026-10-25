@@ -30,6 +30,52 @@ key_env: DATA_GO_KR_KEY
 maintenance: []
 
 targets:
+  - id: docker-auth
+    name: Docker Hub 익명 인증
+    provider: Docker Hub
+    category: 패키지·빌드
+    docs: https://docs.docker.com/reference/api/registry/auth/
+    auth: none
+    classifier: docker_token
+    url: https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/hello-world:pull
+
+  - id: docker-manifest
+    name: Docker Hub 이미지 manifest 조회
+    provider: Docker Hub
+    category: 패키지·빌드
+    docs: https://distribution.github.io/distribution/spec/api/
+    auth: none
+    classifier: docker_manifest
+    registry_token_url: https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/hello-world:pull
+    accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json
+    url: https://registry-1.docker.io/v2/library/hello-world/manifests/sha256:11a3eb1597e864c51b3f56733cb2e8a90bf0c284bfc05f9444d81c558bc848aa
+    artifact:
+      sha256: 11a3eb1597e864c51b3f56733cb2e8a90bf0c284bfc05f9444d81c558bc848aa
+      min_bytes: 11062
+      max_bytes: 11062
+
+  - id: github-api
+    name: GitHub 공개 저장소 API
+    provider: GitHub
+    category: 소스·배포
+    docs: https://docs.github.com/en/rest/repos/repos#get-a-repository
+    auth: none
+    classifier: http
+    url: https://api.github.com/repos/octocat/Hello-World
+    json_expect:
+      - {path: full_name, equals: octocat/Hello-World}
+      - {path: id, min: 1296269, max: 1296269}
+
+  - id: github-git
+    name: GitHub Git 참조 조회
+    provider: GitHub
+    category: 소스·배포
+    docs: https://git-scm.com/docs/http-protocol
+    auth: none
+    classifier: git
+    accept: application/x-git-upload-pack-advertisement
+    url: https://github.com/octocat/Hello-World.git/info/refs?service=git-upload-pack
+
   # Immutable, small package canaries. Metadata and downloads are independent:
   # registry failure must not suppress detection of a working/broken file host.
   - id: npm-metadata

@@ -338,6 +338,14 @@ func dumpTarget(cfg *config.Config, id string) int {
 		if t.ID != id {
 			continue
 		}
+		if t.Classifier == "docker_token" {
+			r := probe.New("dump").Check(context.Background(), t)
+			fmt.Printf("%s HTTP %d %s\nregistry token body hidden\n", r.Status, r.HTTPStatus, r.Reason)
+			if !r.Status.Healthy() {
+				return 1
+			}
+			return 0
+		}
 		u, err := t.Render(time.Now())
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "url:", err)
@@ -354,14 +362,26 @@ func dumpTarget(cfg *config.Config, id string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		resp, err := probe.New("dump").Client.Do(req)
+		p := probe.New("dump")
+		if t.Accept != "" {
+			req.Header.Set("Accept", t.Accept)
+		}
+		if err := p.ApplyRegistryAuth(req, t.RegistryTokenURL); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		resp, err := p.Client.Do(req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "request:", t.Redact(err.Error()))
 			return 1
 		}
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 3<<10))
-		fmt.Printf("HTTP %d %s\n%s\n", resp.StatusCode, resp.Header.Get("Content-Type"), t.Redact(string(body)))
+		text := t.Redact(string(body))
+		if token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "); token != "" {
+			text = strings.ReplaceAll(text, token, "REDACTED")
+		}
+		fmt.Printf("HTTP %d %s\n%s\n", resp.StatusCode, resp.Header.Get("Content-Type"), text)
 		return 0
 	}
 	fmt.Fprintln(os.Stderr, "no target", id)

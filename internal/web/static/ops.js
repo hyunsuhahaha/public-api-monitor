@@ -53,7 +53,8 @@ function nextSteps(d, w, open) {
   const i = d.incident, t = d.target || {}, steps = [];
   const mapAPI = ["kakao", "naver_maps"].includes(t.classifier);
   const registry = t.classifier === "http" && ["npm", "PyPI"].includes(t.provider);
-  const externalAPI = mapAPI || registry;
+  const dependency = ["npm", "PyPI", "Docker Hub", "GitHub"].includes(t.provider);
+  const externalAPI = mapAPI || dependency;
   const link = (text, href) => { const a = el("a", "", text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; };
   const li = (...parts) => { const x = el("li"); x.append(...parts); steps.push(x); };
   const peers = (state.data.targets || []).filter((x) => x.provider === t.provider && x.id !== t.id);
@@ -63,9 +64,12 @@ function nextSteps(d, w, open) {
     li("감시 서버에서 해당 API 호스트의 DNS·TCP·TLS 연결을 확인한다. 인증 헤더와 키는 명령 출력·공유 로그에서 제외한다");
   }
   if (w.who !== "네트워크") {
-    const noticeURL = registry ? (t.provider === "npm" ? "https://status.npmjs.org/" : "https://status.python.org/") : mapAPI ? t.docs : "https://www.data.go.kr/bbs/ntc/selectNoticeListView.do";
+    const notices = { npm: "https://status.npmjs.org/", PyPI: "https://status.python.org/", "Docker Hub": "https://www.dockerstatus.com/", GitHub: "https://www.githubstatus.com/" };
+    const noticeURL = notices[t.provider] || (mapAPI ? t.docs : "https://www.data.go.kr/bbs/ntc/selectNoticeListView.do");
     li(link(externalAPI ? "공급자 상태·지원 안내" : "공공데이터포털 공지사항", noticeURL), "에서 점검·장애 공지를 찾는다. 공지된 점검이면 ", el("code", "", "targets.yaml maintenance"), "에 등록해 SLO에서 뺀다");
     if (registry) li("패키지 정보 조회와 다운로드 결과를 비교한다. 체크섬 불일치면 프록시·오류 페이지·파일 변조 여부를 확인하고, 근거 없이 기준 해시를 바꾸지 않는다");
+    if (t.provider === "Docker Hub") li("토큰 발급과 manifest 결과를 비교한다. 인증 실패로 manifest를 검사하지 못한 경우와 registry 자체 실패를 구분하고 공유 IP의 pull 제한을 확인한다");
+    if (t.provider === "GitHub") li("API와 Git 참조 조회 결과를 비교한다. API 호출 제한과 Git 전송 경로 장애는 별개이며, 참조 조회 성공이 clone·push·Actions 성공을 뜻하지 않는다");
     // same rule as the agency banner: two or more, and half or more, is the agency
     const agencyWide = badPeers.length >= 2 && badPeers.length * 2 >= peers.length;
     li(peers.length ? `같은 기관(${t.provider}) 다른 API ${peers.length}개 중 지금 ${badPeers.length}개가 이상` +
@@ -75,7 +79,8 @@ function nextSteps(d, w, open) {
   }
   if (i.flaps >= 2) li(`불안정 ×${i.flaps}: 알림이 시끄러우면 기관 문제로 기록하고, 반복되는 시간대가 있는지 API별 장애 통계에서 본다`);
   if (!open) li("닫힌 장애: ", el("b", "", "포스트모템 초안 복사"), "로 기록을 남긴다 (원인 항목이 문제 위치로 채워져 있음)");
-  li(link(registry ? "런북: 패키지 조회·다운로드 장애" : mapAPI ? "런북: 지도 API 장애 대응" : "런북: 공공 API 장애 대응", registry ? "https://github.com/hyunsuhahaha/public-api-monitor/blob/main/docs/runbooks/packages.md" : mapAPI ? "https://github.com/hyunsuhahaha/public-api-monitor/blob/main/docs/runbooks/maps.md" : RUNBOOK));
+  const runbook = dependency ? (registry ? "packages" : "dependencies") : mapAPI ? "maps" : null;
+  li(link(dependency ? "런북: 개발·배포 의존성 장애" : mapAPI ? "런북: 지도 API 장애 대응" : "런북: 공공 API 장애 대응", runbook ? `https://github.com/hyunsuhahaha/public-api-monitor/blob/main/docs/runbooks/${runbook}.md` : RUNBOOK));
   return steps;
 }
 

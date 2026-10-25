@@ -176,6 +176,7 @@ function correlate(targets) {
 
 // Prefer the body's code over the HTTP status: a 403 can carry quota code 22.
 function clientAdvice(reason = "") {
+  if (reason.startsWith("prerequisite:")) return ["선행 인증 검사 실패", "Docker Hub 인증 대상의 상태를 먼저 확인하세요. 토큰을 받지 못해 manifest는 검사하지 않았으며 가용률에서 제외합니다."];
   const code = (reason.match(/\bcode ([A-Z_]+:-?[\w]+|[\w-]+)/) || [])[1];
   if (reason.startsWith("credential not set") || reason.startsWith("invalid credential header")) return ["인증 설정 필요", "실행 환경의 해당 환경변수를 설정하세요. 키가 없는 대상은 가용률과 장애 판정에서 제외됩니다."];
   if (["KAKAO:-10", "KAKAO:-11", "NAVER:400"].includes(code)) return ["쿼터·이용 한도 확인", "공급자 콘솔에서 쿼터·금액 한도와 사용 API 활성화 상태를 확인하세요."];

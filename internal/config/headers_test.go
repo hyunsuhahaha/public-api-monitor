@@ -12,6 +12,10 @@ func TestHeaderConfigValidation(t *testing.T) {
 	for _, extra := range []string{
 		"auth: typo",
 		"classifier: typo",
+		"accept: \"bad\\r\\nInjected\"",
+		"classifier: docker_manifest",
+		"auth: none\n    classifier: docker_manifest\n    registry_token_url: http://example.com/token",
+		"auth: none\n    classifier: http\n    registry_token_url: https://example.com/token",
 		"auth: headers",
 		"headers: {'Bad Header': {env: KEY}}",
 		"headers: {Host: {env: KEY}}",

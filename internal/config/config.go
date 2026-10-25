@@ -81,24 +81,26 @@ type Artifact struct {
 
 // Target is one monitored API call.
 type Target struct {
-	ID         string            `yaml:"id"`
-	Name       string            `yaml:"name"`
-	Provider   string            `yaml:"provider"`
-	Category   string            `yaml:"category"`
-	Docs       string            `yaml:"docs"`
-	URL        string            `yaml:"url"` // text/template, see Render
-	KeyEnv     string            `yaml:"key_env"`
-	Auth       string            `yaml:"auth"` // key (legacy query key), headers, or none
-	Headers    map[string]Header `yaml:"headers"`
-	Classifier string            `yaml:"classifier"` // public (default), kakao, naver_maps, http
-	JSONExpect []JSONExpect      `yaml:"json_expect"`
-	Artifact   *Artifact         `yaml:"artifact"`
-	Timeout    Duration          `yaml:"timeout"`
-	SlowAfter  Duration          `yaml:"slow_after"`
-	Interval   Duration          `yaml:"interval"`
-	Freshness  *Freshness        `yaml:"freshness"`
-	Expect     []Expect          `yaml:"expect"`
-	SLO        float64           `yaml:"slo"` // availability objective, e.g. 0.999
+	ID               string            `yaml:"id"`
+	Name             string            `yaml:"name"`
+	Provider         string            `yaml:"provider"`
+	Category         string            `yaml:"category"`
+	Docs             string            `yaml:"docs"`
+	URL              string            `yaml:"url"` // text/template, see Render
+	KeyEnv           string            `yaml:"key_env"`
+	Auth             string            `yaml:"auth"` // key (legacy query key), headers, or none
+	Headers          map[string]Header `yaml:"headers"`
+	Classifier       string            `yaml:"classifier"` // public (default), kakao, naver_maps, http
+	JSONExpect       []JSONExpect      `yaml:"json_expect"`
+	Artifact         *Artifact         `yaml:"artifact"`
+	Accept           string            `yaml:"accept"`
+	RegistryTokenURL string            `yaml:"registry_token_url"`
+	Timeout          Duration          `yaml:"timeout"`
+	SlowAfter        Duration          `yaml:"slow_after"`
+	Interval         Duration          `yaml:"interval"`
+	Freshness        *Freshness        `yaml:"freshness"`
+	Expect           []Expect          `yaml:"expect"`
+	SLO              float64           `yaml:"slo"` // availability objective, e.g. 0.999
 
 	tmpl *template.Template
 }
@@ -208,15 +210,27 @@ func Parse(raw []byte) (*Config, error) {
 		if t.Classifier == "" {
 			t.Classifier = "public"
 		}
-		if t.Classifier != "public" && t.Classifier != "kakao" && t.Classifier != "naver_maps" && t.Classifier != "http" {
+		if t.Classifier != "public" && t.Classifier != "kakao" && t.Classifier != "naver_maps" && t.Classifier != "http" && t.Classifier != "git" && t.Classifier != "docker_token" && t.Classifier != "docker_manifest" {
 			return nil, fmt.Errorf("target %q: invalid classifier", t.ID)
 		}
 		if t.Auth == "headers" && len(t.Headers) == 0 {
 			return nil, fmt.Errorf("target %q: headers auth needs headers", t.ID)
 		}
+		if invalidHeaderValue(t.Accept) {
+			return nil, fmt.Errorf("target %q: invalid Accept header", t.ID)
+		}
+		if t.RegistryTokenURL != "" {
+			u, err := url.Parse(t.RegistryTokenURL)
+			mainURL, mainErr := url.Parse(t.URL)
+			if err != nil || mainErr != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || mainURL.Scheme != "https" || mainURL.Host == "" || mainURL.User != nil || t.Classifier != "docker_manifest" || t.Auth != "none" || len(t.Headers) != 0 {
+				return nil, fmt.Errorf("target %q: registry auth needs explicit HTTPS URLs and anonymous docker_manifest", t.ID)
+			}
+		} else if t.Classifier == "docker_manifest" {
+			return nil, fmt.Errorf("target %q: manifest needs registry_token_url", t.ID)
+		}
 		if a := t.Artifact; a != nil {
 			digest, err := hex.DecodeString(a.SHA256)
-			if err != nil || len(digest) != 32 || a.MinBytes < 1 || a.MaxBytes < a.MinBytes || a.MaxBytes > 1<<20 || t.Classifier != "http" || len(t.JSONExpect) > 0 || len(t.Expect) > 0 || t.Freshness != nil {
+			if err != nil || len(digest) != 32 || a.MinBytes < 1 || a.MaxBytes < a.MinBytes || a.MaxBytes > 1<<20 || (t.Classifier != "http" && t.Classifier != "docker_manifest") || len(t.JSONExpect) > 0 || len(t.Expect) > 0 || t.Freshness != nil {
 				return nil, fmt.Errorf("target %q: artifact needs HTTP, SHA256 and byte limits (1..1048576), without JSON/freshness rules", t.ID)
 			}
 			a.SHA256 = strings.ToLower(a.SHA256)

@@ -14,6 +14,20 @@ import (
 // classifyTarget keeps vendor codes separate: Kakao -10 and the public gateway's
 // 10 have different meanings. HTTP 400 can mean a provider outage or our quota.
 func classifyTarget(o Observation, t *config.Target) Verdict {
+	switch t.Classifier {
+	case "git":
+		return classifyGit(o, t.SlowAfter.Duration)
+	case "docker_token":
+		v := classifyHTTP(o, t.SlowAfter.Duration)
+		if v.Status.Healthy() {
+			if _, err := parseRegistryToken(o.Body); err != nil {
+				return Verdict{Status: StatusError, Reason: "registry auth: invalid token response"}
+			}
+		}
+		return v
+	case "docker_manifest":
+		return classifyManifest(o, t.SlowAfter.Duration)
+	}
 	if t.Classifier == "http" {
 		return classifyHTTP(o, t.SlowAfter.Duration)
 	}

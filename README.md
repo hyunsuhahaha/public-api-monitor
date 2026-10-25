@@ -1,10 +1,10 @@
-# pamon: 개발자가 의존하는 API 상태판
+# pamon: 개발자가 의존하는 외부 서비스 상태판
 
 ### 👉 [실시간 상태판 열기](https://hyunsuhahaha.github.io/public-api-monitor/)
 
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)
 
-공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI의 정보 조회와 다운로드 4개 기능**이 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다. 지도 API는 별도 인증키가 필요하며, 키가 없으면 '확인 불가'로 표시하고 가용률에서 제외합니다. 패키지 검사는 키 없이 동작합니다.
+공공데이터포털(data.go.kr)과 서울 열린데이터광장의 **공공 API 77개**, **카카오맵·네이버 Maps 4개 기능**, **npm·PyPI·Docker Hub·GitHub 8개 기능**이 지금 동작하는지, 느린지, 잘못된 결과를 주는지 5분마다 확인합니다(여러 지역 판정 지원). 결과는 SLO와 에러 버짓, 장애 기록으로 보여줍니다. 지도 API는 별도 인증키가 필요하며, 키가 없으면 '확인 불가'로 표시하고 가용률에서 제외합니다. 개발·배포 의존성 8개 검사는 키 없이 동작합니다.
 
 ![dashboard](docs/img/dashboard.png)
 
@@ -32,7 +32,7 @@
 
 | | |
 |---|---|
-| **감시 대상** | 공공 API 77개 + 지도 4개 기능 + npm·PyPI 4개 기능 (총 85개) |
+| **감시 대상** | 공공 API 77개 + 지도 4개 기능 + 개발·배포 의존성 8개 기능 (총 89개) |
 | **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
 | **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
@@ -216,6 +216,21 @@ artifact:
   min_bytes: 3730
   max_bytes: 3730
 ```
+
+## Docker Hub·GitHub 감시
+
+| 대상 | 실제 검사 범위 |
+|---|---|
+| `docker-auth` | 공개 hello-world 이미지의 pull 범위로 익명 토큰 발급·유효 응답 검사 |
+| `docker-manifest` | 별도 토큰을 받아 고정 digest의 이미지 index 조회, 구조·전체 크기·SHA-256 검증 |
+| `github-api` | 고정 공개 저장소 `octocat/Hello-World`의 API 응답·저장소 이름·ID |
+| `github-git` | 동일 저장소의 smart HTTP Git 참조 조회: 응답 타입·pkt-line·HEAD·마지막 flush 검증 |
+
+Docker는 이미지 레이어를 내려받거나 컨테이너를 실행하지 않습니다. Git은 객체를 내려받거나 코드를 실행하지 않으며 clone·push 전체를 검사하지 않습니다. 토큰은 요청 메모리에서만 사용하고 로그·결과·트레이스·덤프에 출력하지 않습니다. 토큰 URL은 설정에 명시한 HTTPS 주소만 쓰고 서버 응답의 임의 realm을 따라가지 않습니다.
+
+인증 선행 요청이 실패하면 manifest 자체는 `client`(선행 검사 실패, 가용률 제외)로 남깁니다. 별도 `docker-auth` 결과와 함께 확인하세요. manifest의 지연은 인증 후 본 요청 기준이고, 전체 검사 시간 제한 안에서 두 요청을 수행합니다. GitHub API·Docker Hub는 공유 출발 IP의 익명 호출 제한에 걸릴 수 있습니다. 이때의 403/429는 공급자 전체 장애라고 단정하지 않습니다.
+
+공식 상태 정보는 직접 관측과 별도로 확인합니다. [Docker](https://www.dockerstatus.com/), [GitHub](https://www.githubstatus.com/), [운영 런북](docs/runbooks/dependencies.md).
 
 ## 지금의 운영: GitHub Actions + GitHub Pages (서버 없음)
 

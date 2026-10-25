@@ -136,7 +136,7 @@ func TestBadgePageHealth(t *testing.T) {
 	if w := get(t, h, "/badge/nope.svg"); w.Code != 404 {
 		t.Fatalf("unknown badge: %d", w.Code)
 	}
-	if w := get(t, h, "/"); w.Code != 200 || !strings.Contains(w.Body.String(), "개발자 API 상태판") {
+	if w := get(t, h, "/"); w.Code != 200 || !strings.Contains(w.Body.String(), "개발자 서비스 상태판") {
 		t.Fatalf("page: %d", w.Code)
 	}
 	if w := get(t, h, "/app.js"); w.Code != 200 {
@@ -318,7 +318,7 @@ func TestOverviewCoverage(t *testing.T) {
 func TestPublicStatusPage(t *testing.T) {
 	_, h := setup(t)
 	w := get(t, h, "/status")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "개발자 API 상태") || !strings.Contains(w.Body.String(), "status.js") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "개발자 서비스 상태") || !strings.Contains(w.Body.String(), "status.js") {
 		t.Fatalf("%d %.200s", w.Code, w.Body.String())
 	}
 	if w := get(t, h, "/status.js"); w.Code != 200 {

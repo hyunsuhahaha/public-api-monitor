@@ -34,6 +34,35 @@ func TestDataFileMatchesShim(t *testing.T) {
 	}
 }
 
+func TestDumpNeverPrintsRegistryToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"token":"must-not-appear-in-dump","expires_in":300}`)
+	}))
+	defer srv.Close()
+	cfg, err := config.Parse([]byte("targets:\n  - id: token\n    auth: none\n    classifier: docker_token\n    url: " + srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	previous := os.Stdout
+	os.Stdout = writer
+	defer func() { os.Stdout = previous }()
+	code := dumpTarget(cfg, "token")
+	writer.Close()
+	os.Stdout = previous
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || strings.Contains(string(output), "must-not-appear") || !strings.Contains(string(output), "body hidden") {
+		t.Fatalf("unsafe dump: %s", output)
+	}
+}
+
 // Exercise the actual configured canaries through collection, SQLite, HTTP views,
 // and Pages export. Secrets must not appear in any generated public artifact.
 func TestMapCycleExportsVerifiedResults(t *testing.T) {
