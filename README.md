@@ -1,5 +1,16 @@
 # pamon: 개발자가 의존하는 외부 서비스 상태판
 
+## AI 장애 진단에 사용하기
+
+AI가 사용자 로그와 외부 관측을 비교할 수 있도록 공개 읽기 전용 데이터를 제공합니다. 서버와 Pages에서 경로가 같습니다(운영 사용은 이 변경의 배포 후 가능).
+
+- `llms.txt`: 조회 안내와 해석 규칙
+- `ai/index.html`: 필드 설명·AI 요청 예시
+- `ai/diagnostics.json`: 서비스명·공급자·호스트로 찾는 전체 카탈로그
+- `ai/targets/{id}.json`: 대상 하나의 관측 상태·위치·최근 장애·근거 링크
+
+AI에 `ai/index.html` 링크를 전달하고 오류 시각·호스트·기능을 비교하도록 요청하세요. JSON 링크는 해당 JSON URL 기준으로 해석합니다. `freshUntil`을 현재 시각과 비교해야 하며 `freshAtGeneration`만으로 최신성을 판단하면 안 됩니다. 감시용 인증·쿼터 문제는 공급자 장애와 구분합니다. MCP 서버나 모든 AI의 자동 발견 기능은 포함하지 않습니다.
+
 ### 👉 [실시간 상태판 열기](https://hyunsuhahaha.github.io/public-api-monitor/)
 
 [![ci](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/ci.yml) [![monitor](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/hyunsuhahaha/public-api-monitor/actions/workflows/monitor.yml)

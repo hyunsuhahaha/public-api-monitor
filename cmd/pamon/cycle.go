@@ -147,6 +147,30 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 	if err := page("/status", "status.html"); err != nil {
 		return err
 	}
+	// Keep agent-facing URLs identical on the live server and GitHub Pages.
+	for _, path := range []string{"llms.txt", "ai/index.html", "ai/diagnostics.json"} {
+		requestPath := "/" + path
+		if path == "ai/index.html" {
+			requestPath = "/ai/"
+		}
+		b, err := get(requestPath)
+		if err != nil {
+			return err
+		}
+		if err := put(path, b); err != nil {
+			return err
+		}
+	}
+	for _, t := range cfg.Targets {
+		path := "ai/targets/" + t.ID + ".json"
+		b, err := get("/" + path)
+		if err != nil {
+			return err
+		}
+		if err := put(path, b); err != nil {
+			return err
+		}
+	}
 	for _, f := range []string{"app.css", "app.js", "ops.js", "status.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
 		b, err := get("/" + f)
 		if err != nil {

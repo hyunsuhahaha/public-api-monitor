@@ -15,6 +15,7 @@ import (
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/web"
 )
 
 // dataFile and the pages' fetch shim must name a URL's snapshot file the same way.
@@ -130,6 +131,26 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	}
 	if len(status.Targets) != 4 {
 		t.Fatal("missing exported map targets")
+	}
+	for _, path := range []string{"llms.txt", "ai/index.html", "ai/diagnostics.json", "ai/targets/kakao-address.json"} {
+		b, err := os.ReadFile(filepath.Join(site, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasSuffix(path, ".json") {
+			var diagnostic web.DiagnosticView
+			if err := json.Unmarshal(b, &diagnostic); err != nil {
+				t.Fatal(err)
+			}
+			if len(diagnostic.Targets) == 0 {
+				t.Fatal("empty agent export")
+			}
+			for _, target := range diagnostic.Targets {
+				if target.Assessment != "no_failure_observed" || target.FreshUntil == nil {
+					t.Fatalf("bad diagnostic: %+v", target)
+				}
+			}
+		}
 	}
 	for _, target := range status.Targets {
 		if target.Status != "ok" {
