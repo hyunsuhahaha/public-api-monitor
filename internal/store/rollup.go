@@ -246,9 +246,14 @@ type HourRow struct {
 // Hourly returns the rollup rows in [from, to); target "" for all. merged: only the
 // verdict ("*") and all-locations ("ALL") rows, not the per-location ones.
 func (s *Store) Hourly(ctx context.Context, target string, from, to time.Time, merged bool) ([]HourRow, error) {
+	// One target goes through the primary key (target, location, hour); an OR on the
+	// target would send it to the hour index and every target's rows.
+	where, args := `hour>=? AND hour<?`, []any{hourOf(from), ms(to)}
+	if target != "" {
+		where, args = `target=? AND `+where, []any{target, hourOf(from), ms(to)}
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT target, location, hour, counted, healthy, degraded, outage, hist FROM hourly
-		WHERE hour>=? AND hour<? AND (?='' OR target=?) AND (? OR location IN ('*','ALL'))`,
-		hourOf(from), ms(to), target, target, !merged)
+		WHERE `+where+` AND (? OR location IN ('*','ALL'))`, append(args, !merged)...)
 	if err != nil {
 		return nil, err
 	}

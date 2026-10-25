@@ -47,10 +47,11 @@ type Server struct {
 	// SlowLimit, if set, reports the learned slow limit of a target (probe.Baseline.Limit).
 	SlowLimit func(id string, ceil time.Duration) (limit, usual time.Duration, ok bool)
 
-	cache    respCache
-	mu       sync.Mutex
-	cached   []byte
-	cachedAt time.Time
+	cache      respCache
+	mu         sync.Mutex
+	cachedView *StatusView
+	cached     []byte
+	cachedAt   time.Time
 }
 
 // CacheFor: the status JSON is rebuilt at most this often (the page polls it).
@@ -195,22 +196,33 @@ type StatusView struct {
 	Targets     []TargetView   `json:"targets"`
 }
 
-func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+// view is the status view, built at most every CacheFor and shared by every handler
+// that needs it: the status JSON, badges and the AI diagnostics (which asked for a full
+// build per target, 89 builds per export). Callers must not modify it.
+func (s *Server) view(ctx context.Context) (*StatusView, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cached == nil || time.Since(s.cachedAt) > CacheFor {
-		v, err := s.build(r.Context())
+	if s.cachedView == nil || time.Since(s.cachedAt) > CacheFor {
+		v, err := s.build(ctx)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+			return nil, nil, err
 		}
-		s.cached, _ = json.Marshal(v)
-		s.cachedAt = time.Now()
+		b, _ := json.Marshal(v)
+		s.cachedView, s.cached, s.cachedAt = v, b, time.Now()
+	}
+	return s.cachedView, s.cached, nil
+}
+
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	_, body, err := s.view(r.Context())
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=30")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Write(s.cached)
+	w.Write(body)
 }
 
 func (s *Server) build(ctx context.Context) (*StatusView, error) {
@@ -345,18 +357,12 @@ func (s *Server) badge(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.mu.Lock()
-	if s.cached == nil || time.Since(s.cachedAt) > CacheFor {
-		if v, err := s.build(r.Context()); err == nil {
-			s.cached, _ = json.Marshal(v)
-			s.cachedAt = time.Now()
-		}
+	var targets []TargetView
+	if v, _, err := s.view(r.Context()); err == nil {
+		targets = v.Targets
 	}
-	var v StatusView
-	json.Unmarshal(s.cached, &v)
-	s.mu.Unlock()
 	value, colour := "unknown", "#9f9f9f"
-	for _, t := range v.Targets {
+	for _, t := range targets {
 		if t.ID != id {
 			continue
 		}

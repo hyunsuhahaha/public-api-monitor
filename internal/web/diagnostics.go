@@ -94,7 +94,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	v, err := s.build(r.Context())
+	v, _, err := s.view(r.Context())
 	if err != nil {
 		http.Error(w, "internal error", 500)
 		return

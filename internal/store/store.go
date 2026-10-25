@@ -595,11 +595,26 @@ type Bucket struct {
 
 // VerdictBuckets groups verdicts in [from, to) into buckets of step, per target.
 func (s *Store) VerdictBuckets(ctx context.Context, from, to time.Time, step time.Duration) (map[string][]Bucket, error) {
+	return s.verdictBuckets(ctx, "", from, to, step)
+}
+
+// TargetBuckets is VerdictBuckets for one target, read through its (target, at) index:
+// a one-target chart used to bucket every target and keep one (89 times per export).
+func (s *Store) TargetBuckets(ctx context.Context, target string, from, to time.Time, step time.Duration) ([]Bucket, error) {
+	out, err := s.verdictBuckets(ctx, target, from, to, step)
+	return out[target], err
+}
+
+func (s *Store) verdictBuckets(ctx context.Context, target string, from, to time.Time, step time.Duration) (map[string][]Bucket, error) {
 	st := step.Milliseconds()
+	where, args := `at>=? AND at<?`, []any{st, st, ms(from), ms(to)}
+	if target != "" {
+		where, args = `target=? AND `+where, []any{st, st, target, ms(from), ms(to)}
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT target, (at/?)*? AS b, SUM(status NOT IN ('client','maint')), SUM(status IN ('ok','slow','stale')),
 		       SUM(status IN ('slow','stale')), SUM(status IN ('error','down'))
-		FROM verdicts WHERE at>=? AND at<? GROUP BY target, b ORDER BY target, b`, st, st, ms(from), ms(to))
+		FROM verdicts WHERE `+where+` GROUP BY target, b ORDER BY target, b`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -627,9 +642,13 @@ type Sample struct {
 
 // Samples returns raw checks in [from, to), oldest first; target "" for all.
 func (s *Store) Samples(ctx context.Context, target string, from, to time.Time) ([]Sample, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT target, location, at, latency_ms, status FROM checks
-		WHERE at>=? AND at<? AND (?='' OR target=?) ORDER BY at`, ms(from), ms(to), target, target)
+	// Two shapes, not (?='' OR target=?): the OR kept SQLite off the (target, at) index,
+	// so one target's chart scanned every target's rows in the range.
+	q, args := `SELECT target, location, at, latency_ms, status FROM checks WHERE at>=? AND at<? ORDER BY at`, []any{ms(from), ms(to)}
+	if target != "" {
+		q, args = `SELECT target, location, at, latency_ms, status FROM checks WHERE target=? AND at>=? AND at<? ORDER BY at`, []any{target, ms(from), ms(to)}
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

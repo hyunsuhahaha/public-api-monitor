@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -60,7 +63,35 @@ func runCycle(log *slog.Logger, cfg *config.Config, prober *probe.Prober, dbPath
 	}
 	srv := &web.Server{Cfg: cfg, Store: st, LastCheck: m.LastCheck, SlowLimit: prober.Baseline.Limit,
 		PublicURL: os.Getenv("PAMON_PUBLIC_URL"), Version: version, StartedAt: started}
-	return exportSite(srv.Handler(), cfg, exportDir)
+	start := time.Now()
+	spent, err := exportSite(srv.Handler(), cfg, exportDir)
+	attrs := []any{"took", time.Since(start).Round(time.Millisecond)}
+	for _, k := range slices.Sorted(maps.Keys(spent)) {
+		attrs = append(attrs, k, spent[k].Round(time.Millisecond))
+	}
+	log.Info("export done", attrs...)
+	return err
+}
+
+// exportKind groups an exported URL for the timing log: the path, plus the range for series.
+func exportKind(u string) string {
+	p, q, _ := strings.Cut(u, "?")
+	switch {
+	case strings.HasPrefix(p, "/api/v1/series"):
+		v, _ := url.ParseQuery(q)
+		k := "series_" + v.Get("range")
+		if v.Get("shift") != "" {
+			k += "_shift"
+		}
+		return k
+	case strings.HasPrefix(p, "/api/v1/incidents/"):
+		return "incident"
+	case strings.HasPrefix(p, "/ai/targets/"):
+		return "ai_target"
+	case strings.HasPrefix(p, "/report/"):
+		return "report"
+	}
+	return strings.Trim(strings.ReplaceAll(p, "/", "_"), "_")
 }
 
 func replayVerdicts(ctx context.Context, st *store.Store, cfg *config.Config, tr *incident.Tracker) {
@@ -164,10 +195,14 @@ func sitemap(base string, pages []string) []byte {
 	return []byte(b.String())
 }
 
-func exportSite(h http.Handler, cfg *config.Config, dir string) error {
+// exportSite returns the time spent per kind of URL (exportKind), for the cycle log.
+func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time.Duration, error) {
+	spent := map[string]time.Duration{}
 	get := func(u string) ([]byte, error) {
 		rec := httptest.NewRecorder()
+		t0 := time.Now()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, u, nil))
+		spent[exportKind(u)] += time.Since(t0)
 		if rec.Code != http.StatusOK {
 			return nil, fmt.Errorf("GET %s: %d", u, rec.Code)
 		}
@@ -192,10 +227,10 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		return put(name, []byte(decorate(s, name)))
 	}
 	if err := page("/", "index.html"); err != nil {
-		return err
+		return spent, err
 	}
 	if err := page("/status", "status.html"); err != nil {
-		return err
+		return spent, err
 	}
 	// Keep agent-facing URLs identical on the live server and GitHub Pages.
 	for _, path := range []string{"llms.txt", "ai/index.html", "ai/diagnostics.json"} {
@@ -205,35 +240,35 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		}
 		b, err := get(requestPath)
 		if err != nil {
-			return err
+			return spent, err
 		}
 		if path == "ai/index.html" {
 			b = []byte(decorate(string(b), path))
 		}
 		if err := put(path, b); err != nil {
-			return err
+			return spent, err
 		}
 	}
 	for _, t := range cfg.Targets {
 		path := "ai/targets/" + t.ID + ".json"
 		b, err := get("/" + path)
 		if err != nil {
-			return err
+			return spent, err
 		}
 		if err := put(path, b); err != nil {
-			return err
+			return spent, err
 		}
 	}
 	for _, f := range []string{"app.css", "app.js", "ops.js", "status.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
 		b, err := get("/" + f)
 		if err != nil {
-			return err
+			return spent, err
 		}
 		if strings.HasSuffix(f, ".js") {
 			b = []byte(linkFixes.Replace(string(b)))
 		}
 		if err := put(f, b); err != nil {
-			return err
+			return spent, err
 		}
 	}
 	indexed := []string{"index.html", "status.html", "ai/index.html", "llms.txt"}
@@ -247,7 +282,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 		s = regexp.MustCompile(`href="\.\./report/(\d{4}-\d{2})"`).ReplaceAllString(s, `href="$1.html"`)
 		s = strings.ReplaceAll(s, `href="./"`, `href="../"`)
 		if err := put("report/"+m+".html", []byte(decorate(s, "report/"+m+".html"))); err != nil {
-			return err
+			return spent, err
 		}
 		indexed = append(indexed, "report/"+m+".html")
 		if i == 0 {
@@ -270,10 +305,10 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 	for _, u := range urls {
 		b, err := get(u)
 		if err != nil {
-			return err
+			return spent, err
 		}
 		if err := put(dataFile(u), b); err != nil {
-			return err
+			return spent, err
 		}
 		if u == "/api/v1/incidents" {
 			var list []struct {
@@ -294,8 +329,8 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) error {
 	}
 	if base := siteURL(); base != "" {
 		if err := put("sitemap.xml", sitemap(base, indexed)); err != nil {
-			return err
+			return spent, err
 		}
 	}
-	return put(".nojekyll", nil)
+	return spent, put(".nojekyll", nil)
 }

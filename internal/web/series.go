@@ -356,7 +356,7 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
 		return
 	}
-	buckets, _ := s.Store.VerdictBuckets(ctx, from, to, step)
+	buckets, _ := s.Store.TargetBuckets(ctx, id, from, to, step)
 	recent, _ := s.Store.RecentChecks(ctx, id, 40)
 	n := int(to.Sub(from)/step) + 1
 	idx := func(at int64) int { return int((at - from.UnixMilli()) / step.Milliseconds()) }
@@ -417,7 +417,7 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 		states[i] = -1
 	}
 	counted, bad := make([]int, n), make([]int, n)
-	for _, b := range buckets[id] {
+	for _, b := range buckets {
 		if i := idx(b.Start); i >= 0 && i < n {
 			states[i] = state(b)
 			counted[i], bad[i] = b.Counted, b.Counted-b.Healthy
