@@ -78,7 +78,10 @@ func diagnosticTarget(t config.Target, v TargetView, now time.Time) DiagnosticTa
 			d.Assessment = "no_failure_observed"
 		case "client":
 			d.Assessment = "monitor_configuration_issue"
-		case "down", "error", "slow", "stale":
+		case "slow":
+			// It answered correctly, only over the latency threshold: not a failure.
+			d.Assessment = "degraded_observed"
+		case "down", "error", "stale":
 			d.Assessment = "failure_observed"
 		}
 	}

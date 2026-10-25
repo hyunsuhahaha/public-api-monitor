@@ -24,6 +24,7 @@ func TestDiagnosticFreshnessAndScope(t *testing.T) {
 		{probe.StatusDown, time.Minute, "failure_observed"},
 		{probe.StatusClient, time.Minute, "monitor_configuration_issue"},
 		{probe.StatusStale, time.Minute, "failure_observed"},
+		{probe.StatusSlow, time.Minute, "degraded_observed"},
 		{probe.StatusOK, -time.Minute, "unknown"},
 	} {
 		at := now.Add(-tc.age)
