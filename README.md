@@ -395,3 +395,15 @@ Go에서 호출 전에 pamon을 확인하는 서킷 브레이커: [pkg/pamonclie
 ```
 
 응답 본문이 어떻게 생겼는지는 `pamon -dump <id>`로 봅니다(키가 든 URL은 출력하지 않음).
+
+### 내 API 넣어 보기: `pamon -try`
+
+```sh
+pamon -try https://api.bithumb.com/public/ticker/BTC_KRW          # 새 주소: 판정 + 규칙 제안 + targets.yaml 항목
+pamon -try airkorea-sido -samples 5                               # 이미 있는 대상: 키를 써서 부르고 규칙만 제안 (URL은 출력 안 함)
+pamon -try https://api.example.com/v1/items -openapi openapi.yaml # 문서와 실제 응답 비교
+```
+
+- 몇 번 불러(`-samples`, 기본 3번) pamon과 같은 방식으로 판정하고, 단계별 시간(DNS·TCP·TLS·서버 대기)을 보여 줍니다.
+- **규칙 제안:** 응답에서 늘 같았던 결과 코드(`status`, `resultCode`…), 늘 비어 있지 않던 목록, 늘 있던 숫자(숫자 문자열 포함)를 `json_expect` 규칙으로 제안합니다. "200인데 빈 배열", "필드가 사라짐"을 잡는 규칙을 손으로 쓰지 않아도 됩니다. 샘플에서 우연히 같았던 값일 수 있으니 읽고 고르세요.
+- **OpenAPI 비교:** OpenAPI 3·Swagger 2 문서(YAML·JSON)를 주면, 문서는 필수라는데 오지 않은 필드, 형식이 다른 필드(문서 number, 실제 string), 문서에 없는 필드를 나열합니다. 제공사에 보낼 목록이 됩니다.

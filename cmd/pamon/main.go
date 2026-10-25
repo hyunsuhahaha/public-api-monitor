@@ -80,6 +80,9 @@ func main() {
 		keep     = flag.Duration("keep", 100*24*time.Hour, "how long to keep raw checks (central)")
 		cycle    = flag.Bool("cycle", false, "check every target once into -db (incidents included) and exit; for a cron job instead of a server")
 		export   = flag.String("export", "", "with -cycle: write the dashboard and status page with their data as static files into this directory")
+		try      = flag.String("try", "", "check a URL or a target id a few times, propose json_expect rules from its answers and (for a URL) print its targets.yaml entry")
+		samples  = flag.Int("samples", 3, "with -try: how many times to call it")
+		openapi  = flag.String("openapi", "", "with -try: compare the answers with this OpenAPI/Swagger document (file)")
 		snapshot = flag.String("snapshot", "", "check -db for corruption, write a consistent compacted copy to this file and exit (for backups)")
 	)
 	flag.Parse()
@@ -89,6 +92,9 @@ func main() {
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
+	}
+	if *try != "" {
+		os.Exit(tryTarget(cfg, *try, *samples, *openapi, os.Stdout))
 	}
 	if *dump != "" {
 		os.Exit(dumpTarget(cfg, *dump))
@@ -381,44 +387,51 @@ func dumpTarget(cfg *config.Config, id string) int {
 			}
 			return 0
 		}
-		u, err := t.Render(time.Now())
+		code, ctype, body, token, err := fetchBody(t, 3<<10)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "url:", err)
-			return 1
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), t.Timeout.Duration)
-		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "request: invalid URL")
-			return 1
-		}
-		if err := t.ApplyHeaders(req); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		p := probe.New("dump")
-		if t.Accept != "" {
-			req.Header.Set("Accept", t.Accept)
-		}
-		if err := p.ApplyRegistryAuth(req, t.RegistryTokenURL); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		resp, err := p.Client.Do(req)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "request:", t.Redact(err.Error()))
-			return 1
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 3<<10))
 		text := t.Redact(string(body))
-		if token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "); token != "" {
+		if token != "" {
 			text = strings.ReplaceAll(text, token, "REDACTED")
 		}
-		fmt.Printf("HTTP %d %s\n%s\n", resp.StatusCode, resp.Header.Get("Content-Type"), text)
+		fmt.Printf("HTTP %d %s\n%s\n", code, ctype, text)
 		return 0
 	}
 	fmt.Fprintln(os.Stderr, "no target", id)
 	return 1
+}
+
+// fetchBody calls a target once as the probe would (headers, Accept, registry token) and
+// returns the start of its answer, and the bearer token it sent (to redact). Errors are
+// redacted.
+func fetchBody(t *config.Target, limit int64) (code int, ctype string, body []byte, token string, err error) {
+	u, err := t.Render(time.Now())
+	if err != nil {
+		return 0, "", nil, "", fmt.Errorf("url: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), t.Timeout.Duration)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return 0, "", nil, "", errors.New("request: invalid URL")
+	}
+	if err := t.ApplyHeaders(req); err != nil {
+		return 0, "", nil, "", err
+	}
+	p := probe.New("dump")
+	if t.Accept != "" {
+		req.Header.Set("Accept", t.Accept)
+	}
+	if err := p.ApplyRegistryAuth(req, t.RegistryTokenURL); err != nil {
+		return 0, "", nil, "", err
+	}
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return 0, "", nil, "", errors.New("request: " + t.Redact(err.Error()))
+	}
+	defer resp.Body.Close()
+	body, _ = io.ReadAll(io.LimitReader(resp.Body, limit))
+	return resp.StatusCode, resp.Header.Get("Content-Type"), body, strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "), nil
 }
