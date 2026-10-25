@@ -74,6 +74,8 @@ func runCycle(log *slog.Logger, cfg *config.Config, prober *probe.Prober, dbPath
 	// each one changed (and when pamon was not reading it)
 	off := official.Fetch(ctx, prober.Client)
 	recordOfficial(ctx, log, st, off, cfg.Interval.Duration)
+	// and the incidents they posted: exact announcement times, the past included
+	recordHistory(ctx, log, st, official.FetchHistory(ctx, prober.Client), time.Now())
 	if exportDir == "" {
 		return nil
 	}
@@ -98,6 +100,23 @@ func recordOfficial(ctx context.Context, log *slog.Logger, st *store.Store, off 
 			log.Error("record official status", "provider", p, "err", err)
 		}
 	}
+}
+
+func recordHistory(ctx context.Context, log *slog.Logger, st *store.Store, hist map[string]official.History, at time.Time) {
+	n := 0
+	for _, p := range slices.Sorted(maps.Keys(hist)) {
+		h := hist[p]
+		list := make([]store.OfficialIncident, 0, len(h.Incidents))
+		for _, in := range h.Incidents {
+			list = append(list, store.OfficialIncident{Provider: p, ID: in.ID, Name: in.Name, Impact: in.Impact, Created: in.Created, Resolved: in.Resolved, URL: in.URL})
+		}
+		if err := st.SaveOfficialIncidents(ctx, p, list, h.Since, at); err != nil {
+			log.Error("record official incidents", "provider", p, "err", err)
+			continue
+		}
+		n++
+	}
+	log.Info("official incidents read", "providers", n)
 }
 
 // exportKind groups an exported URL for the timing log: the path, plus the range for series.

@@ -83,3 +83,30 @@ func TestLeadTimePages(t *testing.T) {
 		}
 	}
 }
+
+// With the provider's posted incident list, its posting time is the announcement.
+func TestLeadTimeFromPostedIncidents(t *testing.T) {
+	s := leadSetup(t)
+	ctx := context.Background()
+	t0 := time.Now().Add(-48 * time.Hour).Truncate(time.Minute)
+	posted := []store.OfficialIncident{{Provider: "GitHub", ID: "p1", Name: "Incident with API requests", Impact: "major",
+		Created: t0.Add(12 * time.Minute), Resolved: t0.Add(70 * time.Minute), URL: "https://stspg.io/p1"}}
+	if err := s.Store.SaveOfficialIncidents(ctx, "GitHub", posted, t0.Add(-30*24*time.Hour), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	h := s.Handler()
+	var rep leadtime.Report
+	json.Unmarshal(get(t, h, "/api/v1/lead-time").Body.Bytes(), &rep)
+	if rep.Total.Announced != 1 || rep.Total.Never != 1 || rep.Total.MedianMinutes != 7 {
+		t.Fatalf("total: %+v", rep.Total)
+	}
+	for _, r := range rep.Results {
+		if r.Source != "incidents" {
+			t.Fatalf("source: %+v", r)
+		}
+	}
+	page := get(t, h, "/lead-time.html").Body.String()
+	if !strings.Contains(page, `<a href="https://stspg.io/p1" rel="nofollow">Incident with API requests</a>`) || !strings.Contains(page, "pamon이 7분 먼저 확인") {
+		t.Fatalf("page lacks the posted incident")
+	}
+}

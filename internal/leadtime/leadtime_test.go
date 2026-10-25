@@ -81,3 +81,44 @@ func TestSummarizeCountsOnlyComparable(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func posted(created, resolved int, name string) store.OfficialIncident {
+	in := store.OfficialIncident{Provider: "GitHub", ID: name, Name: name, Created: at(created), URL: "https://stspg.io/" + name}
+	if resolved != 0 {
+		in.Resolved = at(resolved)
+	}
+	return in
+}
+
+func TestCompareIncidents(t *testing.T) {
+	now := at(24 * 60)
+	full := store.OfficialHistory{Since: at(-10 * 24 * 60), Fetched: now}
+	cases := []struct {
+		name string
+		e    Episode
+		incs []store.OfficialIncident
+		hist store.OfficialHistory
+		ok   bool
+		kind Kind
+		lead int
+	}{
+		{"posted 17 minutes after pamon confirmed", ep(0, 60), []store.OfficialIncident{posted(-600, -500, "old"), posted(22, 70, "Actions outage")}, full, true, Announced, 17},
+		{"posted before pamon", ep(0, 60), []store.OfficialIncident{posted(-3, 70, "early")}, full, true, Announced, -8},
+		{"nothing posted", ep(0, 60), []store.OfficialIncident{posted(300, 310, "later")}, full, true, Never, 0},
+		{"an earlier post still open", ep(0, 60), []store.OfficialIncident{posted(-200, 0, "ongoing")}, full, true, AlreadyOn, 0},
+		{"a post left open for days is ignored", ep(0, 60), []store.OfficialIncident{posted(-5*24*60, 0, "forgotten")}, full, true, Never, 0},
+		{"list does not reach back", ep(0, 60), nil, store.OfficialHistory{Since: at(0), Fetched: now}, false, "", 0},
+		{"never read", ep(0, 60), nil, store.OfficialHistory{}, false, "", 0},
+		{"still going", ep(0, 0), nil, full, true, Pending, 0},
+	}
+	for _, c := range cases {
+		r, ok := CompareIncidents(c.e, c.incs, c.hist, now)
+		if ok != c.ok || (ok && (r.Kind != c.kind || r.LeadMinutes != c.lead)) {
+			t.Errorf("%s: got %v %s %d", c.name, ok, r.Kind, r.LeadMinutes)
+		}
+	}
+	r, _ := CompareIncidents(ep(0, 60), []store.OfficialIncident{posted(22, 70, "Actions outage")}, full, now)
+	if r.Official != "Actions outage" || r.OfficialURL == "" || r.Source != "incidents" {
+		t.Fatalf("%+v", r)
+	}
+}

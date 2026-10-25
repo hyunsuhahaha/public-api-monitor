@@ -61,7 +61,11 @@ type Result struct {
 	// Positive: pamon confirmed it that many minutes before the page admitted it.
 	LeadMinutes int        `json:"leadMinutes"`
 	AnnouncedAt *time.Time `json:"announcedAt,omitempty"`
-	Official    string     `json:"official,omitempty"` // the page's description
+	Official    string     `json:"official,omitempty"` // the page's description or incident title
+	OfficialURL string     `json:"officialUrl,omitempty"`
+	// Source: what the comparison rests on: "incidents" (the provider's posted incident
+	// list, exact to the minute) or "indicator" (pamon's 5-minute reads of the page).
+	Source string `json:"source,omitempty"`
 }
 
 // Episodes groups outage incidents (severity 2) by provider. confirm says how long after
@@ -140,9 +144,51 @@ func covered(segs [][2]time.Time, from, to time.Time) bool {
 	return false
 }
 
+// CompareIncidents matches an episode with the incidents its provider posted (oldest
+// first). ok is false when the stored list does not reach back over the window: the
+// caller then falls back to the indicator readings (Compare).
+func CompareIncidents(e Episode, incs []store.OfficialIncident, hist store.OfficialHistory, now time.Time) (Result, bool) {
+	r := Result{Episode: e, Source: "incidents"}
+	end := e.Ended
+	if end.IsZero() || end.After(now) {
+		end = now
+	}
+	from, to := e.Confirmed.Add(-Before), end.Add(After)
+	if hist.Fetched.IsZero() || hist.Since.After(from) {
+		return r, false
+	}
+	for _, in := range incs {
+		if in.Created.After(to) {
+			break
+		}
+		if in.Created.Before(from) {
+			// posted before the window and still open in it (one left open for days is
+			// a forgotten post, not a running announcement)
+			if (in.Resolved.IsZero() || !in.Resolved.Before(from)) && in.Created.After(from.Add(-24*time.Hour)) {
+				r.Kind = AlreadyOn
+				return r, true
+			}
+			continue
+		}
+		at := in.Created
+		r.Kind, r.AnnouncedAt, r.Official, r.OfficialURL = Announced, &at, in.Name, in.URL
+		r.LeadMinutes = int(at.Sub(e.Confirmed).Round(time.Minute).Minutes())
+		return r, true
+	}
+	if e.Ended.IsZero() || to.After(now) {
+		r.Kind = Pending
+		return r, true
+	}
+	if hist.Fetched.Before(to) {
+		return r, false // not read since the window closed
+	}
+	r.Kind = Never
+	return r, true
+}
+
 // Compare matches an episode with its provider's runs (oldest first) at a time.
 func Compare(e Episode, runs []store.OfficialRun, now time.Time) Result {
-	r := Result{Episode: e}
+	r := Result{Episode: e, Source: "indicator"}
 	end := e.Ended
 	if end.IsZero() || end.After(now) {
 		end = now
@@ -243,15 +289,23 @@ func Summarize(provider string, rs []Result) Stats {
 }
 
 // ByProvider compares every episode and totals per provider (most compared first) and
-// overall. runs is every provider's runs, oldest first per provider.
-func ByProvider(eps []Episode, runs []store.OfficialRun, now time.Time) (results []Result, providers []Stats, total Stats) {
+// overall. runs and incs are every provider's, oldest first per provider.
+func ByProvider(eps []Episode, runs []store.OfficialRun, incs []store.OfficialIncident, hist map[string]store.OfficialHistory, now time.Time) (results []Result, providers []Stats, total Stats) {
 	byP := map[string][]store.OfficialRun{}
 	for _, r := range runs {
 		byP[r.Provider] = append(byP[r.Provider], r)
 	}
+	incBy := map[string][]store.OfficialIncident{}
+	for _, in := range incs {
+		incBy[in.Provider] = append(incBy[in.Provider], in)
+	}
 	per := map[string][]Result{}
 	for _, e := range eps {
-		r := Compare(e, byP[e.Provider], now)
+		// the posted incidents when their list reaches back that far, else the readings
+		r, ok := CompareIncidents(e, incBy[e.Provider], hist[e.Provider], now)
+		if !ok {
+			r = Compare(e, byP[e.Provider], now)
+		}
 		results = append(results, r)
 		per[e.Provider] = append(per[e.Provider], r)
 	}

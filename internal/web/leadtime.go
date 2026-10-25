@@ -73,6 +73,7 @@ var (
 
 type leadCase struct {
 	Start, Provider, Tone, Text, Official string
+	OfficialURL, Source                   string
 	Targets                               []answerItem
 }
 
@@ -143,7 +144,7 @@ func (s *Server) leadPageData(ctx context.Context) (*leadPage, error) {
 		if i == 100 {
 			break
 		}
-		c := leadCase{Start: kst(x.Confirmed), Provider: x.Provider, Official: x.Official}
+		c := leadCase{Start: kst(x.Confirmed), Provider: x.Provider, Official: x.Official, OfficialURL: x.OfficialURL, Source: x.Source}
 		c.Tone, c.Text = leadText(x)
 		for _, id := range x.Targets {
 			c.Targets = append(c.Targets, answerItem{ID: id, Name: names[id]})
@@ -204,7 +205,7 @@ func (s *Server) answerLead(ctx context.Context, t TargetView) *answerLead {
 		if i == 10 {
 			break
 		}
-		c := leadCase{Start: kst(x.Confirmed), Official: x.Official}
+		c := leadCase{Start: kst(x.Confirmed), Official: x.Official, OfficialURL: x.OfficialURL, Source: x.Source}
 		c.Tone, c.Text = leadText(x)
 		a.Cases = append(a.Cases, c)
 	}
@@ -250,15 +251,15 @@ const leadTemplates = `
 {{if .Cases}}<h2>장애별 기록</h2>
 <table><tr><th>pamon 확인 (KST)</th><th>서비스</th><th>공식 발표와 비교</th></tr>
 {{range .Cases}}<tr><td>{{.Start}}</td><td>{{.Provider}}<br><span class="sub">{{range $i, $t := .Targets}}{{if $i}}, {{end}}<a href="s/{{$t.ID}}.html">{{$t.Name}}</a>{{end}}</span></td>
-<td><span class="h {{.Tone}}">{{.Text}}</span>{{if .Official}}<br><span class="sub">공식: {{.Official}}</span>{{end}}</td></tr>{{end}}</table>{{end}}
+<td><span class="h {{.Tone}}">{{.Text}}</span>{{if .Official}}<br><span class="sub">공식: {{if .OfficialURL}}<a href="{{.OfficialURL}}" rel="nofollow">{{.Official}}</a>{{else}}{{.Official}}{{end}}{{if eq .Source "indicator"}} (상태 표시 기준, 5분 단위){{end}}</span>{{end}}</td></tr>{{end}}</table>{{end}}
 
 <h2>어떻게 재나</h2>
 <ul>
-<li>pamon은 {{.Every}}마다 각 서비스에 직접 요청을 보내고, 같은 주기로 서비스의 공식 상태 페이지(Statuspage <code>status.json</code>, Slack은 자체 API)도 읽어 표시가 바뀐 시각을 저장합니다. 시각은 {{.Every}} 단위로만 정확합니다.</li>
+<li>공식 발표 시각은 제공자가 상태 페이지에 <b>장애 공지를 처음 올린 시각</b>입니다(Statuspage <code>incidents.json</code>의 <code>created_at</code>, Slack은 자체 API). pamon은 {{.Every}}마다 이 목록을 읽어 저장하므로 과거 공지도 비교에 씁니다. 목록이 그 시간까지 거슬러 올라가지 않으면, pamon이 {{.Every}}마다 읽은 상태 표시(<code>status.json</code>)가 바뀐 시각으로 대신 재고 "상태 표시 기준"이라고 적습니다.</li>
 <li>pamon 쪽 시각은 첫 실패가 아니라 <b>장애로 확정한 시각</b>(연속 2회 실패, 보통 첫 실패 {{.Every}} 뒤)입니다. 실제로 이 페이지를 본 사람이 알 수 있었던 시각입니다.</li>
 <li>'장애'(응답 없음·오류)만 셉니다. '느림·데이터 이상'은 공식 페이지가 다루지 않는 경우가 많아 뺐습니다. 한 제공자의 여러 API가 함께 실패하면 한 건으로 셉니다.</li>
-<li>공식 페이지가 장애 확정 1시간 전부터 장애가 끝나고 1시간 뒤 사이에 '정상'이 아닌 표시로 바뀌면 같은 일로 봅니다.</li>
-<li>'공식 발표 없음'은 그 시간 내내 pamon이 공식 페이지를 15분 넘는 공백 없이 읽었고, 계속 '정상'이었던 경우만입니다. 기록 공백이 있었거나, 바뀐 시각을 특정할 수 없거나, 이미 다른 문제를 알리던 중이면 <b>비교에서 뺍니다</b>.</li>
+<li>장애 확정 1시간 전부터 장애가 끝나고 1시간 뒤 사이에 올라온 공지(또는 '정상'이 아닌 표시)를 같은 일로 봅니다. 같은 제공자의 다른 기능에 대한 공지일 수도 있어서, 장애마다 공지 제목과 링크를 함께 보여 줍니다.</li>
+<li>'공식 발표 없음'은 그 시간을 덮는 공지 목록을 읽었는데 공지가 없었던 경우(목록이 없으면 그 시간 내내 15분 넘는 공백 없이 상태 표시가 '정상'이었던 경우)만입니다. 기록이 비었거나, 바뀐 시각을 특정할 수 없거나, 그 전부터 올라와 있던 공지가 아직 열려 있었으면 <b>비교에서 뺍니다</b>.</li>
 <li>pamon은 서비스의 기능 하나를 미국 서부에서 확인합니다. 공식 페이지가 '정상'이라도 pamon이 보는 기능만의 문제이거나, 반대로 pamon이 보지 않는 기능의 장애를 공식 페이지가 알릴 수 있습니다.</li>
 </ul>
 <p><a href="data/api/v1/lead-time.json">이 표의 JSON</a> · <a href="s/index.html">서비스별 상태</a></p>
@@ -267,7 +268,7 @@ const leadTemplates = `
 
 {{define "lead"}}{{with .}}<h2>공식 발표보다 얼마나 빨랐나</h2>
 {{if .Cases}}<table><tr><th>pamon 확인 (KST)</th><th>{{.Provider}} 공식 발표와 비교</th></tr>
-{{range .Cases}}<tr><td>{{.Start}}</td><td><span class="h {{.Tone}}">{{.Text}}</span>{{if .Official}}<br><span class="sub">공식: {{.Official}}</span>{{end}}</td></tr>{{end}}</table>
+{{range .Cases}}<tr><td>{{.Start}}</td><td><span class="h {{.Tone}}">{{.Text}}</span>{{if .Official}}<br><span class="sub">공식: {{if .OfficialURL}}<a href="{{.OfficialURL}}" rel="nofollow">{{.Official}}</a>{{else}}{{.Official}}{{end}}{{if eq .Source "indicator"}} (상태 표시 기준, 5분 단위){{end}}</span>{{end}}</td></tr>{{end}}</table>
 {{else}}<p>최근 {{.Days}}일 동안 이 API에 공식 발표와 비교할 장애가 없었습니다.</p>{{end}}
 <p class="sub">{{.Provider}} 전체: 비교 {{.Stats.Counted}}건{{if .Median}}, 공식 발표가 있던 {{.Stats.Announced}}건의 중앙값은 pamon이 {{.Median}}{{end}}{{if .Stats.Never}}, 발표 없이 끝난 장애 {{.Stats.Never}}건{{end}}.{{if .Since}} 공식 페이지 기록 시작 {{.Since}}.{{else}} 공식 페이지 기록이 아직 없습니다.{{end}} <a href="../lead-time.html">재는 방법과 전체 표</a></p>{{end}}{{end}}
 `

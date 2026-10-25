@@ -31,6 +31,10 @@ func Load(ctx context.Context, st *store.Store, cfg *config.Config, from, to, no
 	if err != nil {
 		return nil, err
 	}
+	posted, hist, err := st.OfficialIncidents(ctx, from.Add(-Before-24*time.Hour))
+	if err != nil {
+		return nil, err
+	}
 	targets := map[string]*config.Target{}
 	for i := range cfg.Targets {
 		targets[cfg.Targets[i].ID] = &cfg.Targets[i]
@@ -48,7 +52,7 @@ func Load(ctx context.Context, st *store.Store, cfg *config.Config, from, to, no
 		return cfg.Interval.Duration
 	}
 	r := &Report{From: from, To: to, Watched: map[string]time.Time{}}
-	r.Results, r.Providers, r.Total = ByProvider(Episodes(incs, provider, confirm), runs, now)
+	r.Results, r.Providers, r.Total = ByProvider(Episodes(incs, provider, confirm), runs, posted, hist, now)
 	if r.Results == nil {
 		r.Results = []Result{}
 	}
@@ -58,6 +62,14 @@ func Load(ctx context.Context, st *store.Store, cfg *config.Config, from, to, no
 	firsts, err := st.OfficialFirstSeen(ctx)
 	if err != nil {
 		return nil, err
+	}
+	for p, h := range hist { // a posted list reaches back further than the readings
+		if h.Since.Year() < 2000 {
+			continue // "the whole history": the readings' start says more
+		}
+		if at, ok := firsts[p]; !ok || h.Since.Before(at) {
+			firsts[p] = h.Since
+		}
 	}
 	for p, at := range firsts {
 		if official.Has(p) {
