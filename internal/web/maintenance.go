@@ -240,6 +240,8 @@ const maintTemplates = `
 <td>{{.Note}}{{if .URL}}<br><a href="{{.URL}}" rel="nofollow">공지</a>{{end}}</td></tr>{{end}}</table>
 {{else}}<section class="verdict ok"><b class="h">등록된 점검 일정이 없습니다</b><p>예정된 점검이 공지되면 여기와 아래 피드에 나타납니다.</p></section>{{end}}
 
+<p>공지를 봤는데 여기 없다면 <a href="https://github.com/hyunsuhahaha/public-api-monitor/issues/new?template=maintenance.yml" rel="nofollow">점검 공지 제보</a>로 알려 주세요. 공지 원문을 확인하고 올립니다.</p>
+
 <h2>구독하기</h2>
 <ul>
 <li><b>캘린더</b>: <a href="maintenance.ics">maintenance.ics</a> 주소를 Google 캘린더(다른 캘린더 → URL로 추가)나 Outlook(인터넷 캘린더 구독)에 넣으면 점검 일정이 자동으로 들어옵니다.</li>
@@ -267,5 +269,5 @@ const inMaint = windows.some(w => w.targets.some(t => t.id === "airkorea-sido")
 {{if .}}<table><tr><th>시간 (KST)</th><th>내용</th></tr>
 {{range .}}<tr><td>{{.When}}<br><span class="h {{.Tone}}">{{.StateText}}</span></td><td>{{.Note}}{{if .URL}} <a href="{{.URL}}" rel="nofollow">공지</a>{{end}}</td></tr>{{end}}</table>
 {{else}}<p>pamon에 등록된 점검 공지가 없습니다.</p>{{end}}
-<p class="sub"><a href="../maintenance.html">전체 점검 일정</a> · <a href="../maintenance.ics">캘린더 구독(iCal)</a> · <a href="../maintenance.json">JSON</a></p>{{end}}
+<p class="sub"><a href="../maintenance.html">전체 점검 일정</a> · <a href="../maintenance.ics">캘린더 구독(iCal)</a> · <a href="../maintenance.json">JSON</a> · <a href="https://github.com/hyunsuhahaha/public-api-monitor/issues/new?template=maintenance.yml" rel="nofollow">점검 공지 제보</a></p>{{end}}
 `

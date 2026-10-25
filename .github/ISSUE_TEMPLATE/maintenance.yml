@@ -1,0 +1,38 @@
+name: 점검 공지 제보
+description: pamon이 감시하는 API의 점검 공지를 알려 주세요. 확인 후 maintenance.json·캘린더에 올립니다.
+title: "[점검] "
+labels: [maintenance]
+body:
+  - type: input
+    id: target
+    attributes:
+      label: 대상
+      description: 서비스 이름이나 pamon 주소의 id (예: airkorea-sido, 한국환경공단)
+    validations:
+      required: true
+  - type: input
+    id: start
+    attributes:
+      label: 시작 (KST)
+      placeholder: 2026-11-02 02:00
+    validations:
+      required: true
+  - type: input
+    id: end
+    attributes:
+      label: 끝 (KST)
+      placeholder: 2026-11-02 06:00
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: 공지 주소
+      description: 제공 기관의 공지 원문 (https). 로그인해야 보이는 공지는 링크 대신 내용을 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: note
+    attributes:
+      label: 내용
+      description: 무엇이 멈추는지 (전체 / 일부 API / 일부 기능)
