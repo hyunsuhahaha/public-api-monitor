@@ -203,7 +203,7 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 		}
 		// what most readers look for first; the public-data APIs follow alphabetically
 		rank := func(c string) int {
-			for i, first := range []string{"로그인·인증", "은행·결제", "정부 서비스", "협업·메신저", "클라우드", "소스·배포", "패키지·빌드", "지도·위치"} {
+			for i, first := range []string{"로그인·인증", "은행·결제", "정부 서비스", "협업·메신저", "문자·알림", "AI", "클라우드", "업무 SaaS", "소스·배포", "패키지·빌드", "보안·모니터링", "검색·지식", "지도·위치", "SNS", "게임·미디어", "가상자산·시세", "날씨·재해"} {
 				if c == first {
 					return i
 				}

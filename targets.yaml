@@ -310,6 +310,615 @@ targets:
     json_expect:
       - {path: url, equals: 'wss://gateway.discord.gg'}
 
+  # Second batch (2026-10-25): AI, payments, messaging, quotes, games and media, dev
+  # tools, cloud, SaaS, SNS, weather and knowledge APIs, the same keyless way. Left out:
+  # Binance (451 to a US address), Semantic Scholar and OpenAlex (one shared quota per
+  # IP), Amadeus, OpenSky and the 수출입은행 rates (no connection from the US), Reddit
+  # (block page), PagerDuty (a bodiless 401).
+  - id: openai-api
+    name: OpenAI API
+    provider: OpenAI
+    category: AI
+    docs: https://platform.openai.com/docs/api-reference
+    auth: none
+    classifier: http
+    url: https://api.openai.com/v1/models
+    expect_status: 401
+    contains: ['invalid_request_error']
+
+  - id: anthropic-api
+    name: Claude API
+    provider: Anthropic
+    category: AI
+    docs: https://docs.anthropic.com/en/api/getting-started
+    auth: none
+    classifier: http
+    url: https://api.anthropic.com/v1/models
+    expect_status: 401
+    contains: ['authentication_error']
+
+  - id: gemini-api
+    name: Gemini API
+    provider: Google
+    category: AI
+    docs: https://ai.google.dev/api
+    auth: none
+    classifier: http
+    url: https://generativelanguage.googleapis.com/v1beta/models
+    expect_status: 403
+    contains: ['"error"']
+
+  - id: deepl-api
+    name: DeepL 번역 API
+    provider: DeepL
+    category: AI
+    docs: https://developers.deepl.com/docs
+    auth: none
+    classifier: http
+    url: https://api-free.deepl.com/v2/usage
+    expect_status: 403
+    contains: ['Missing Authorization header']
+
+  - id: elevenlabs-api
+    name: ElevenLabs 음성 합성 API
+    provider: ElevenLabs
+    category: AI
+    docs: https://elevenlabs.io/docs/api-reference
+    auth: none
+    classifier: http
+    url: https://api.elevenlabs.io/v1/user
+    expect_status: 401
+    contains: ['authentication_error']
+
+  - id: huggingface-hub
+    name: Hugging Face 모델 정보
+    provider: Hugging Face
+    category: AI
+    docs: https://huggingface.co/docs/hub/api
+    auth: none
+    classifier: http
+    url: https://huggingface.co/api/models/openai-community/gpt2
+    json_expect:
+      - {path: id, equals: 'openai-community/gpt2'}
+
+  - id: stripe-api
+    name: Stripe 결제 API
+    provider: Stripe
+    category: 은행·결제
+    docs: https://docs.stripe.com/api
+    auth: none
+    classifier: http
+    url: https://api.stripe.com/v1/charges
+    expect_status: 401
+    contains: ['You did not provide an API key']
+
+  - id: paypal-api
+    name: PayPal 결제 API
+    provider: PayPal
+    category: 은행·결제
+    docs: https://developer.paypal.com/api/rest/
+    auth: none
+    classifier: http
+    url: https://api-m.paypal.com/v1/oauth2/token
+    expect_status: 401
+    contains: ['invalid_client']
+
+  - id: portone-api
+    name: 포트원 결제 API
+    provider: 포트원
+    category: 은행·결제
+    docs: https://developers.portone.io/api/rest-v2
+    auth: none
+    classifier: http
+    url: https://api.portone.io/payments/pamon-check
+    expect_status: 401
+    contains: ['"UNAUTHORIZED"']
+
+  - id: twilio-api
+    name: Twilio 문자·전화 API
+    provider: Twilio
+    category: 문자·알림
+    docs: https://www.twilio.com/docs/usage/api
+    auth: none
+    classifier: http
+    url: https://api.twilio.com/2010-04-01/Accounts.json
+    expect_status: 401
+    contains: ['"code":20003']
+
+  - id: sendgrid-api
+    name: SendGrid 이메일 API
+    provider: SendGrid
+    category: 문자·알림
+    docs: https://www.twilio.com/docs/sendgrid/api-reference
+    auth: none
+    classifier: http
+    url: https://api.sendgrid.com/v3/scopes
+    expect_status: 401
+    contains: ['authorization required']
+
+  - id: mailgun-api
+    name: Mailgun 이메일 API
+    provider: Mailgun
+    category: 문자·알림
+    docs: https://documentation.mailgun.com/docs/mailgun/api-reference/
+    auth: none
+    classifier: http
+    url: https://api.mailgun.net/v3/domains
+    expect_status: 401
+    contains: ['unauthorized']
+
+  - id: telegram-bot
+    name: Telegram Bot API
+    provider: Telegram
+    category: 문자·알림
+    docs: https://core.telegram.org/bots/api
+    auth: none
+    classifier: http
+    url: https://api.telegram.org/bot0:pamon/getMe
+    expect_status: 401
+    contains: ['"error_code":401']
+
+  - id: upbit-ticker
+    name: 업비트 시세 API (KRW-BTC)
+    provider: 업비트
+    category: 가상자산·시세
+    docs: https://docs.upbit.com/reference/ticker
+    auth: none
+    classifier: http
+    url: https://api.upbit.com/v1/ticker?markets=KRW-BTC
+    json_expect:
+      - {path: 0.market, equals: 'KRW-BTC'}
+      - {path: 0.trade_price, min: 1}
+
+  - id: bithumb-ticker
+    name: 빗썸 시세 API (BTC)
+    provider: 빗썸
+    category: 가상자산·시세
+    docs: https://apidocs.bithumb.com/
+    auth: none
+    classifier: http
+    url: https://api.bithumb.com/public/ticker/BTC_KRW
+    json_expect:
+      - {path: status, equals: '0000'}
+      - {path: data.closing_price, min: 1}
+
+  - id: coingecko-api
+    name: CoinGecko 시세 API
+    provider: CoinGecko
+    category: 가상자산·시세
+    docs: https://docs.coingecko.com/
+    auth: none
+    classifier: http
+    url: https://api.coingecko.com/api/v3/ping
+    contains: ['gecko_says']
+
+  - id: nexon-openapi
+    name: 넥슨 Open API
+    provider: 넥슨
+    category: 게임·미디어
+    docs: https://openapi.nexon.com/
+    auth: none
+    classifier: http
+    url: https://open.api.nexon.com/maplestory/v1/id?character_name=x
+    expect_status: 400
+    contains: ['OPENAPI00004']
+
+  - id: riot-api
+    name: Riot Games API (LoL 한국)
+    provider: Riot Games
+    category: 게임·미디어
+    docs: https://developer.riotgames.com/apis
+    auth: none
+    classifier: http
+    url: https://kr.api.riotgames.com/lol/status/v4/platform-data
+    expect_status: 401
+    contains: ['"status_code":401']
+
+  - id: steam-api
+    name: Steam Web API
+    provider: Valve
+    category: 게임·미디어
+    docs: https://steamcommunity.com/dev
+    auth: none
+    classifier: http
+    url: https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/
+    json_expect:
+      - {path: servertime, min: 1}
+
+  - id: spotify-api
+    name: Spotify Web API
+    provider: Spotify
+    category: 게임·미디어
+    docs: https://developer.spotify.com/documentation/web-api
+    auth: none
+    classifier: http
+    url: https://api.spotify.com/v1/browse/categories
+    expect_status: 401
+    contains: ['access token']
+
+  - id: youtube-api
+    name: YouTube Data API
+    provider: Google
+    category: 게임·미디어
+    docs: https://developers.google.com/youtube/v3
+    auth: none
+    classifier: http
+    url: https://www.googleapis.com/youtube/v3/videos?part=id&id=pamon
+    expect_status: 403
+    contains: ['"error"']
+
+  - id: twitch-api
+    name: Twitch Helix API
+    provider: Twitch
+    category: 게임·미디어
+    docs: https://dev.twitch.tv/docs/api/
+    auth: none
+    classifier: http
+    url: https://api.twitch.tv/helix/streams
+    expect_status: 401
+    contains: ['OAuth token is missing']
+
+  - id: tmdb-api
+    name: TMDB 영화 API
+    provider: TMDB
+    category: 게임·미디어
+    docs: https://developer.themoviedb.org/reference
+    auth: none
+    classifier: http
+    url: https://api.themoviedb.org/3/configuration
+    expect_status: 401
+    contains: ['"status_code":7']
+
+  - id: gitlab-api
+    name: GitLab API
+    provider: GitLab
+    category: 소스·배포
+    docs: https://docs.gitlab.com/api/rest/
+    auth: none
+    classifier: http
+    url: https://gitlab.com/api/v4/version
+    expect_status: 401
+    contains: ['401 Unauthorized']
+
+  - id: bitbucket-api
+    name: Bitbucket API
+    provider: Bitbucket
+    category: 소스·배포
+    docs: https://developer.atlassian.com/cloud/bitbucket/rest/
+    auth: none
+    classifier: http
+    url: https://api.bitbucket.org/2.0/repositories/atlassian?pagelen=1
+    json_expect:
+      - {path: values, min_items: 1}
+
+  - id: jira-api
+    name: Jira Cloud API
+    provider: Jira
+    category: 업무 SaaS
+    docs: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
+    auth: none
+    classifier: http
+    url: https://api.atlassian.com/me
+    expect_status: 401
+    contains: ['"code":401']
+
+  - id: linear-api
+    name: Linear API
+    provider: Linear
+    category: 업무 SaaS
+    docs: https://linear.app/developers
+    auth: none
+    classifier: http
+    url: https://api.linear.app/graphql
+    expect_status: 400
+    contains: ['Cross-Site Request Forgery']
+
+  - id: circleci-api
+    name: CircleCI API
+    provider: CircleCI
+    category: 소스·배포
+    docs: https://circleci.com/docs/api/v2/
+    auth: none
+    classifier: http
+    url: https://circleci.com/api/v2/me
+    expect_status: 401
+    contains: ['You must log in first']
+
+  - id: sentry-api
+    name: Sentry API
+    provider: Sentry
+    category: 보안·모니터링
+    docs: https://docs.sentry.io/api/
+    auth: none
+    classifier: http
+    url: https://sentry.io/api/0/
+    json_expect:
+      - {path: version, equals: '0'}
+
+  - id: cloudflare-api
+    name: Cloudflare API
+    provider: Cloudflare
+    category: 클라우드
+    docs: https://developers.cloudflare.com/api/
+    auth: none
+    classifier: http
+    url: https://api.cloudflare.com/client/v4/user
+    expect_status: 403
+    contains: ['"code":9106']
+
+  - id: digitalocean-api
+    name: DigitalOcean API
+    provider: DigitalOcean
+    category: 클라우드
+    docs: https://docs.digitalocean.com/reference/api/
+    auth: none
+    classifier: http
+    url: https://api.digitalocean.com/v2/account
+    expect_status: 401
+    contains: ['Unable to authenticate you']
+
+  - id: vercel-api
+    name: Vercel API
+    provider: Vercel
+    category: 클라우드
+    docs: https://vercel.com/docs/rest-api
+    auth: none
+    classifier: http
+    url: https://api.vercel.com/v2/user
+    expect_status: 403
+    contains: ['missingToken']
+
+  - id: supabase-api
+    name: Supabase 관리 API
+    provider: Supabase
+    category: 클라우드
+    docs: https://supabase.com/docs/reference/api
+    auth: none
+    classifier: http
+    url: https://api.supabase.com/v1/projects
+    expect_status: 401
+    contains: ['No access token provided']
+
+  - id: datadog-api
+    name: Datadog API
+    provider: Datadog
+    category: 보안·모니터링
+    docs: https://docs.datadoghq.com/api/
+    auth: none
+    classifier: http
+    url: https://api.datadoghq.com/api/v1/validate
+    expect_status: 403
+    contains: ['"errors"']
+
+  - id: virustotal-api
+    name: VirusTotal API
+    provider: VirusTotal
+    category: 보안·모니터링
+    docs: https://docs.virustotal.com/reference/overview
+    auth: none
+    classifier: http
+    url: https://www.virustotal.com/api/v3/users/me
+    expect_status: 401
+    contains: ['AuthenticationRequiredError']
+
+  - id: notion-api
+    name: Notion API
+    provider: Notion
+    category: 업무 SaaS
+    docs: https://developers.notion.com/reference
+    auth: none
+    classifier: http
+    url: https://api.notion.com/v1/users
+    expect_status: 401
+    contains: ['"object":"error"']
+
+  - id: airtable-api
+    name: Airtable API
+    provider: Airtable
+    category: 업무 SaaS
+    docs: https://airtable.com/developers/web/api
+    auth: none
+    classifier: http
+    url: https://api.airtable.com/v0/meta/whoami
+    expect_status: 401
+    contains: ['AUTHENTICATION_REQUIRED']
+
+  - id: dropbox-api
+    name: Dropbox API
+    provider: Dropbox
+    category: 업무 SaaS
+    docs: https://www.dropbox.com/developers/documentation/http/documentation
+    auth: none
+    classifier: http
+    url: https://api.dropboxapi.com/2/check/user
+    expect_status: 400
+    contains: ['Error in call to API function']
+
+  - id: zoom-api
+    name: Zoom API
+    provider: Zoom
+    category: 업무 SaaS
+    docs: https://developers.zoom.us/docs/api/
+    auth: none
+    classifier: http
+    url: https://api.zoom.us/v2/users/me
+    expect_status: 401
+    contains: ['"code":124']
+
+  - id: msgraph-api
+    name: Microsoft Graph (Outlook·OneDrive)
+    provider: Microsoft
+    category: 업무 SaaS
+    docs: https://learn.microsoft.com/graph/overview
+    auth: none
+    classifier: http
+    url: https://graph.microsoft.com/v1.0/me
+    expect_status: 401
+    contains: ['InvalidAuthenticationToken']
+
+  - id: gmail-api
+    name: Gmail API
+    provider: Google
+    category: 업무 SaaS
+    docs: https://developers.google.com/gmail/api
+    auth: none
+    classifier: http
+    url: https://gmail.googleapis.com/gmail/v1/users/me/profile
+    expect_status: 401
+    contains: ['missing required authentication credential']
+
+  - id: google-login
+    name: Google 로그인 (OpenID 설정)
+    provider: Google
+    category: 로그인·인증
+    docs: https://developers.google.com/identity/openid-connect/openid-connect
+    auth: none
+    classifier: http
+    url: https://accounts.google.com/.well-known/openid-configuration
+    json_expect:
+      - {path: issuer, equals: 'https://accounts.google.com'}
+
+  - id: apple-login
+    name: Apple로 로그인 (OpenID 설정)
+    provider: Apple
+    category: 로그인·인증
+    docs: https://developer.apple.com/documentation/sign_in_with_apple
+    auth: none
+    classifier: http
+    url: https://appleid.apple.com/.well-known/openid-configuration
+    json_expect:
+      - {path: issuer, equals: 'https://appleid.apple.com'}
+
+  - id: meta-graph
+    name: Meta Graph API (Facebook·Instagram)
+    provider: Meta
+    category: SNS
+    docs: https://developers.facebook.com/docs/graph-api
+    auth: none
+    classifier: http
+    url: https://graph.facebook.com/v19.0/me
+    expect_status: 400
+    contains: ['OAuthException']
+
+  - id: x-api
+    name: X API
+    provider: X
+    category: SNS
+    docs: https://docs.x.com/x-api
+    auth: none
+    classifier: http
+    url: https://api.x.com/2/users/me
+    expect_status: 401
+    contains: ['Unauthorized']
+
+  - id: naver-search-api
+    name: 네이버 검색 API
+    provider: 네이버
+    category: 검색·지식
+    docs: https://developers.naver.com/docs/serviceapi/search/blog/blog.md
+    auth: none
+    classifier: http
+    url: https://openapi.naver.com/v1/search/blog.json?query=pamon
+    expect_status: 401
+    contains: ['"errorCode":"024"']
+
+  - id: kakao-search-api
+    name: Daum 검색 API (카카오)
+    provider: 카카오
+    category: 검색·지식
+    docs: https://developers.kakao.com/docs/latest/ko/daum-search/dev-guide
+    auth: none
+    classifier: http
+    url: https://dapi.kakao.com/v2/search/web?query=pamon
+    expect_status: 401
+    contains: ['AccessDeniedError']
+
+  - id: google-maps-api
+    name: Google Maps Geocoding API
+    provider: Google
+    category: 지도·위치
+    docs: https://developers.google.com/maps/documentation/geocoding
+    auth: none
+    classifier: http
+    url: https://maps.googleapis.com/maps/api/geocode/json?address=Seoul
+    contains: ['REQUEST_DENIED']
+
+  - id: smartthings-api
+    name: SmartThings API
+    provider: 삼성전자
+    category: 업무 SaaS
+    docs: https://developer.smartthings.com/docs/api/public
+    auth: none
+    classifier: http
+    url: https://api.smartthings.com/v1/devices
+    expect_status: 401
+    contains: ['UnauthorizedError']
+
+  - id: openmeteo-seoul
+    name: Open-Meteo 서울 현재 기온
+    provider: Open-Meteo
+    category: 날씨·재해
+    docs: https://open-meteo.com/en/docs
+    auth: none
+    classifier: http
+    url: https://api.open-meteo.com/v1/forecast?latitude=37.57&longitude=126.98&current=temperature_2m
+    json_expect:
+      - {path: current.temperature_2m, min: -40}
+      - {path: current.temperature_2m, max: 50}
+
+  - id: openweather-api
+    name: OpenWeather API
+    provider: OpenWeather
+    category: 날씨·재해
+    docs: https://openweathermap.org/api
+    auth: none
+    classifier: http
+    url: https://api.openweathermap.org/data/2.5/weather?q=Seoul
+    expect_status: 401
+    contains: ['"cod":401']
+
+  - id: usgs-quakes
+    name: USGS 지진 피드
+    provider: USGS
+    category: 날씨·재해
+    docs: https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php
+    auth: none
+    classifier: http
+    url: https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson
+    json_expect:
+      - {path: type, equals: 'FeatureCollection'}
+
+  - id: nasa-eonet
+    name: NASA 자연재해 이벤트 (EONET)
+    provider: NASA
+    category: 날씨·재해
+    docs: https://eonet.gsfc.nasa.gov/docs/v3
+    auth: none
+    classifier: http
+    url: https://eonet.gsfc.nasa.gov/api/v3/events?limit=1
+    contains: ['EONET Events']
+
+  - id: wikipedia-ko
+    name: 위키백과 API (한국어)
+    provider: Wikimedia
+    category: 검색·지식
+    docs: https://www.mediawiki.org/wiki/API:Main_page
+    auth: none
+    classifier: http
+    url: https://ko.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json
+    contains: ['"mainpage"']
+
+  - id: crossref-api
+    name: Crossref 논문 메타데이터 API
+    provider: Crossref
+    category: 검색·지식
+    docs: https://api.crossref.org/swagger-ui/index.html
+    auth: none
+    classifier: http
+    url: https://api.crossref.org/works?rows=1
+    json_expect:
+      - {path: status, equals: 'ok'}
+
   # Developer map APIs. Credentials are sent only in headers.
   # Fixed canaries: Seoul City Hall and Seoul Station; bounds tolerate map updates.
   - id: kakao-address

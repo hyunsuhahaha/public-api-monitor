@@ -30,13 +30,27 @@ type source struct {
 }
 
 // Sources are the providers pamon checks that publish a machine-readable status.
-var Sources = []source{
-	{provider: "GitHub", api: "https://www.githubstatus.com/api/v2/status.json", page: "https://www.githubstatus.com"},
-	{provider: "Discord", api: "https://discordstatus.com/api/v2/status.json", page: "https://discordstatus.com"},
-	{provider: "npm", api: "https://status.npmjs.org/api/v2/status.json", page: "https://status.npmjs.org"},
-	{provider: "PyPI", api: "https://status.python.org/api/v2/status.json", page: "https://status.python.org"},
-	{provider: "Docker Hub", api: "https://www.dockerstatus.com/api/v2/status.json", page: "https://www.dockerstatus.com"},
+var Sources = append([]source{
 	{provider: "Slack", api: "https://slack-status.com/api/v2.0.0/current", page: "https://slack-status.com", slack: true},
+}, statuspages(map[string]string{
+	// provider (as in targets.yaml) -> its Statuspage host, all checked to answer
+	// /api/v2/status.json on 2026-10-25
+	"GitHub": "www.githubstatus.com", "Discord": "discordstatus.com", "npm": "status.npmjs.org",
+	"PyPI": "status.python.org", "Docker Hub": "www.dockerstatus.com", "OpenAI": "status.openai.com",
+	"Anthropic": "status.claude.com", "Cloudflare": "www.cloudflarestatus.com", "Twilio": "status.twilio.com",
+	"Mailgun": "status.mailgun.com", "Datadog": "status.datadoghq.com", "Sentry": "status.sentry.io",
+	"Jira": "jira-software.status.atlassian.com", "Bitbucket": "bitbucket.status.atlassian.com",
+	"Vercel": "www.vercel-status.com", "Supabase": "status.supabase.com", "DigitalOcean": "status.digitalocean.com",
+	"Linear": "linearstatus.com", "CircleCI": "status.circleci.com", "Dropbox": "status.dropbox.com",
+	"Airtable": "status.airtable.com", "ElevenLabs": "status.elevenlabs.io", "Twitch": "status.twitch.com",
+})...)
+
+func statuspages(hosts map[string]string) []source {
+	var out []source
+	for provider, host := range hosts {
+		out = append(out, source{provider: provider, api: "https://" + host + "/api/v2/status.json", page: "https://" + host})
+	}
+	return out
 }
 
 // Fetch reads every source concurrently; a source that fails is left out (the page then
