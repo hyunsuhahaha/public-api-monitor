@@ -446,6 +446,7 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 {{define "service"}}{{template "head" .}}
 <title>{{.T.Name}} 지금 되나요? 장애·접속 상태 | pamon</title>
 <meta name="description" content="{{.T.Name}}({{.T.Provider}}) 지금 상태: {{.V.Headline}}. {{.V.Detail}} 5분마다 외부에서 직접 확인한 기록입니다.">
+<link rel="alternate" type="application/atom+xml" title="{{.T.Name}} 장애·변경 알림" href="../feed/{{.T.ID}}.xml">
 </head><body><main>
 <nav><a href="index.html">서비스별 상태</a> › {{.T.Category}}</nav>
 <h1>{{.T.Name}} 지금 되나요?</h1>

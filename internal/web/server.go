@@ -96,6 +96,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /lead-time.html", s.leadPage)
 	mux.HandleFunc("GET /api/v1/lead-time", s.leadJSON)
 	mux.HandleFunc("GET /data/api/v1/lead-time.json", s.leadJSON) // the exported file's path
+	mux.HandleFunc("GET /feed.xml", s.feed)
+	mux.HandleFunc("GET /feed/{id}", s.feed)
 	mux.HandleFunc("GET /maintenance.json", s.maintJSON)
 	mux.HandleFunc("GET /maintenance.ics", s.maintICS)
 	mux.HandleFunc("GET /maintenance.html", s.maintPage)

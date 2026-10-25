@@ -347,7 +347,7 @@ ansible-playbook site.yml --ask-vault-pass     # 중앙 + [probes]에 적은 원
 | `GET /api/v1/status` | 대상별 현재 상태, 30·90일 가용률, 일별 기록 (30초 캐시) |
 | `GET /api/v1/incidents?target=id` | 최근 90일 장애 |
 | `GET /report/YYYY-MM` · `/api/v1/report/YYYY-MM` | 월간 가용성 리포트 (가용률 낮은 API, 최장 장애, 기관별) |
-| `GET /feed.xml` | 장애 Atom 피드 (RSS 리더, 슬랙 RSS 앱으로 구독) |
+| `GET /feed.xml` · `/feed/{id}.xml` | 장애·데이터 이상·응답 형식 변경·점검 예정 Atom 피드, 전체 또는 API 하나 (RSS 리더, 슬랙 `/feed subscribe`로 구독) |
 | `GET /lead-time` · `/api/v1/lead-time` | 공식 상태 페이지 발표보다 pamon이 몇 분 먼저(또는 늦게) 장애를 확정했는지, 제공자별 중앙값·평균과 표본 수 (최근 90일) |
 | `GET /maintenance.json` · `/maintenance.ics` · `/maintenance.html` | 공지된 점검 일정: 서킷 브레이커용 JSON, 캘린더 구독(iCal), 사람용 페이지 ([docs/maintenance.md](docs/maintenance.md)) |
 | `GET /badge/{id}.svg` | 30일 가용률 배지 |

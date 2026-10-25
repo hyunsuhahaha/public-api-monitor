@@ -2,8 +2,6 @@ package web
 
 import (
 	"encoding/json"
-	"encoding/xml"
-	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -19,7 +17,6 @@ func (s *Server) reportRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("GET /report/{month}", s.reportPage)
 	mux.HandleFunc("GET /api/v1/report/{month}", s.reportJSON)
-	mux.HandleFunc("GET /feed.xml", s.feed)
 }
 
 func (s *Server) buildReport(w http.ResponseWriter, r *http.Request) *report.Report {
@@ -115,94 +112,4 @@ func (s *Server) reportPage(w http.ResponseWriter, r *http.Request) {
 	if err := reportTmpl.Execute(w, rep); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}
-}
-
-// Atom feed of incidents (newest 50), for feed readers and Slack's RSS app.
-type atomFeed struct {
-	XMLName xml.Name    `xml:"http://www.w3.org/2005/Atom feed"`
-	Title   string      `xml:"title"`
-	ID      string      `xml:"id"`
-	Updated string      `xml:"updated"`
-	Link    []atomLink  `xml:"link"`
-	Entries []atomEntry `xml:"entry"`
-}
-type atomLink struct {
-	Href string `xml:"href,attr"`
-	Rel  string `xml:"rel,attr,omitempty"`
-}
-type atomEntry struct {
-	Title   string   `xml:"title"`
-	ID      string   `xml:"id"`
-	Updated string   `xml:"updated"`
-	Link    atomLink `xml:"link"`
-	Summary string   `xml:"summary"`
-}
-
-func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
-	list, err := s.Store.Incidents(r.Context(), "", time.Now().AddDate(0, 0, -90), 50)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	base := s.PublicURL
-	if base == "" {
-		scheme := "http"
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-			scheme = "https"
-		}
-		base = scheme + "://" + r.Host
-	}
-	base = strings.TrimRight(base, "/")
-	names := map[string]string{}
-	for _, t := range s.Cfg.Targets {
-		names[t.ID] = t.Name
-	}
-	f := atomFeed{Title: "공공 API 상태판: 장애", ID: base + "/feed.xml", Updated: time.Now().UTC().Format(time.RFC3339),
-		Link: []atomLink{{Href: base + "/"}, {Href: base + "/feed.xml", Rel: "self"}}}
-	for _, in := range list {
-		name := names[in.TargetID]
-		if name == "" {
-			name = in.TargetID
-		}
-		label := "장애"
-		if in.Severity < 2 {
-			label = "성능 저하"
-		}
-		updated := in.Started
-		summary := fmt.Sprintf("%s 시작. %s", in.Started.In(config.KST).Format("2006-01-02 15:04 KST"), in.Reason)
-		title := fmt.Sprintf("[%s] %s", label, name)
-		if in.Open() {
-			title += " (진행 중)"
-		} else {
-			updated = in.Ended
-			title += " (복구, " + report.Dur(int(in.Ended.Sub(in.Started).Round(time.Minute).Minutes())) + ")"
-			summary += fmt.Sprintf(" %s 복구.", in.Ended.In(config.KST).Format("15:04"))
-		}
-		f.Entries = append(f.Entries, atomEntry{
-			Title: title, ID: fmt.Sprintf("%s/incidents/%d", base, in.ID), Updated: updated.UTC().Format(time.RFC3339),
-			Link: atomLink{Href: base + "/#" + in.TargetID}, Summary: summary,
-		})
-	}
-	if sch, err := s.Store.SchemaEvents(r.Context(), "", time.Now().AddDate(0, 0, -90), 50); err == nil {
-		for _, e := range sch {
-			name := names[e.Target]
-			if name == "" {
-				name = e.Target
-			}
-			label := "필드 추가"
-			if e.Kind == "removed" {
-				label = "필드 사라짐"
-			}
-			f.Entries = append(f.Entries, atomEntry{
-				Title: fmt.Sprintf("[응답 형식 변경: %s] %s", label, name), ID: fmt.Sprintf("%s/schema/%d", base, e.ID),
-				Updated: e.At.UTC().Format(time.RFC3339), Link: atomLink{Href: base + "/#t=" + e.Target},
-				Summary: strings.Join(e.Paths, ", "),
-			})
-		}
-	}
-	w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
-	w.Write([]byte(xml.Header))
-	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
-	enc.Encode(f)
 }

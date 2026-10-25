@@ -104,6 +104,8 @@ func exportKind(u string) string {
 		return "incident"
 	case strings.HasPrefix(p, "/ai/targets/"):
 		return "ai_target"
+	case strings.HasPrefix(p, "/feed/"):
+		return "feed"
 	case strings.HasPrefix(p, "/s/"):
 		return "answer"
 	case strings.HasPrefix(p, "/report/"):
@@ -337,6 +339,15 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 	}
 	if b, err := get("/feed.xml"); err == nil {
 		put("feed.xml", b)
+	}
+	for _, t := range cfg.Targets {
+		b, err := get("/feed/" + t.ID + ".xml")
+		if err != nil {
+			return spent, err
+		}
+		if err := put("feed/"+t.ID+".xml", b); err != nil {
+			return spent, err
+		}
 	}
 	urls := []string{"/api/v1/status", "/api/v1/incidents", "/api/v1/schema-events", "/api/v1/silences", "/api/v1/overview", "/api/v1/lead-time", "/version"}
 	for _, r := range exportRanges {
