@@ -1,0 +1,29 @@
+# The GCP host (deploy/gcp): the database stays on this disk and Litestream streams
+# every change to Cloud Storage within seconds; Caddy serves the exported site over
+# HTTPS to the Cloudflare gateway only. The 5-minute check runs from pamon-cycle.timer.
+services:
+  # A fresh disk starts from the replica; an existing database is left alone.
+  restore:
+    image: litestream/litestream:0.3.13
+    env_file: host.env
+    entrypoint: ["sh", "-c"]
+    command:
+      - litestream restore -config /etc/litestream.yml -if-db-not-exists -if-replica-exists /data/pamon.db && chown -R 65532:65532 /data
+    volumes: ["/var/lib/pamon/data:/data", "./litestream.yml:/etc/litestream.yml:ro"]
+    restart: "no"
+  litestream:
+    image: litestream/litestream:0.3.13
+    env_file: host.env
+    command: ["replicate", "-config", "/etc/litestream.yml"]
+    volumes: ["/var/lib/pamon/data:/data", "./litestream.yml:/etc/litestream.yml:ro"]
+    depends_on:
+      restore: {condition: service_completed_successfully}
+    restart: unless-stopped
+  caddy:
+    image: caddy:2.10
+    env_file: caddy.env
+    ports: ["80:80", "443:443"]
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "/var/lib/pamon/site:/srv/site:ro", "caddy-data:/data"]
+    restart: unless-stopped
+volumes:
+  caddy-data:

@@ -130,6 +130,21 @@ test('database snapshots go to rotating KV slots behind their own token and are 
   assert.equal((await h.get('/__backup/list',{headers:auth})).status,401);
 });
 
+test('with ORIGIN_URL the site comes from the host at its root, with the gateway header',async()=>{
+  const h=harness();
+  h.env.ORIGIN_URL='https://1-2-3-4.sslip.io';
+  h.env.GATEWAY_SECRET='gw-secret';
+  assert.equal((await h.get('/status.html')).status,200);
+  assert.equal(h.calls[0][0],'https://1-2-3-4.sslip.io/status.html');
+  assert.equal(h.calls[0][1].headers.get('x-pamon-gateway'),'gw-secret');
+  const redirect=harness(async()=>new Response(null,{status:301,headers:{location:'https://1-2-3-4.sslip.io/ai/'}}));
+  redirect.env.ORIGIN_URL='https://1-2-3-4.sslip.io';
+  assert.equal((await redirect.get('/ai')).headers.get('location'),'https://gateway.test/ai/');
+  const pages=harness();
+  await pages.get('/status.html');
+  assert.equal(pages.calls[0][1].headers.get('x-pamon-gateway'),null);
+});
+
 test('log storage failure does not break public reads; scheduled retention removes old records',async()=>{
   const h=harness();
   h.env.DB.prepare=()=>({bind(){return {run:async()=>{throw Error('db offline')}}}});

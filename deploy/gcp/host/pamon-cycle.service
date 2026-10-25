@@ -1,0 +1,17 @@
+[Unit]
+Description=pamon: check every target once and export the site
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Never write to a database Litestream has not restored yet.
+ExecCondition=/usr/bin/test -s /var/lib/pamon/data/pamon.db
+ExecStart=/usr/bin/docker run --rm --pull always --name pamon-cycle \
+  --env-file /opt/pamon/pamon.env \
+  -v /var/lib/pamon/data:/data -v /var/lib/pamon/site-next:/site \
+  ghcr.io/hyunsuhahaha/public-api-monitor:latest \
+  -cycle -db /data/pamon.db -location gcp-us-west1 -export /site
+# Publish the new export in one step, so Caddy never serves a half-written directory.
+ExecStartPost=/usr/bin/rsync -a --delete /var/lib/pamon/site-next/ /var/lib/pamon/site/
+TimeoutStartSec=9min

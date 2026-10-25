@@ -1,0 +1,9 @@
+# Only the Cloudflare gateway may read the site: it sends the shared header, so every
+# visit goes through it and is counted. Caddy answers its own ACME challenges first.
+{$PAMON_HOST} {
+	encode zstd gzip
+	@direct not header X-Pamon-Gateway {$PAMON_GATEWAY_SECRET}
+	respond @direct 403
+	root * /srv/site
+	file_server
+}

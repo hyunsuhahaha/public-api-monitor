@@ -1,0 +1,11 @@
+# Credentials come from the VM's service account (metadata server); the bucket is the
+# only thing it may write.
+dbs:
+  - path: /data/pamon.db
+    replicas:
+      - type: gcs
+        bucket: ${PAMON_BUCKET}
+        path: pamon.db
+        sync-interval: 1s
+        snapshot-interval: 24h
+        retention: 168h

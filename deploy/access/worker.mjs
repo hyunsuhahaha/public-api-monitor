@@ -199,19 +199,23 @@ export function createWorker(originFetch=fetch) {
       }
       else {
         // Fixed origin and prefix: no user-controlled proxy destination, cookies or credentials.
-        const upstream=new URL(ORIGIN+PREFIX+u.pathname.slice(1));
+        // ORIGIN_URL (the GCP host) replaces GitHub Pages when set; the host only answers
+        // requests carrying GATEWAY_SECRET, so it cannot be visited around the counter.
+        const origin=env.ORIGIN_URL||ORIGIN, prefix=env.ORIGIN_URL?'/':PREFIX;
+        const upstream=new URL(origin+prefix+u.pathname.slice(1));
         if (u.searchParams.has('m')) upstream.searchParams.set('m',u.searchParams.get('m').slice(0,32));
         const pass=new Headers();
-        for (const key of ['accept','if-none-match','if-modified-since']) {
+        for (const key of ['accept','accept-encoding','if-none-match','if-modified-since']) {
           if(request.headers.has(key)) pass.set(key,request.headers.get(key));
         }
+        if (env.ORIGIN_URL && env.GATEWAY_SECRET) pass.set('x-pamon-gateway',env.GATEWAY_SECRET);
         try {
           const result=await originFetch(upstream.toString(),{method:request.method,headers:pass,redirect:'manual'});
           response=new Response(result.body,result);
           if(result.status>=300 && result.status<400 && result.headers.has('location')) {
             const next=new URL(result.headers.get('location'),upstream);
-            if(next.origin!==ORIGIN || !next.pathname.startsWith(PREFIX)) response=json({error:'unexpected origin redirect'},502);
-            else { next.host=u.host; next.protocol=u.protocol; next.pathname='/'+next.pathname.slice(PREFIX.length); response.headers.set('location',next.toString()); }
+            if(next.origin!==new URL(origin).origin || !next.pathname.startsWith(prefix)) response=json({error:'unexpected origin redirect'},502);
+            else { next.host=u.host; next.protocol=u.protocol; next.pathname='/'+next.pathname.slice(prefix.length); response.headers.set('location',next.toString()); }
           }
           // A gateway hit must reach the Worker to be counted, including conditional 304s.
           response.headers.set('cache-control','no-store');
