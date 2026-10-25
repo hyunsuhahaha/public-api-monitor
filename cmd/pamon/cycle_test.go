@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,15 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	}
 	if !strings.Contains(string(sm), "<loc>https://pamon.test/s/</loc>") {
 		t.Errorf("sitemap lacks s/: %s", sm)
+	}
+	// stylesheets and scripts carry a content version, so browsers never mix old and new
+	idx, _ := os.ReadFile(filepath.Join(site, "index.html"))
+	if !regexp.MustCompile(`href="app\.css\?v=[0-9a-f]{8}"`).Match(idx) || !regexp.MustCompile(`src="app\.js\?v=[0-9a-f]{8}"`).Match(idx) {
+		t.Errorf("index.html assets not versioned")
+	}
+	ans, _ := os.ReadFile(filepath.Join(site, "s", maps[0].ID+".html"))
+	if !regexp.MustCompile(`src="\.\./report\.js\?v=[0-9a-f]{8}"`).Match(ans) {
+		t.Errorf("answer page script not versioned")
 	}
 	for _, page := range []string{"lead-time.html", "maintenance.html", "retry-advice.html"} {
 		if !strings.Contains(string(sm), "<loc>https://pamon.test/"+page+"</loc>") {

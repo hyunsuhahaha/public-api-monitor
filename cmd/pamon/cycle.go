@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -278,17 +280,39 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 		}
 		return os.WriteFile(p, b, 0o644)
 	}
+	versioned := strings.NewReplacer() // set once the assets are read, before any page
 	page := func(u, name string) error {
 		b, err := get(u)
 		if err != nil {
 			return err
 		}
-		s := linkFixes.Replace(string(b))
+		s := versioned.Replace(linkFixes.Replace(string(b)))
 		if i := strings.Index(s, "<script"); i >= 0 {
 			s = s[:i] + fetchShim + s[i:]
 		}
 		return put(name, []byte(decorate(s, name)))
 	}
+	// Stylesheets and scripts first: pages ask for them as app.css?v=<content hash>, so a
+	// browser never keeps an old app.css next to a new page (the static host sends no
+	// cache rules, and browsers guessed hours for files that rarely change).
+	assets := map[string][]byte{}
+	var bust []string
+	for _, f := range []string{"app.css", "app.js", "ops.js", "status.js", "report.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
+		b, err := get("/" + f)
+		if err != nil {
+			return spent, err
+		}
+		if strings.HasSuffix(f, ".js") {
+			b = []byte(linkFixes.Replace(string(b)))
+		}
+		assets[f] = b
+		sum := sha256.Sum256(b)
+		v := hex.EncodeToString(sum[:4])
+		for _, attr := range []string{`src="`, `href="`, `src="../`, `href="../`} {
+			bust = append(bust, attr+f+`"`, attr+f+"?v="+v+`"`)
+		}
+	}
+	versioned = strings.NewReplacer(bust...)
 	if err := page("/", "index.html"); err != nil {
 		return spent, err
 	}
@@ -322,14 +346,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 			return spent, err
 		}
 	}
-	for _, f := range []string{"app.css", "app.js", "ops.js", "status.js", "report.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
-		b, err := get("/" + f)
-		if err != nil {
-			return spent, err
-		}
-		if strings.HasSuffix(f, ".js") {
-			b = []byte(linkFixes.Replace(string(b)))
-		}
+	for f, b := range assets {
 		if err := put(f, b); err != nil {
 			return spent, err
 		}
