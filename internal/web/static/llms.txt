@@ -5,6 +5,8 @@ Developer dependency monitoring evidence for incident diagnosis. These are indep
 - [Agent guide](ai/index.html): interpretation, freshness, scope and citation rules.
 - [Diagnostic catalog](ai/diagnostics.json): match target id, name, provider or exact host; follow each target's jsonUrl resolved against the catalog URL.
 - [Status dashboard](status.html): human-readable status.
+- [Maintenance windows](maintenance.json): announced maintenance per target (start, end, state, targets[].id); also as iCalendar (maintenance.ics). Announcements, not observations: skip or queue calls inside a window instead of retrying.
+- [Lead time](lead-time.html): how many minutes pamon confirmed outages before or after the provider's own status page (JSON: data/api/v1/lead-time.json), with sample sizes and excluded cases.
 - [Per-service answers](s/index.html): one page per service (s/{id}.html) with a plain-language verdict, where the last request spent its time (DNS, TCP, TLS, server wait), the provider's own status announcement when it publishes one, and recent incidents.
 
 Each target in the catalog also carries verdict (the answer page's plain-language verdict in Korean: tone ok/warn/bad/unknown, headline, detail, yourSide), official (the provider's own status page when it publishes one: indicator none/minor/major/critical, description, page, fetchedAt, operational, and comparison with our verdict; absent when there is none, never guessed) and ifYouDependOnIt (what a developer calling this service can do while it fails: retries with backoff, idempotency keys, cached data, queues, fallbacks). An official "operational" next to our failure means the announcement lags or the failure is limited to the function we check; it does not overrule the observation.

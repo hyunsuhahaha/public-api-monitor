@@ -119,6 +119,7 @@ type Maintenance struct {
 	Start time.Time `yaml:"start"` // RFC 3339, e.g. 2026-10-20T02:00:00+09:00
 	End   time.Time `yaml:"end"`
 	Note  string    `yaml:"note"`
+	URL   string    `yaml:"url"` // the provider's notice, published in /maintenance.json and .ics
 }
 
 // Covers reports whether the window applies to a target at a time.
@@ -321,6 +322,9 @@ func Parse(raw []byte) (*Config, error) {
 	for i, m := range c.Maintenance {
 		if !m.End.After(m.Start) || len(m.Match) == 0 {
 			return nil, fmt.Errorf("maintenance %d: needs match and an end after its start", i)
+		}
+		if m.URL != "" && !strings.HasPrefix(m.URL, "https://") {
+			return nil, fmt.Errorf("maintenance %d: url must be https", i)
 		}
 		for _, x := range m.Match {
 			hit := false

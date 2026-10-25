@@ -305,7 +305,19 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 	if err := page("/lead-time", "lead-time.html"); err != nil {
 		return spent, err
 	}
-	indexed = append(indexed, "lead-time.html")
+	if err := page("/maintenance.html", "maintenance.html"); err != nil {
+		return spent, err
+	}
+	indexed = append(indexed, "lead-time.html", "maintenance.html")
+	for _, f := range []string{"maintenance.json", "maintenance.ics"} {
+		b, err := get("/" + f)
+		if err != nil {
+			return spent, err
+		}
+		if err := put(f, b); err != nil {
+			return spent, err
+		}
+	}
 	month := time.Now().In(config.KST)
 	for i, m := range []string{month.Format("2006-01"), month.AddDate(0, -1, 0).Format("2006-01")} {
 		b, err := get("/report/" + m)
