@@ -31,6 +31,19 @@ key_env: DATA_GO_KR_KEY
 #     url: https://www.data.go.kr/... (the notice; optional)
 maintenance: []
 
+# Probe locations (-location). A Korean service is judged from Korea, where its users
+# are: primary_for lists target ids or providers whose verdict is that location's own
+# result while it has a fresh one; the other locations' results are shown next to it.
+# Everything else counts a failure from either of two locations (three or more: a
+# majority). Until a location reports, the others decide as before. A target with
+# locations: [kr-seoul] is checked from there only (a service that refuses US addresses).
+locations:
+  - id: gcp-us-west1
+    name: 미국 서부
+  - id: kr-seoul
+    name: 한국 서울
+    primary_for: [카카오, 네이버, 국세청, 행정안전부, KB국민은행, 신한은행, 토스뱅크, 카카오페이, 네이버클라우드, 포트원, 업비트, 빗썸, 넥슨, 기상청, 한국환경공단, 국토교통부, 서울특별시, 인천국제공항공사, 국립중앙의료원, 건강보험심사평가원, 식품의약품안전처, 금융위원회, 소상공인시장진흥공단, 조달청, 한국천문연구원, 한국관광공사]
+
 targets:
   - id: docker-auth
     name: Docker Hub 익명 인증

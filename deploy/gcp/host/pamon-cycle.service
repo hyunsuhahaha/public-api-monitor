@@ -7,6 +7,8 @@ Requires=docker.service
 Type=oneshot
 # Never write to a database Litestream has not restored yet.
 ExecCondition=/usr/bin/test -s /var/lib/pamon/data/pamon.db
+# The ingest container runs the same image: bring it to the one this cycle pulls.
+ExecStartPre=-/usr/bin/docker compose -f /opt/pamon/compose.yml up -d --pull always ingest
 ExecStart=/usr/bin/docker run --rm --pull always --name pamon-cycle \
   --env-file /opt/pamon/pamon.env \
   -v /var/lib/pamon/data:/data -v /var/lib/pamon/site-next:/site \

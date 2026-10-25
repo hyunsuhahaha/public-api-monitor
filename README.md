@@ -53,7 +53,7 @@ AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) �
 |---|---|
 | **감시 대상** | 공공 API 77개 + 지도 4개 기능 + 개발·배포 의존성 8개 기능 + 로그인·은행·결제·AI·클라우드 등 71개 (총 160개, 26개 분야) |
 | **핵심 문제** | 공공 API는 실패해도 HTTP 200을 준다. 본문의 결과 코드까지 읽어 판정한다 |
-| **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 여러 지역 과반수 규칙 |
+| **판정** | 6단계(정상·느림·데이터 이상·오류·장애·확인 불가), API별로 학습한 평소 속도 기준의 "느림", 미국·한국 지점별 결과(한국 서비스는 한국 기준, 나머지는 한 곳이라도 실패하면 장애) |
 | **SRE** | API별 SLO와 에러 버짓, 모니터 자체 SLO와 burn-rate 알림, 게임데이(장애 주입 훈련), 포스트모템, 런북 |
 | **관측성** | Prometheus 지표, OpenTelemetry 트레이스(확인 1건 = 트레이스 1개: 대기 → HTTP 호출 → 판정, 로그에 trace_id), 구조화 로그 |
 | **인프라** | Go 단일 바이너리, SQLite + Litestream(GCS), GCP e2-micro, Cloudflare Workers·D1, Secret Manager, Prometheus·Grafana·Jaeger, Terraform(OCI), Ansible, 멀티 아키텍처 이미지, GitHub Actions(CI·외부 감시) |
@@ -175,19 +175,37 @@ flowchart LR
 
 한 번 실패는 노이즈로 봅니다. 장애는 **연속 2회 실패**에 열리고 **연속 2회 정상**에 닫힙니다.
 
-## 여러 지역에서 확인하기
+## 여러 지역에서 확인하기: 미국 서부 + 한국 서울
 
-한 곳에서만 실패하면 대개 그 지역의 네트워크 문제입니다. 그래서 다른 곳에 원격 감시기를 두고 결과를 중앙으로 보냅니다.
+한 곳에서만 실패하면 대개 그 지역의 네트워크나 접속 제한 문제입니다. 그래서 지점마다 따로 확인하고, 답 페이지에 **지점별 결과를 나란히** 보여줍니다("한국: 정상 · 미국: 장애").
 
 ```
-[원격 감시기: 집 PC]  --결과 push-->  [중앙: OCI 춘천]  --> 상태 페이지, DB, 장애 판정
-   pamon -role probe                     pamon -role central
+[한국 서울: pamon -role probe -location kr-seoul]
+      │ 10초마다 결과 POST /api/v1/ingest (Bearer 토큰)
+      ▼
+[GCP us-west1] Caddy ─▶ pamon -role ingest ─▶ SQLite ◀─ pamon -cycle (5분마다, gcp-us-west1)
+                                                         읽어 온 한국 결과 + 자기 결과로 판정
 ```
 
-- 모든 지역이 같은 시각 슬롯에 같은 API를 확인합니다(대상 ID 해시로 정한 오프셋).
-- 중앙은 자기 확인이 끝날 때마다, 최근 2.5주기 안에 결과를 보낸 지역들로 **판정(verdict)** 을 냅니다. 투표한 지역의 **과반수가 실패해야 장애**이고, 소수만 실패하면 "일부 지역에서만 실패"로 기록만 합니다.
-- 가용률과 일별 막대는 판정 기준, 응답 시간은 지역별 원시 기록 기준입니다.
-- 원격 감시기는 결과를 메모리 큐에 쌓아 10초마다 보내고, 중앙이 죽어 있으면 백오프로 재시도합니다(최대 5,000건, 넘치면 오래된 것부터 버림).
+- 지점과 판정 기준은 `targets.yaml`의 `locations`에 있습니다. **한국 서비스(카카오·네이버·은행·정부·공공 API 등 26개 제공자, 98개 대상)는 한국 지점의 결과가 결론**입니다. 사용자가 있는 곳이기 때문입니다. 미국에서만 실패하면 "failing only from gcp-us-west1"로 남기고, 한국에서만 실패하면 장애입니다.
+- 나머지(Stripe, OpenAI, GitHub 등)는 **두 지점 중 한 곳이라도 실패하면 장애**입니다. 지점이 둘이면 과반수로 한쪽을 무시할 근거가 없고, 실패한 지점 쪽 사용자에게는 실제 장애이기 때문입니다. 세 곳 이상이면 과반수입니다.
+- 한국 지점의 결과가 2.5주기(12.5분) 넘게 없으면 미국 결과로 판정합니다. 이때 답 페이지 지점별 표에는 한국이 "기록 없음"으로 나와, 감시기가 멈춘 것이 보입니다.
+- 대상에 `locations: [kr-seoul]`을 적으면 그 지점에서만 확인합니다(미국 접속을 막는 토스페이먼츠·PASS용). CI(미국)와 미국 감시기는 그런 대상을 건너뜁니다.
+- 모든 지역이 같은 시각 슬롯에 같은 API를 확인합니다(대상 ID 해시로 정한 오프셋). 응답 시간과 '느림' 기준은 지점별로 따로 학습합니다.
+- 원격 감시기는 결과를 메모리 큐에 쌓아 10초마다 보내고, 받는 쪽이 죽어 있으면 백오프로 재시도합니다(최대 5,000건, 넘치면 오래된 것부터 버림). 받는 쪽은 모르는 대상 같은 잘못된 결과만 빼고 나머지는 저장합니다. 그래서 감시기의 이미지가 조금 낡아도 결과를 통째로 잃지 않습니다.
+- 서버 모드(`pamon -role central`)는 받은 결과를 메모리 보드에 바로 올립니다. 5분마다 실행되고 끝나는 GCP 서버에서는 `-role ingest`가 DB에 쓰고, 다음 `-cycle`이 최근 한 시간 치를 읽어 판정에 씁니다.
+
+### 한국 지점 띄우기
+
+1. **토큰:** `openssl rand -hex 32`로 만든 값을 GCP Secret Manager `pamon-env`에 `PAMON_INGEST_TOKEN=...`으로 넣고, GCP 서버에서 `sudo /opt/pamon/setup.sh`를 다시 실행합니다(새 `deploy/gcp/host` 파일을 `/opt/pamon`에 복사한 뒤). `ingest` 컨테이너와 Caddy의 `/api/v1/ingest` 경로가 생깁니다.
+2. **서버:** OCI 춘천·서울 Always Free(ARM, [deploy/terraform/oci](deploy/terraform/oci)), GCP 서울(asia-northeast3, 유료), 또는 국내의 아무 리눅스 기기면 됩니다. 이미지는 amd64·arm64 둘 다 있습니다.
+3. **배포:** `deploy/ansible/inventory.ini`의 `[probes]`에 적고 실행합니다. 같은 토큰을 vault의 `vault_ingest_token`에, 공공 API 키도 vault에 넣습니다.
+   ```ini
+   [probes]
+   kr ansible_host=<IP> ansible_user=ubuntu pamon_location=kr-seoul pamon_central_url=https://<GCP 서버의 PAMON_HOST>
+   ```
+   `ansible-playbook site.yml --ask-vault-pass --limit probes`. 감시기는 30분마다 최신 이미지를 받습니다.
+4. **확인:** 5~10분 뒤 답 페이지(예: `/s/kakao-login.html`)에 "지점별 결과" 표가 생기고 한국 서울이 "결론 기준"으로 나옵니다. 그 뒤 토스페이먼츠·PASS를 `locations: [kr-seoul]`로 추가합니다.
 
 ## 구성
 
@@ -195,7 +213,7 @@ flowchart LR
 cmd/pamon            실행 파일 (모니터 + 웹 서버)
 internal/probe       호출, 응답 판정(결과 코드 표), 데이터 신선도 검사
 internal/incident    장애 열기·닫기 (연속 실패 기준, 재시작 시 복원)
-internal/quorum      여러 지역의 최신 결과를 하나의 판정으로 (과반수 규칙)
+internal/quorum      여러 지역의 최신 결과를 하나의 판정으로 (기준 지점, 아니면 절반 이상 실패)
 internal/monitor     대상별 스케줄 (지역 간 같은 슬롯), 중앙(Central): 저장·판정·장애
 internal/push        원격 감시기 → 중앙 전송 (큐, 재시도)
 internal/store       SQLite (cgo 없는 순수 Go 드라이버)
@@ -295,8 +313,9 @@ Docker는 이미지 레이어를 내려받거나 컨테이너를 실행하지 �
                ▼  비밀 헤더를 붙여서만
              GCP e2-micro (us-west1) ── Caddy(HTTPS) ── 정적 사이트
                │  pamon-cycle.timer: 5분마다 pamon -cycle -export
-               ▼
-             SQLite (VM 디스크) ── Litestream ──▶ Cloud Storage (1초 안에 복제, 7일 보관)
+               ▼                         ▲ /api/v1/ingest (토큰): 한국 지점 결과
+             SQLite (VM 디스크) ◀── pamon -role ingest
+               └── Litestream ──▶ Cloud Storage (1초 안에 복제, 7일 보관)
 ```
 
 - **서버:** [deploy/gcp/host](deploy/gcp/host)에 있는 것이 전부입니다. systemd 타이머가 5분마다 이미지(`ghcr.io/.../public-api-monitor:latest`)로 한 바퀴를 돌리고, 결과 사이트를 한 번에 바꿔 끼웁니다(`rsync`). 한 바퀴는 89개 검사 약 15초, 내보내기 약 5초입니다.
@@ -304,7 +323,7 @@ Docker는 이미지 레이어를 내려받거나 컨테이너를 실행하지 �
 - **입구만 통과:** Caddy는 Worker가 붙이는 `X-Pamon-Gateway` 헤더가 없는 요청에 403을 줍니다. 그래서 모든 방문이 접속 기록에 남습니다. Worker는 `ORIGIN_URL`이 있으면 거기서, 없으면 GitHub Pages에서 읽습니다.
 - **설정과 비밀값:** 원본은 GCP Secret Manager 하나입니다(`pamon-env`, `caddy-env`, 백업 암호 `pamon-seed-key`). `setup.sh`가 시작할 때 읽어 root만 읽는 파일로 둡니다. VM의 서비스 계정은 자기 버킷 쓰기와 이 두 비밀 읽기만 할 수 있고, 키 파일은 없습니다. Worker 쪽 비밀(관리자 토큰, 게이트웨이 헤더)은 Worker Secret입니다.
 - **바깥 감시:** [watchdog.yml](.github/workflows/watchdog.yml)이 GitHub에서 5분마다 공개 주소의 `generatedAt`이 10분 안쪽인지 봅니다. 서버와 다른 회사라, 서버가 통째로 멈춰도 알 수 있습니다.
-- **알려진 한계:** 검사는 미국 서부에서 나가므로 응답 시간에 태평양 왕복이 더해집니다(느림 판정 기준은 위치별로 따로 학습). e2-micro는 지속 CPU가 작아서, 내보내기는 URL 종류별 소요 시간을 `export done` 로그로 남깁니다.
+- **알려진 한계:** 한국 지점이 뜨기 전까지 검사는 미국 서부에서만 나가므로 응답 시간에 태평양 왕복이 더해집니다(느림 판정 기준은 위치별로 따로 학습). e2-micro는 지속 CPU가 작아서, 내보내기는 URL 종류별 소요 시간을 `export done` 로그로 남깁니다.
 - **이전 방식:** 2026-10-25까지는 GitHub Actions가 5분마다 돌고 DB를 실행 사이에 옮겨 담았습니다(캐시, 이후 KV). 실행이 끝날 때마다 파일을 어딘가로 옮겨야 하는 구조 자체가 문제라 서버로 옮겼습니다. 날짜가 붙은 옛 사본은 `db-seed` 릴리스에 남아 있습니다.
 
 ## 내 PC에서 계속 돌리기 (WSL)

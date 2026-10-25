@@ -4,6 +4,11 @@ timeout: 3s
 slow_after: 2s
 # learn the fake API's fields for a minute, not a day, so scenario 8 runs in minutes
 schema_warmup: 1m
+# The fake API's users are where "central" is: a failure seen only from "probe" is noted,
+# not an outage (scenario 3). Without this, one failing location of two is a failure.
+locations:
+  - {id: central, name: 중앙, primary_for: [fake]}
+  - {id: probe, name: 원격}
 targets:
   - id: fake
     name: 가짜 공공 API

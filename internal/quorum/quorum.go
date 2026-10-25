@@ -62,10 +62,13 @@ type Verdict struct {
 // Decide combines fresh results:
 //   - locations with a client status (our key/quota there) don't vote;
 //   - nobody voting: client (unknown) with the first client reason;
-//   - a strict majority bad: the worst bad status, reason from the worst location;
+//   - primary (a location id, or "") voting: its result is the verdict, and the others
+//     that disagree are noted (a Korean service is judged from Korea);
+//   - at least half bad: the worst bad status, reason from the worst location (with two
+//     locations one failing is a failure: there is no majority to outvote it);
 //   - otherwise healthy (slow/stale if a majority is degraded but up), and a minority
 //     failure is noted in the reason as a regional problem.
-func Decide(target string, now time.Time, results []probe.Result) Verdict {
+func Decide(target string, now time.Time, results []probe.Result, primary string) Verdict {
 	v := Verdict{TargetID: target, At: now, Status: probe.StatusClient}
 	var voters, bad, degraded []probe.Result
 	for _, r := range results {
@@ -90,7 +93,29 @@ func Decide(target string, now time.Time, results []probe.Result) Verdict {
 		}
 		return v
 	}
-	if 2*len(bad) > len(voters) {
+	for _, p := range voters {
+		if p.Location != primary {
+			continue
+		}
+		v.Status, v.Reason = p.Status, p.Reason
+		var others []probe.Result
+		for _, r := range voters {
+			if r.Location != primary && (r.Status.Severity() == 2) != (p.Status.Severity() == 2) {
+				others = append(others, r)
+			}
+		}
+		switch {
+		case len(others) == 0:
+		case p.Status.Severity() == 2:
+			v.Reason += " (only from " + primary + ")"
+		case v.Reason != "":
+			v.Reason += "; failing only from " + locs(others)
+		default:
+			v.Reason = "failing only from " + locs(others)
+		}
+		return v
+	}
+	if 2*len(bad) >= len(voters) {
 		worst := bad[0]
 		for _, r := range bad[1:] {
 			if r.Status == probe.StatusDown && worst.Status != probe.StatusDown {

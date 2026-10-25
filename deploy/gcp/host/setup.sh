@@ -2,7 +2,8 @@
 # Runs on the VM as root, from a copy of deploy/gcp/host in /opt/pamon. Idempotent: run
 # again after changing a file here or a secret. Secret Manager is the one source of the
 # settings; the VM's service account may read them and nothing else writes them:
-#   pamon-env   the monitor's keys and settings (docker --env-file format)
+#   pamon-env   the monitor's keys and settings (docker --env-file format), with
+#               PAMON_INGEST_TOKEN for the probes in other locations (openssl rand -hex 32)
 #   caddy-env   PAMON_HOST=... PAMON_GATEWAY_SECRET=...
 set -euo pipefail
 cd /opt/pamon

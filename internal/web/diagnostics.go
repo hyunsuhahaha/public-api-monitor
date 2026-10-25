@@ -23,20 +23,22 @@ type DiagnosticView struct {
 }
 
 type DiagnosticTarget struct {
-	ID                   string               `json:"id"`
-	Name                 string               `json:"name"`
-	Provider             string               `json:"provider"`
-	Category             string               `json:"category"`
-	Host                 string               `json:"host"`
-	Docs                 string               `json:"docs,omitempty"`
-	Status               string               `json:"observedStatus"`
-	Assessment           string               `json:"assessment"`
-	CheckedAt            *time.Time           `json:"checkedAt"`
-	FreshUntil           *time.Time           `json:"freshUntil"`
-	Fresh                bool                 `json:"freshAtGeneration"`
-	IntervalSeconds      int64                `json:"intervalSeconds"`
-	Reason               string               `json:"reason,omitempty"`
-	Locations            []LocationView       `json:"locations"`
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Provider        string         `json:"provider"`
+	Category        string         `json:"category"`
+	Host            string         `json:"host"`
+	Docs            string         `json:"docs,omitempty"`
+	Status          string         `json:"observedStatus"`
+	Assessment      string         `json:"assessment"`
+	CheckedAt       *time.Time     `json:"checkedAt"`
+	FreshUntil      *time.Time     `json:"freshUntil"`
+	Fresh           bool           `json:"freshAtGeneration"`
+	IntervalSeconds int64          `json:"intervalSeconds"`
+	Reason          string         `json:"reason,omitempty"`
+	Locations       []LocationView `json:"locations"`
+	// PrimaryLocation: the location whose result is the verdict ("" when they vote).
+	PrimaryLocation      string               `json:"primaryLocation,omitempty"`
 	Scope                []string             `json:"scope"`
 	Classifier           string               `json:"classifier"`
 	JSONPaths            []string             `json:"validatedJSONPaths"`
@@ -80,7 +82,7 @@ func diagnosticTarget(t config.Target, v TargetView, now time.Time) DiagnosticTa
 		Reason: v.Reason, Locations: v.Locations, RecentIncidents: []*incident.Incident{}, HistorySince: now.Add(-24 * time.Hour), HistoryLimit: 20,
 		EvidenceURL: "../../#t=" + url.QueryEscape(t.ID), JSONURL: "targets/" + t.ID + ".json",
 		Advice: AdviceFor(t.Category),
-		Scope:  []string{"One configured read-only function or fixed resource, not the entire provider.", "Location names are probe identifiers; they do not establish country or ISP.", "A successful probe does not establish that the caller's credentials, network or workload work."}}
+		Scope:  []string{"One configured read-only function or fixed resource, not the entire provider.", "A location's name says the region its probe runs in; it does not establish the caller's ISP or network.", "A successful probe does not establish that the caller's credentials, network or workload work."}}
 	d.Classifier, d.ChecksArtifactDigest, d.JSONPaths = t.Classifier, t.Artifact != nil, []string{}
 	for _, rule := range t.JSONExpect {
 		d.JSONPaths = append(d.JSONPaths, rule.Path)
@@ -125,6 +127,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		d := diagnosticTarget(t, v.Targets[i], v.GeneratedAt)
+		d.PrimaryLocation = s.Cfg.PrimaryLocation(&s.Cfg.Targets[i])
 		d.RecentIncidents, err = s.Store.Incidents(r.Context(), t.ID, d.HistorySince, d.HistoryLimit)
 		if err != nil {
 			http.Error(w, "internal error", 500)

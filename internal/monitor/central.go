@@ -193,23 +193,34 @@ func (c *Central) save(ctx context.Context, r probe.Result) {
 var ErrUnknownTarget = errors.New("unknown target")
 
 // Ingest takes results from a remote probe. They count in the next verdict of their
-// target (taken when the central's own check of it finishes).
+// target (taken when the central's own check of it finishes). A result the central
+// cannot take (a target it doesn't know or check from there, a clock far off) is left
+// out and named in the error, the rest are kept: a probe on an older targets file must
+// not lose every result over one removed target.
 func (c *Central) Ingest(ctx context.Context, results []probe.Result) error {
 	ctx, span := telemetry.Tracer().Start(ctx, "ingest", trace.WithAttributes(attribute.Int("pamon.results", len(results))))
 	defer span.End()
 	now := time.Now()
+	var errs []error
 	for _, r := range results {
-		if c.targets[r.TargetID] == nil {
-			return fmt.Errorf("%w: %q", ErrUnknownTarget, r.TargetID)
+		t := c.targets[r.TargetID]
+		switch {
+		case t == nil:
+			errs = append(errs, fmt.Errorf("%w: %q", ErrUnknownTarget, r.TargetID))
+			continue
+		case !t.CheckedFrom(r.Location):
+			errs = append(errs, fmt.Errorf("%q is not checked from %q", r.TargetID, r.Location))
+			continue
+		case r.At.After(now.Add(2*time.Minute)) || r.At.Before(now.Add(-time.Hour)):
+			errs = append(errs, fmt.Errorf("result for %q at %s: clock too far off", r.TargetID, r.At.Format(time.RFC3339)))
+			continue
 		}
-		if r.At.After(now.Add(2*time.Minute)) || r.At.Before(now.Add(-time.Hour)) {
-			return fmt.Errorf("result for %q at %s: clock too far off", r.TargetID, r.At.Format(time.RFC3339))
-		}
-	}
-	for _, r := range results {
 		observe(r)
 		mIngested.WithLabelValues(r.Location).Inc()
 		c.save(ctx, r)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%d of %d results left out: %w", len(errs), len(results), errors.Join(errs...))
 	}
 	return nil
 }
@@ -217,7 +228,7 @@ func (c *Central) Ingest(ctx context.Context, results []probe.Result) error {
 func (c *Central) decide(ctx context.Context, t *config.Target, at time.Time) {
 	// a location counts if it checked within 2.5 intervals (one missed slot is fine)
 	fresh := c.Board.Fresh(t.ID, at, t.Interval.Duration*5/2)
-	v := quorum.Decide(t.ID, at, fresh)
+	v := quorum.Decide(t.ID, at, fresh, c.Cfg.PrimaryLocation(t))
 	if m := c.Cfg.MaintenanceAt(t, v.At); m != nil {
 		// kept (with what was really seen) but out of uptime, SLOs and incidents
 		reason := "점검 중: " + m.Note

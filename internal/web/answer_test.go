@@ -105,7 +105,8 @@ targets:
 			t.Errorf("answer page lacks %q", want)
 		}
 	}
-	if wx := get(t, h, "/s/wx").Body.String(); !strings.Contains(wx, "정상입니다") || strings.Contains(wx, "공식 발표</h2>") || !strings.Contains(wx, "마지막으로 받은 정상 데이터") {
+	if wx := get(t, h, "/s/wx").Body.String(); !strings.Contains(wx, "정상입니다") || strings.Contains(wx, "공식 발표</h2>") || !strings.Contains(wx, "마지막으로 받은 정상 데이터") ||
+		strings.Contains(wx, "지점별 결과") || !strings.Contains(wx, usOnlyNote) {
 		t.Error("an ok public-data service without an official page: verdict, no announcement box, cache advice")
 	}
 	index := get(t, h, "/s/").Body.String()
@@ -159,5 +160,62 @@ func TestAdviceForEveryCategory(t *testing.T) {
 			tg.Category != "보안·모니터링" && tg.Category != "검색·지식" && tg.Category != "SNS" && tg.Category != "게임·미디어" {
 			t.Errorf("%s: category %q has no advice of its own", tg.ID, tg.Category)
 		}
+	}
+}
+
+// Korea judges a Korean service: its row is marked as the basis, the US failure is
+// shown next to it, and a location that reported recently but not for this service
+// shows "기록 없음" instead of disappearing.
+func TestAnswerPageByLocation(t *testing.T) {
+	cfg, err := config.Parse([]byte(`
+locations:
+  - {id: us, name: 미국 서부}
+  - {id: kr, name: 한국 서울, primary_for: [카카오]}
+  - {id: jp, name: 일본 도쿄}
+targets:
+  - {id: login, name: 카카오 로그인, provider: 카카오, category: 로그인·인증, url: "https://x/"}
+  - {id: other, name: 다른 것, provider: X, url: "https://y/"}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	now := time.Now()
+	at := now.Add(-time.Minute)
+	for _, r := range []probe.Result{
+		{TargetID: "login", Location: "kr", At: at, Status: probe.StatusOK, LatencyMS: 30},
+		{TargetID: "login", Location: "us", At: at, Status: probe.StatusDown, Reason: "timeout: TCP 연결 중"},
+		{TargetID: "other", Location: "jp", At: now.Add(-3 * time.Hour), Status: probe.StatusOK},
+	} {
+		if err := st.SaveCheck(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.SaveVerdict(ctx, store.Verdict{TargetID: "login", At: at, Status: probe.StatusOK, Reason: "failing only from us", Voters: 2}); err != nil {
+		t.Fatal(err)
+	}
+	h := (&Server{Cfg: cfg, Store: st, LastCheck: func() time.Time { return now }}).Handler()
+	page := get(t, h, "/s/login").Body.String()
+	for _, want := range []string{"정상입니다", "지점별 결과", "한국 서울", "결론 기준", "미국 서부", "서버에 연결하는 단계",
+		"일본 도쿄", "기록 없음", "30ms", "한국 서울의 결과를 결론으로 씁니다", "에서 확인합니다. 지점별 결과는 아래에"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, usOnlyNote) {
+		t.Error("the US-only note stays once more locations check the service")
+	}
+	var v DiagnosticView
+	if err := json.Unmarshal(get(t, h, "/ai/targets/login.json").Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	d := v.Targets[0]
+	if d.PrimaryLocation != "kr" || len(d.Locations) != 2 || d.Locations[0].Name == "" {
+		t.Errorf("json: %s %+v", d.PrimaryLocation, d.Locations)
 	}
 }

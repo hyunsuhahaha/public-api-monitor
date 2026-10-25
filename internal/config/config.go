@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -108,6 +109,9 @@ type Target struct {
 	// (maintenance notice, blocked page) is not taken for the service.
 	Contains []string `yaml:"contains"`
 	SLO      float64  `yaml:"slo"` // availability objective, e.g. 0.999
+	// Locations: the only probe locations that check this target (empty: all), for a
+	// service that blocks the others (a Korean payment page refusing US addresses).
+	Locations []string `yaml:"locations"`
 
 	tmpl *template.Template
 }
@@ -158,6 +162,47 @@ type Config struct {
 	SchemaWarmup Duration `yaml:"schema_warmup"`
 
 	Maintenance []Maintenance `yaml:"maintenance"`
+	// Locations names the probe locations (ids as in -location) for the pages.
+	Locations []Location `yaml:"locations"`
+}
+
+// Location is one probe location.
+type Location struct {
+	ID   string `yaml:"id"`
+	Name string `yaml:"name"` // as readers see it: 미국 서부, 한국 서울
+	// PrimaryFor: target ids or providers whose verdict is this location's own result
+	// when it has a fresh one (a Korean service is judged from Korea, where its users
+	// are); the other locations' results are kept and shown next to it.
+	PrimaryFor []string `yaml:"primary_for"`
+}
+
+// CheckedFrom: the target is checked from this location.
+func (t *Target) CheckedFrom(location string) bool {
+	return len(t.Locations) == 0 || slices.Contains(t.Locations, location)
+}
+
+// PrimaryLocation is the location whose result is a target's verdict, or "" (the
+// locations vote). A target checked from one location only is judged from it.
+func (c *Config) PrimaryLocation(t *Target) string {
+	if len(t.Locations) == 1 {
+		return t.Locations[0]
+	}
+	for _, l := range c.Locations {
+		if slices.Contains(l.PrimaryFor, t.ID) || slices.Contains(l.PrimaryFor, t.Provider) {
+			return l.ID
+		}
+	}
+	return ""
+}
+
+// LocationName is a location's reader-facing name (its id when not declared).
+func (c *Config) LocationName(id string) string {
+	for _, l := range c.Locations {
+		if l.ID == id && l.Name != "" {
+			return l.Name
+		}
+	}
+	return id
 }
 
 // Load reads and validates a config file, filling per-target defaults.
@@ -333,6 +378,25 @@ func Parse(raw []byte) (*Config, error) {
 			}
 			if !hit {
 				return nil, fmt.Errorf("maintenance %d: %q is no target id or provider", i, x)
+			}
+		}
+	}
+	declared := map[string]bool{}
+	for i, l := range c.Locations {
+		if l.ID == "" || len(l.ID) > 40 || l.ID == "quorum" || declared[l.ID] {
+			return nil, fmt.Errorf("location %d: missing, reserved or duplicate id", i)
+		}
+		declared[l.ID] = true
+		for _, x := range l.PrimaryFor {
+			if !slices.ContainsFunc(c.Targets, func(t Target) bool { return t.ID == x || t.Provider == x }) {
+				return nil, fmt.Errorf("location %q primary_for: %q is no target id or provider", l.ID, x)
+			}
+		}
+	}
+	for _, t := range c.Targets {
+		for _, l := range t.Locations {
+			if !declared[l] {
+				return nil, fmt.Errorf("target %q: location %q is not in locations", t.ID, l)
 			}
 		}
 	}

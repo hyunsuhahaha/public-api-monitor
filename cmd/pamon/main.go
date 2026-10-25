@@ -67,7 +67,7 @@ func env(k, def string) string {
 func main() {
 	var (
 		cfgPath  = flag.String("config", env("PAMON_CONFIG", "targets.yaml"), "targets file")
-		role     = flag.String("role", env("PAMON_ROLE", "central"), "central or probe")
+		role     = flag.String("role", env("PAMON_ROLE", "central"), "central, probe, or ingest (only receives remote probes' results into -db, for a -cycle host)")
 		dbPath   = flag.String("db", env("PAMON_DB", "pamon.db"), "SQLite database file (central)")
 		addr     = flag.String("addr", env("PAMON_ADDR", ":8080"), "HTTP listen address(es), comma-separated")
 		location = flag.String("location", env("PAMON_LOCATION", "local"), "name of this probe location")
@@ -146,6 +146,8 @@ func main() {
 		err = runCentral(ctx, log, cfg, prober, *dbPath, *addr, *location, *keep)
 	case "probe":
 		err = runProbe(ctx, log, cfg, prober, *addr, *central)
+	case "ingest":
+		err = runIngest(ctx, log, cfg, *dbPath, *addr)
 	default:
 		err = errors.New("unknown -role " + *role)
 	}
@@ -229,6 +231,30 @@ func warmBaseline(ctx context.Context, st *store.Store, cfg *config.Config, prob
 			}
 		}
 	}
+}
+
+// runIngest receives remote probes' results into the database and nothing else: on a
+// host that checks with -cycle (no server between runs), each cycle reads them back and
+// counts them in its verdicts.
+func runIngest(ctx context.Context, log *slog.Logger, cfg *config.Config, dbPath, addr string) error {
+	token := os.Getenv("PAMON_INGEST_TOKEN")
+	if token == "" {
+		return errors.New("ingest needs PAMON_INGEST_TOKEN")
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	c := &monitor.Central{Cfg: cfg, Store: st, Log: log, Board: quorum.NewBoard(), Tracker: incident.NewTracker(2, 2)}
+	if err := c.Start(ctx); err != nil {
+		return err
+	}
+	srv := &http.Server{Addr: addr, Handler: (&web.Server{Cfg: cfg, Store: st, Ingest: c.Ingest, IngestToken: token}).IngestHandler(),
+		ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 15 * time.Second}
+	serve(ctx, log, srv, "ingest", len(cfg.Targets), true)
+	<-ctx.Done()
+	return shutdown(srv)
 }
 
 func runProbe(ctx context.Context, log *slog.Logger, cfg *config.Config, prober *probe.Prober, addr, central string) error {
@@ -320,6 +346,9 @@ func runOnce(cfg *config.Config, p *probe.Prober, pathsOnly bool) int {
 	code := 0
 	for i := range cfg.Targets {
 		t := &cfg.Targets[i]
+		if !t.CheckedFrom(p.Location) {
+			continue // e.g. a Korea-only target on a US runner
+		}
 		r := p.Check(ctx, t)
 		line := string(r.Status) + "\t" + t.ID + "\t" + (time.Duration(r.LatencyMS) * time.Millisecond).String()
 		if r.Code != "" {
@@ -358,6 +387,18 @@ func printCheck(cfg *config.Config, now time.Time) {
 	}
 	fmt.Printf("ok: %d targets, %d providers, every %s, default SLO %.4g\n",
 		len(cfg.Targets), len(providers), cfg.Interval.Duration, cfg.SLO)
+	for _, l := range cfg.Locations {
+		primary, only := 0, 0
+		for i := range cfg.Targets {
+			if cfg.PrimaryLocation(&cfg.Targets[i]) == l.ID {
+				primary++
+			}
+			if len(cfg.Targets[i].Locations) > 0 && cfg.Targets[i].CheckedFrom(l.ID) {
+				only++
+			}
+		}
+		fmt.Printf("location %s (%s): judges %d targets, %d targets limited to locations including it\n", l.ID, l.Name, primary, only)
+	}
 	for _, m := range cfg.Maintenance {
 		state := "upcoming"
 		switch {

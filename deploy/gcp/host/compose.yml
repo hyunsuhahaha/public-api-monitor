@@ -19,6 +19,16 @@ services:
     depends_on:
       restore: {condition: service_completed_successfully}
     restart: unless-stopped
+  # Results from the other probe locations (kr-seoul): written into the same database,
+  # read back by the next cycle. pamon-cycle.service keeps its image current.
+  ingest:
+    image: ghcr.io/hyunsuhahaha/public-api-monitor:latest
+    env_file: pamon.env  # PAMON_INGEST_TOKEN, shared with the probes
+    command: ["-role", "ingest", "-db", "/data/pamon.db", "-addr", ":8080", "-location", "gcp-us-west1"]
+    volumes: ["/var/lib/pamon/data:/data"]
+    depends_on:
+      restore: {condition: service_completed_successfully}
+    restart: unless-stopped
   caddy:
     image: caddy:2.10
     env_file: caddy.env

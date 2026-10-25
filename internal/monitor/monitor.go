@@ -106,6 +106,9 @@ func (m *Monitor) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	for i := range m.Cfg.Targets {
 		t := &m.Cfg.Targets[i]
+		if !t.CheckedFrom(m.Prober.Location) {
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -126,6 +129,9 @@ func (m *Monitor) Round(ctx context.Context) {
 	var wg sync.WaitGroup
 	for i := range m.Cfg.Targets {
 		t := &m.Cfg.Targets[i]
+		if !t.CheckedFrom(m.Prober.Location) {
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

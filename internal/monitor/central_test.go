@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,8 +54,11 @@ func slot(t *testing.T, c *Central, at time.Time, central, remote probe.Status) 
 	c.Record(ctx, tg, probe.Result{TargetID: "a", Location: "central", At: at, Status: central})
 }
 
+// The target is judged from its primary location: a failure seen only elsewhere is
+// noted, not an incident.
 func TestRegionalFailureOpensNothing(t *testing.T) {
 	c, ev := newCentral(t)
+	c.Cfg.Locations = []config.Location{{ID: "central", PrimaryFor: []string{"a"}}, {ID: "remote"}}
 	start := time.Now().Add(-30 * time.Minute)
 	for i := 0; i < 4; i++ {
 		slot(t, c, start.Add(time.Duration(i)*5*time.Minute), probe.StatusOK, probe.StatusDown)
@@ -65,6 +69,19 @@ func TestRegionalFailureOpensNothing(t *testing.T) {
 	open, _ := c.Store.OpenIncidents(context.Background())
 	if len(open) != 0 {
 		t.Fatalf("open: %+v", open)
+	}
+}
+
+// Two locations and no primary: there is no majority to outvote one failing, so it is
+// an outage (seen from where some users are).
+func TestOneOfTwoFailingOpens(t *testing.T) {
+	c, ev := newCentral(t)
+	start := time.Now().Add(-30 * time.Minute)
+	for i := 0; i < 2; i++ {
+		slot(t, c, start.Add(time.Duration(i)*5*time.Minute), probe.StatusOK, probe.StatusDown)
+	}
+	if len(ev.got) != 1 || ev.got[0] != incident.Opened {
+		t.Fatalf("events: %v", ev.got)
 	}
 }
 
@@ -100,6 +117,15 @@ func TestIngestRejects(t *testing.T) {
 	}
 	if err := c.Ingest(ctx, []probe.Result{{TargetID: "a", Location: "r", At: time.Now().Add(time.Hour), Status: probe.StatusOK}}); err == nil {
 		t.Fatal("future timestamp accepted")
+	}
+	// one bad result does not cost the others
+	err := c.Ingest(ctx, []probe.Result{{TargetID: "gone", Location: "r", At: time.Now(), Status: probe.StatusOK},
+		{TargetID: "a", Location: "r", At: time.Now(), Status: probe.StatusDown}})
+	if !errors.Is(err, ErrUnknownTarget) || !strings.Contains(err.Error(), "1 of 2") {
+		t.Fatalf("mixed batch: %v", err)
+	}
+	if got := c.Board.Fresh("a", time.Now(), time.Minute); len(got) != 1 || got[0].Status != probe.StatusDown {
+		t.Fatalf("the valid result is kept: %+v", got)
 	}
 }
 

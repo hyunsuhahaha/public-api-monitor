@@ -51,6 +51,17 @@ func runCycle(log *slog.Logger, cfg *config.Config, prober *probe.Prober, dbPath
 	if err := c.Start(ctx); err != nil {
 		return err
 	}
+	// Remote probes' results arrive between runs (pamon -role ingest writes them); a
+	// server would hold them on its board, a run reads them back to vote with its own.
+	if byLoc, err := st.LatestByLocation(ctx, time.Now().Add(-time.Hour)); err == nil {
+		for _, rs := range byLoc {
+			for _, r := range rs {
+				if r.Location != location {
+					c.Board.Update(r)
+				}
+			}
+		}
+	}
 	warmBaseline(ctx, st, cfg, prober, location)
 	m := &monitor.Monitor{Cfg: cfg, Prober: prober, Sink: c, Log: log, MaxParallel: 4}
 	started := time.Now()

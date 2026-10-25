@@ -1,9 +1,19 @@
 # Only the Cloudflare gateway may read the site: it sends the shared header, so every
 # visit goes through it and is counted. Caddy answers its own ACME challenges first.
+# The other probe locations post their results straight here (bearer token, checked by
+# pamon -role ingest): they are machines, not visits.
 {$PAMON_HOST} {
 	encode zstd gzip
-	@direct not header X-Pamon-Gateway {$PAMON_GATEWAY_SECRET}
-	respond @direct 403
-	root * /srv/site
-	file_server
+	handle /api/v1/ingest {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy ingest:8080
+	}
+	handle {
+		@direct not header X-Pamon-Gateway {$PAMON_GATEWAY_SECRET}
+		respond @direct 403
+		root * /srv/site
+		file_server
+	}
 }

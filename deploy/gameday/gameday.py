@@ -9,6 +9,7 @@ Scenarios (the fake API is checked every 10 s from two locations, "central" and 
   1 hard outage        HTTP 503 everywhere      -> incident opens, then closes on recovery
   2 silent failure     HTTP 200 + resultCode 05 -> still an outage (a plain HTTP check says up)
   3 regional failure   only "probe" loses the API -> no incident, noted as regional
+                       ("central" is the fake API's primary location in targets.yaml)
   4 central outage     central down 45 s        -> probe queues, then delivers everything
   5 restart mid-incident central restarts      -> the same incident stays open, then closes
   6 stale data         200 OK but 6 h old data  -> "stale" (degraded)

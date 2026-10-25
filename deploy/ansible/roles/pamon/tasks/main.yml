@@ -70,3 +70,10 @@
   retries: 20
   delay: 6
   until: pamon_health.status == 200
+
+- name: Probes follow the newest image (targets.yaml ships in it)
+  when: pamon_role == 'probe'
+  ansible.builtin.cron:
+    name: pamon image update
+    minute: "*/30"
+    job: "cd {{ pamon_dir }} && docker compose up -d --pull always --remove-orphans > /dev/null 2>&1"

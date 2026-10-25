@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,7 +15,11 @@ import (
 	"time"
 
 	"github.com/hyunsuhahaha/public-api-monitor/internal/config"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/incident"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/monitor"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/probe"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/quorum"
+	"github.com/hyunsuhahaha/public-api-monitor/internal/store"
 	"github.com/hyunsuhahaha/public-api-monitor/internal/web"
 )
 
@@ -230,6 +235,121 @@ func TestEndpointGone(t *testing.T) {
 	} {
 		if got := endpointGone(c.t, c.r); got != c.want {
 			t.Errorf("%s: endpointGone = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// Korea pushes into the database between runs; a run counts its latest results: a
+// service judged from Korea follows Korea, the rest fail when either location fails.
+func TestCycleCountsRemoteLocations(t *testing.T) {
+	t.Setenv("PAMON_WEBHOOK_URL", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/judged" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		fmt.Fprint(w, "ok")
+	}))
+	defer srv.Close()
+	cfg, err := config.Parse([]byte(`
+locations:
+  - {id: us}
+  - {id: kr, primary_for: [judged]}
+targets:
+  - {id: voted, url: "` + srv.URL + `/voted", classifier: http, auth: none}
+  - {id: judged, url: "` + srv.URL + `/judged", classifier: http, auth: none}
+  - {id: kr-only, url: "` + srv.URL + `/never", classifier: http, auth: none, locations: [kr]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(t.TempDir(), "t.db")
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().Add(-time.Minute)
+	for _, r := range []probe.Result{
+		{TargetID: "voted", Location: "kr", At: at, Status: probe.StatusDown, Reason: "timeout: 연결 대기 중"},
+		{TargetID: "judged", Location: "kr", At: at, Status: probe.StatusOK},
+		{TargetID: "kr-only", Location: "kr", At: at, Status: probe.StatusOK},
+	} {
+		if err := st.SaveCheck(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st.Close()
+	if err := runCycle(slog.New(slog.NewTextHandler(io.Discard, nil)), cfg, probe.New("us"), db, "us", 24*time.Hour, ""); err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	v, err := st.LatestVerdicts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v["voted"]; got.Status != probe.StatusDown || !strings.Contains(got.Reason, "(kr)") || got.Voters != 2 {
+		t.Errorf("voted: %+v", got)
+	}
+	if got := v["judged"]; got.Status != probe.StatusOK || !strings.Contains(got.Reason, "failing only from us") {
+		t.Errorf("judged: %+v", got)
+	}
+	if _, ok := v["kr-only"]; ok {
+		t.Error("a Korea-only target is not checked from the US, so the US run gives it no verdict")
+	}
+}
+
+// pamon -role ingest: the endpoint and a health check, nothing else; results land in
+// the database, from a location that may check the target.
+func TestIngestHandler(t *testing.T) {
+	cfg, err := config.Parse([]byte(`
+locations: [{id: us}, {id: kr}]
+targets:
+  - {id: a, url: "http://x"}
+  - {id: kr-only, url: "http://x", locations: [kr]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	c := &monitor.Central{Cfg: cfg, Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Board: quorum.NewBoard(), Tracker: incident.NewTracker(2, 2)}
+	if err := c.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	h := (&web.Server{Cfg: cfg, Store: st, Ingest: c.Ingest, IngestToken: "tok"}).IngestHandler()
+	send := func(token, body string) int {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/ingest", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+token)
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	at := time.Now().UTC().Format(time.RFC3339)
+	ok := `[{"target":"kr-only","location":"kr","at":"` + at + `","status":"ok","latencyMs":40}]`
+	if code := send("wrong", ok); code != http.StatusUnauthorized {
+		t.Errorf("bad token: %d", code)
+	}
+	if code := send("tok", strings.Replace(ok, `"location":"kr"`, `"location":"us"`, 1)); code != http.StatusBadRequest {
+		t.Errorf("a Korea-only target from the US: %d", code)
+	}
+	if code := send("tok", ok); code != http.StatusNoContent {
+		t.Fatalf("valid batch: %d", code)
+	}
+	byLoc, _ := st.LatestByLocation(context.Background(), time.Now().Add(-time.Hour))
+	if len(byLoc["kr-only"]) != 1 || byLoc["kr-only"][0].Location != "kr" {
+		t.Errorf("stored: %+v", byLoc)
+	}
+	for _, path := range []string{"/", "/api/v1/status", "/s/a"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s served by the ingest process: %d", path, w.Code)
 		}
 	}
 }

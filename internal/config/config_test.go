@@ -169,3 +169,42 @@ maintenance:
 		}
 	}
 }
+
+func TestLocations(t *testing.T) {
+	c, err := Parse([]byte(`
+locations:
+  - {id: us, name: 미국 서부}
+  - {id: kr, name: 한국 서울, primary_for: [카카오, wx]}
+targets:
+  - {id: login, provider: 카카오, url: "http://x"}
+  - {id: wx, provider: 기상청, url: "http://x"}
+  - {id: stripe, provider: Stripe, url: "http://x"}
+  - {id: pay, provider: 토스, url: "http://x", locations: [kr]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"login": "kr", "wx": "kr", "stripe": "", "pay": "kr"}
+	for i := range c.Targets {
+		tg := &c.Targets[i]
+		if got := c.PrimaryLocation(tg); got != want[tg.ID] {
+			t.Errorf("%s: primary %q, want %q", tg.ID, got, want[tg.ID])
+		}
+		if tg.CheckedFrom("us") != (tg.ID != "pay") || !tg.CheckedFrom("kr") {
+			t.Errorf("%s: checked from us %v, kr %v", tg.ID, tg.CheckedFrom("us"), tg.CheckedFrom("kr"))
+		}
+	}
+	if c.LocationName("kr") != "한국 서울" || c.LocationName("home") != "home" {
+		t.Error("names: declared ones by name, others by id")
+	}
+	for _, bad := range []string{
+		"locations: [{id: kr}]\ntargets: [{id: a, url: 'http://x', locations: [us]}]",
+		"locations: [{id: kr, primary_for: [nobody]}]\ntargets: [{id: a, url: 'http://x'}]",
+		"locations: [{id: kr}, {id: kr}]\ntargets: [{id: a, url: 'http://x'}]",
+		"locations: [{id: quorum}]\ntargets: [{id: a, url: 'http://x'}]",
+	} {
+		if _, err := Parse([]byte(bad)); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

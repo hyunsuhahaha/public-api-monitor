@@ -122,6 +122,15 @@ func securityHeaders(h http.Handler) http.Handler {
 	})
 }
 
+// IngestHandler serves only the ingest endpoint (and a health check), for pamon -role
+// ingest: the rest of the site is the static export.
+func (s *Server) IngestHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	return securityHeaders(mux)
+}
+
 // ingest: POST a JSON array of push.Wire with "Authorization: Bearer <token>".
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	if s.Ingest == nil || s.IngestToken == "" {
@@ -200,6 +209,7 @@ type TargetView struct {
 // LocationView is one probe location's latest check of a target.
 type LocationView struct {
 	Location  string       `json:"location"`
+	Name      string       `json:"name"` // config locations: 미국 서부, 한국 서울 (the id if undeclared)
 	Status    probe.Status `json:"status"`
 	Reason    string       `json:"reason,omitempty"`
 	LatencyMs int64        `json:"latencyMs"`
@@ -278,7 +288,7 @@ func (s *Server) build(ctx context.Context) (*StatusView, error) {
 		}
 		tv.Locations = []LocationView{}
 		for _, r := range byLoc[t.ID] {
-			tv.Locations = append(tv.Locations, LocationView{r.Location, r.Status, r.Reason, r.LatencyMS, r.At})
+			tv.Locations = append(tv.Locations, LocationView{r.Location, s.Cfg.LocationName(r.Location), r.Status, r.Reason, r.LatencyMS, r.At})
 			if r.Code != "" {
 				tv.Code = r.Code
 			}

@@ -39,7 +39,7 @@ func Explain(status probe.Status, reason string, checked *time.Time, now time.Ti
 	switch status {
 	case probe.StatusOK:
 		return Verdict{Tone: "ok", Headline: "정상입니다", Detail: "외부에서 보낸 요청에 정상 응답을 받았습니다.",
-			YourSide: "안 된다면 이용하는 쪽 문제일 가능성이 큽니다: 앱·브라우저를 다시 열거나, 다른 네트워크(와이파이 ↔ 모바일 데이터)로 해 보거나, 로그인·결제 수단·권한을 확인해 보세요. 감시 지점은 미국 서부라 국내 통신사 한 곳만의 문제는 여기에 보이지 않을 수 있습니다."}
+			YourSide: "안 된다면 이용하는 쪽 문제일 가능성이 큽니다: 앱·브라우저를 다시 열거나, 다른 네트워크(와이파이 ↔ 모바일 데이터)로 해 보거나, 로그인·결제 수단·권한을 확인해 보세요. " + usOnlyNote}
 	case probe.StatusSlow:
 		return Verdict{Tone: "warn", Headline: "느립니다", Detail: "응답은 정상이지만 평소보다 오래 걸립니다. " + plainReason(reason),
 			YourSide: "느리게 열리거나 시간 초과가 날 수 있습니다. 서비스 쪽 상황이라 기다리는 것 외에 할 일이 거의 없습니다."}
@@ -59,6 +59,10 @@ func Explain(status probe.Status, reason string, checked *time.Time, now time.Ti
 	}
 	return Verdict{Tone: "unknown", Headline: "상태를 알 수 없습니다", Detail: plainReason(reason)}
 }
+
+// usOnlyNote ends the ok verdict while the US is the only location with records; the
+// answer page replaces it once more locations check the service.
+const usOnlyNote = "감시 지점은 미국 서부라 국내 통신사 한 곳만의 문제는 여기에 보이지 않을 수 있습니다."
 
 var httpCode = regexp.MustCompile(`http (\d{3})`)
 
@@ -127,7 +131,16 @@ type answerPage struct {
 	Problems   []answerItem // failing or degraded now, worst first (index page)
 	Official   *officialView
 	Advice     Advice
-	More       answerMore // lead time, maintenance, feeds (answer_more.go)
+	More       answerMore    // lead time, maintenance, feeds (answer_more.go)
+	Locations  []locationRow // by location, when more than one checks the service
+	LocNote    string        // how the verdict comes from them
+	Where      string        // who checks: 미국 서부·한국 서울
+}
+
+// locationRow is one location's latest check of the service, in the reader's terms.
+type locationRow struct {
+	Name, Tone, Headline, Detail, Checked, Latency string
+	Primary                                        bool
 }
 
 // Advice is what a developer whose service calls this one can do about its failures,
@@ -304,6 +317,7 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 	}
 	p.V = Explain(p.T.Status, p.T.Reason, p.T.CheckedAt, now, s.Cfg.Interval.Duration)
 	p.Advice = AdviceFor(p.T.Category)
+	s.locationRows(ctx, p, now)
 	if st, ok := s.Official[p.T.Provider]; ok {
 		p.Official = compareOfficial(st, p.V.Tone)
 	}
@@ -356,6 +370,65 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 			Status: map[bool]string{true: "장애", false: "저하"}[in.Severity >= 2], Reason: plainReason(in.Reason)})
 	}
 	return p, nil
+}
+
+// locationRows: the service's latest check from each location that reports (a declared
+// location that has reported anything in the last day and has nothing for this service
+// shows as such, so a probe that stopped is visible), and where the verdict comes from.
+func (s *Server) locationRows(ctx context.Context, p *answerPage, now time.Time) {
+	t := s.target(p.T.ID)
+	if t == nil {
+		return
+	}
+	active := map[string]bool{}
+	if all, err := s.Store.LatestByLocation(ctx, now.Add(-24*time.Hour)); err == nil {
+		for _, rs := range all {
+			for _, r := range rs {
+				active[r.Location] = true
+			}
+		}
+	}
+	seen := map[string]LocationView{}
+	var order []string
+	for _, l := range p.T.Locations {
+		seen[l.Location] = l
+		order = append(order, l.Location)
+	}
+	for _, l := range s.Cfg.Locations {
+		if _, ok := seen[l.ID]; !ok && active[l.ID] && t.CheckedFrom(l.ID) {
+			order = append(order, l.ID)
+		}
+	}
+	primary := s.Cfg.PrimaryLocation(t)
+	var names []string
+	for _, id := range order {
+		row := locationRow{Name: s.Cfg.LocationName(id), Tone: "unknown", Headline: "기록 없음",
+			Detail: "이 지점의 최근 확인 기록이 없습니다. 감시기가 멈췄을 수 있습니다.", Primary: id == primary}
+		if l, ok := seen[id]; ok {
+			at := l.CheckedAt
+			x := Explain(l.Status, l.Reason, &at, now, t.Interval.Duration)
+			row.Tone, row.Headline, row.Detail, row.Checked = x.Tone, x.Headline, x.Detail, kst(at)
+			if l.LatencyMs > 0 {
+				row.Latency = fmt.Sprintf("%dms", l.LatencyMs)
+			}
+		}
+		names = append(names, row.Name)
+		p.Locations = append(p.Locations, row)
+	}
+	p.Where = strings.Join(names, "·")
+	if p.Where == "" {
+		p.Where = s.Cfg.LocationName("gcp-us-west1")
+	}
+	if len(p.Locations) < 2 {
+		p.Locations = nil
+		return
+	}
+	p.V.YourSide = strings.Replace(p.V.YourSide, usOnlyNote, p.Where+"에서 확인합니다. 지점별 결과는 아래에 있습니다.", 1)
+	if primary != "" {
+		p.LocNote = s.Cfg.LocationName(primary) + "의 결과를 결론으로 씁니다. 이 서비스의 사용자가 있는 곳입니다. 다른 지점의 결과가 다르면 그 지역의 네트워크나 접속 제한 문제일 수 있습니다."
+	} else {
+		p.LocNote = "한 곳이라도 실패하면 장애로 봅니다(세 곳 이상이면 과반수). 한 지점에서만 실패하면 그 지역의 네트워크나 접속 제한 문제일 수 있습니다."
+	}
 }
 
 // koDuration: 5분, 1시간 20분, 2일 3시간.
@@ -465,6 +538,11 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
   <span class="count sub"></span>
 </section>
 
+{{if .Locations}}<h2>지점별 결과</h2>
+<table><tr><th>지점</th><th>결과</th><th>확인 (KST)</th><th class="n">응답</th></tr>
+{{range .Locations}}<tr><td><b>{{.Name}}</b>{{if .Primary}} <span class="sub">결론 기준</span>{{end}}</td><td class="{{.Tone}}"><b class="h">{{.Headline}}</b><br><span class="sub">{{.Detail}}</span></td><td>{{.Checked}}</td><td class="n">{{.Latency}}</td></tr>{{end}}</table>
+<p class="sub">{{.LocNote}}</p>{{end}}
+
 {{with .Official}}<h2>{{.Provider}} 공식 발표</h2>
 <section class="verdict {{.Tone}}"><b class="h" style="font-size:17px">{{.Description}}</b>
 <p>{{.Compare}}</p><p class="sub"><a href="{{.Page}}" rel="nofollow">{{.Page}}</a> · {{.Fetched}} (KST) 확인</p></section>{{end}}
@@ -492,7 +570,7 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 <ul>{{range .Advice.Points}}<li>{{.}}</li>{{end}}</ul>
 
 <h2>무엇을 확인하나</h2>
-<p>미국 서부(GCP us-west1)의 감시기가 {{.Every}}마다 <b>{{.T.Name}}</b>에 직접 요청을 보내 응답 코드와 내용까지 확인합니다. 로그인·결제를 실제로 하지는 않으므로, 계정이나 결제 수단에 따른 문제는 보이지 않습니다.{{if .T.Docs}} 확인하는 곳: <a href="{{.T.Docs}}" rel="nofollow">{{.T.Docs}}</a>{{end}}</p>
+<p>{{.Where}}의 감시기가 {{.Every}}마다 <b>{{.T.Name}}</b>에 직접 요청을 보내 응답 코드와 내용까지 확인합니다. 로그인·결제를 실제로 하지는 않으므로, 계정이나 결제 수단에 따른 문제는 보이지 않습니다.{{if .T.Docs}} 확인하는 곳: <a href="{{.T.Docs}}" rel="nofollow">{{.T.Docs}}</a>{{end}}</p>
 <p><a href="../#t={{.T.ID}}">운영자용 상세 그래프</a> · <a href="../ai/targets/{{.T.ID}}.json">AI·개발자용 JSON</a></p>
 
 <footer>pamon: 개발자와 사용자가 의존하는 서비스의 외부 관측 기록. 데이터 생성 {{.Generated}} (KST). 제보는 누가 보냈는지 알 수 없게 저장합니다.</footer>

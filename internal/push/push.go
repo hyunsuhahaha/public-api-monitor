@@ -166,9 +166,9 @@ func (p *Pusher) send(ctx context.Context, batch []Wire) error {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
 		err := fmt.Errorf("central answered %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
 		if resp.StatusCode == http.StatusBadRequest {
-			// the central will never take this batch (e.g. a target it doesn't know):
-			// drop it rather than block everything behind it
-			p.Log.Error("push rejected, dropping batch", "err", err, "results", len(batch))
+			// the central kept what it could and will never take the rest (e.g. a target
+			// it doesn't know): move on rather than block everything behind it
+			p.Log.Error("push partly rejected, not resending", "err", err, "results", len(batch))
 			mDropped.Add(float64(len(batch)))
 			return nil
 		}
