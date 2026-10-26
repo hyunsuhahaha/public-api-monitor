@@ -17,7 +17,7 @@ import (
 
 // a GitHub API down for an hour; the official page said "major" 20 minutes after pamon
 // confirmed it. A second outage the page never mentioned.
-func leadSetup(t *testing.T) *Server {
+func leadSetup(t *testing.T) (*Server, time.Time) {
 	t.Helper()
 	cfg, err := config.Parse([]byte(`
 targets:
@@ -54,11 +54,12 @@ targets:
 		}
 	}
 	st.SaveVerdict(ctx, store.Verdict{TargetID: "gh", At: time.Now(), Status: probe.StatusOK, Voters: 1})
-	return &Server{Cfg: cfg, Store: st, LastCheck: time.Now}
+	return &Server{Cfg: cfg, Store: st, LastCheck: time.Now}, t0
 }
 
 func TestLeadTimePages(t *testing.T) {
-	h := leadSetup(t).Handler()
+	s, t0 := leadSetup(t)
+	h := s.Handler()
 	var rep leadtime.Report
 	if err := json.Unmarshal(get(t, h, "/api/v1/lead-time").Body.Bytes(), &rep); err != nil {
 		t.Fatal(err)
@@ -72,7 +73,7 @@ func TestLeadTimePages(t *testing.T) {
 			t.Errorf("lead-time page lacks %q", want)
 		}
 	}
-	month := time.Now().Add(-48 * time.Hour).In(config.KST).Format("2006-01")
+	month := t0.In(config.KST).Format("2006-01")
 	if rp := get(t, h, "/report/"+month).Body.String(); !strings.Contains(rp, "공식 상태 페이지와 비교") || !strings.Contains(rp, "20분 먼저") {
 		t.Errorf("monthly report lacks the lead time: %s", rp)
 	}
@@ -86,9 +87,9 @@ func TestLeadTimePages(t *testing.T) {
 
 // With the provider's posted incident list, its posting time is the announcement.
 func TestLeadTimeFromPostedIncidents(t *testing.T) {
-	s := leadSetup(t)
+	// t0 from the setup: computing it again could land in the next minute
+	s, t0 := leadSetup(t)
 	ctx := context.Background()
-	t0 := time.Now().Add(-48 * time.Hour).Truncate(time.Minute)
 	posted := []store.OfficialIncident{{Provider: "GitHub", ID: "p1", Name: "Incident with API requests", Impact: "major",
 		Created: t0.Add(12 * time.Minute), Resolved: t0.Add(70 * time.Minute), URL: "https://stspg.io/p1"}}
 	if err := s.Store.SaveOfficialIncidents(ctx, "GitHub", posted, t0.Add(-30*24*time.Hour), time.Now()); err != nil {
