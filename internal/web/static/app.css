@@ -120,6 +120,10 @@ canvas.strip { width: 180px; height: 14px; display: block; }
 #d-strips { width: 100%; display: block; }
 .log td, .log th { padding: 4px 6px; border-bottom: 1px solid var(--line2); font-size: 12px; white-space: nowrap; text-align: left; }
 .log th { color: var(--muted); font-weight: 500; }
+.log-wrap { max-height: 520px; overflow-y: auto; }
+.log-wrap .log tr:first-child th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.more-btn { margin-top: 8px; width: 100%; padding: 6px; font: inherit; font-size: 12px; color: var(--blue); background: transparent; border: 1px solid var(--line2); border-radius: 4px; cursor: pointer; }
+.more-btn:hover { background: var(--panel2); } .more-btn:disabled { color: var(--muted); cursor: default; }
 .log td.r { max-width: 380px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 
 /* incident view, palette, help */

@@ -85,6 +85,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
 	mux.HandleFunc("GET /api/v1/overview", s.cache.wrap(s.overview))
 	mux.HandleFunc("GET /api/v1/series", s.cache.wrap(s.series))
+	mux.HandleFunc("GET /api/v1/checks", s.checks)
 	mux.HandleFunc("GET /api/v1/schema-events", s.schemaEvents)
 	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incidentDetail)
 	mux.HandleFunc("POST /api/v1/incidents/{id}/notes", s.addNote)

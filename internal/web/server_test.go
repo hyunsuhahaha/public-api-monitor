@@ -453,3 +453,23 @@ func TestSilences(t *testing.T) {
 		t.Fatalf("ended silence still listed: %+v", ov.Silences)
 	}
 }
+
+func TestChecksHistory(t *testing.T) {
+	_, h := setup(t)
+	var list []checkView
+	if err := json.Unmarshal(get(t, h, "/api/v1/checks?target=a").Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 5 || !list[0].At.After(list[4].At) {
+		t.Fatalf("%+v", list)
+	}
+	json.Unmarshal(get(t, h, "/api/v1/checks?target=a&limit=2").Body.Bytes(), &list)
+	if len(list) != 2 {
+		t.Fatalf("limit: %d", len(list))
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/checks?target=nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatal(rec.Code)
+	}
+}

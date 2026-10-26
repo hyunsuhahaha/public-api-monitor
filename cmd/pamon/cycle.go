@@ -421,6 +421,9 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 		}
 	}
 	urls := []string{"/api/v1/status", "/api/v1/incidents", "/api/v1/schema-events", "/api/v1/silences", "/api/v1/overview", "/api/v1/lead-time", "/api/v1/retry-advice", "/version"}
+	for _, t := range cfg.Targets { // the drawer's 더 보기 under 최근 확인
+		urls = append(urls, "/api/v1/checks?target="+t.ID)
+	}
 	for _, r := range exportRanges {
 		urls = append(urls, "/api/v1/overview?range="+r)
 		for _, t := range cfg.Targets {

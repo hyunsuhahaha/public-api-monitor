@@ -679,16 +679,41 @@ async function openDrawer(id) {
   const sch = state.schema.filter((e) => e.target === id);
   if (!sch.length) dsch.append(el("div", "empty", "응답 필드 변경 기록이 없습니다"));
   for (const e of sch.slice(0, 10)) dsch.append(schemaRow(e, false));
-  const log = $("d-log"); log.replaceChildren();
   phaseLegend($("d-phase-legend"));
+  // the newest 40 come with the series; 더 보기 loads the last day (and stays open while
+  // the drawer refreshes)
+  renderLog(s.recent);
+  const more = $("d-log-more");
+  if (state.logMore === id) loadMoreChecks(id);
+  else { more.hidden = false; more.disabled = false; more.textContent = "더 보기 (최근 24시간)"; more.onclick = () => loadMoreChecks(id); }
+}
+
+function renderLog(list) {
+  const log = $("d-log"); log.replaceChildren();
   const hr = el("tr"); ["시각", "지역", "판정", "응답", "구간", "HTTP", "코드", "사유"].forEach((h) => { const th = el("th", "", h); if (h === "구간") th.title = PHASE_HELP; hr.append(th); }); log.append(hr);
-  for (const c of s.recent) {
+  for (const c of list) {
     const tr = el("tr");
     const st = el("td"); st.append(el("span", "dot " + c.status), document.createTextNode(" " + (LABEL[c.status] || c.status)));
     const rs = el("td", "r", c.reason || ""); rs.title = c.reason || "";
     tr.append(el("td", "mono", kst(c.at, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })), el("td", "", c.location), st,
       el("td", "num", ms(c.latencyMs)), phaseCell(c), el("td", "num", c.http || "–"), el("td", "mono", c.code || ""), rs);
     log.append(tr);
+  }
+}
+
+async function loadMoreChecks(id) {
+  const more = $("d-log-more");
+  more.disabled = true; more.textContent = "불러오는 중…";
+  try {
+    const r = await fetch("/api/v1/checks?target=" + encodeURIComponent(id));
+    if (!r.ok) throw new Error(r.status);
+    const list = await r.json();
+    if (state.target !== id) return; // the drawer moved on
+    state.logMore = id;
+    renderLog(list);
+    more.hidden = true;
+  } catch {
+    more.disabled = false; more.textContent = "불러오지 못했습니다. 다시 시도";
   }
 }
 
