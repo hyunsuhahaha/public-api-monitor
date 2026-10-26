@@ -17,6 +17,9 @@ func classifyHTTP(o Observation, slowAfter time.Duration) Verdict {
 		o.Body = nil
 		return Classify(o, slowAfter)
 	}
+	if o.HTTPStatus >= 300 && o.HTTPStatus < 400 {
+		return Classify(o, slowAfter) // names where it redirected
+	}
 	if o.HTTPStatus != 200 {
 		return Verdict{Status: StatusError, Reason: fmt.Sprintf("http %d: expected complete 200 response", o.HTTPStatus)}
 	}

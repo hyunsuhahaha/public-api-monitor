@@ -116,3 +116,23 @@ targets:
 		t.Fatalf("%v %q", bad, why)
 	}
 }
+
+// A redirect to another host is not followed (the key stays home) and the reason says
+// where it pointed, without the key: not a bare "empty body".
+func TestRedirectElsewhereNamesWhere(t *testing.T) {
+	t.Setenv("DATA_GO_KR_KEY", "SECRETKEY")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://other.example/SECRETKEY/maint.html?serviceKey=SECRETKEY", http.StatusFound)
+	}))
+	defer srv.Close()
+	for _, cls := range []string{"", "\n    classifier: http"} {
+		cfg, err := config.Parse([]byte("targets:\n  - id: a\n    url: " + srv.URL + "/api?serviceKey={{.Key}}" + cls + "\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := New("test").Check(context.Background(), &cfg.Targets[0])
+		if r.Status != StatusError || r.HTTPStatus != 302 || !strings.Contains(r.Reason, "redirect to https://other.example/") || strings.Contains(r.Reason, "SECRETKEY") {
+			t.Errorf("classifier %q: %s %d %q", cls, r.Status, r.HTTPStatus, r.Reason)
+		}
+	}
+}

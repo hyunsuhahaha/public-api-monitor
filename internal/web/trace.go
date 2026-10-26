@@ -363,6 +363,14 @@ func (s *Server) buildTrace(ctx context.Context, t *config.Target, c probe.Resul
 	case c.HTTPStatus >= 500:
 		tr.Kind, tr.Headline = "server", fmt.Sprintf("서버가 오류(HTTP %d)를 돌려줬습니다. 연결은 됐고, 서비스 안쪽의 장애입니다.", c.HTTPStatus)
 		tr.Evidence = append(tr.Evidence, "DNS·TCP·TLS를 모두 마치고 서버가 직접 오류로 답했습니다.")
+	case c.HTTPStatus >= 300 && c.HTTPStatus < 400:
+		tr.Kind = "content"
+		tr.Headline = fmt.Sprintf("서비스가 이 요청을 다른 주소로 돌려보냈습니다(HTTP %d). 점검 안내·오류 페이지나 주소 변경일 때 이렇게 답합니다. 연결과 응답 속도는 정상이었습니다.", c.HTTPStatus)
+		if i := strings.Index(c.Reason, "redirect to "); i >= 0 {
+			tr.Evidence = append(tr.Evidence, "보낸 곳: "+strings.TrimSuffix(c.Reason[i+len("redirect to "):], " (not followed)")+". 감시기는 인증키가 다른 서버로 새지 않도록 다른 주소로는 따라가지 않습니다.")
+		} else {
+			tr.Evidence = append(tr.Evidence, "어디로 보냈는지는 2026-10-26 이전 기록에는 남지 않았습니다(사유가 'empty body'로만 남음). 이후 기록에는 보낸 곳이 남습니다.")
+		}
 	case strings.Contains(c.Reason, "answer lacks"):
 		tr.Kind, tr.Headline = "content", "정상 화면 대신 다른 페이지(점검 안내·차단·오류 페이지)가 왔습니다."
 		tr.Evidence = append(tr.Evidence, "응답은 왔지만, 그 서비스가 정상일 때 늘 들어 있는 문구가 없습니다.")
@@ -386,6 +394,10 @@ func (s *Server) buildTrace(ctx context.Context, t *config.Target, c probe.Resul
 	case networkStep(step):
 		tr.Kind = "server_edge"
 		tr.Headline = fmt.Sprintf("이 서버(또는 앞단의 방화벽·로드밸런서)가 %s을 늦게 받았습니다. 같은 시각 다른 서버들은 정상이었습니다.", what)
+	case c.Status == probe.StatusError && c.HTTPStatus > 0 && probe.StalledPhase(c.Reason) == "":
+		// it answered, in time: the answer is what is wrong, not the speed
+		tr.Kind = "server"
+		tr.Headline = "서비스가 제때 답했지만 정상 응답이 아니었습니다: " + c.Reason
 	case step == "wait" && tr.Peers.ProviderBad >= 2 && tr.Peers.ProviderBad*2 >= tr.Peers.Provider:
 		tr.Kind = "provider"
 		tr.Headline = fmt.Sprintf("%s 전체가 느리거나 실패했습니다. 연결은 정상이고, 같은 제공자의 다른 API도 같은 시각에 이상이었습니다.", t.Provider)

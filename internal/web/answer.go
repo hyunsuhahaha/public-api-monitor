@@ -88,6 +88,10 @@ func plainReason(reason string) string {
 		return "보안 인증서(HTTPS) 문제로 연결하지 못했습니다. 인증서 만료나 설정 오류일 수 있습니다."
 	case strings.HasPrefix(r, "slow"):
 		return "응답 시간: " + strings.TrimPrefix(reason, "slow: ") + "."
+	case strings.Contains(r, "redirect to "):
+		return "서비스가 요청을 다른 주소로 돌려보냈습니다. 점검 안내나 오류 페이지로 보내는 경우가 많습니다."
+	case r == "empty body", r == "empty http response":
+		return "서비스가 빈 응답을 보냈습니다."
 	case strings.Contains(r, "answer lacks"):
 		return "응답은 왔지만 정상 화면이 아닙니다. 점검 안내나 차단 페이지가 대신 나온 것으로 보입니다."
 	case strings.Contains(r, "bad data"), strings.Contains(r, "bad value"):

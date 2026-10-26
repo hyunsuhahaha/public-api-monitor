@@ -130,6 +130,11 @@ func (p *Prober) Check(ctx context.Context, t *config.Target) Result {
 	if err == nil {
 		o.HTTPStatus = resp.StatusCode
 		o.ContentType = resp.Header.Get("Content-Type")
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			if to, err := resp.Request.URL.Parse(resp.Header.Get("Location")); err == nil && to.Host != "" {
+				o.RedirectTo = shorten(to.Scheme+"://"+to.Host+t.Redact(to.Path), 100)
+			}
+		}
 		limit := int64(MaxBody)
 		if t.Classifier == "docker_token" {
 			limit = 65537

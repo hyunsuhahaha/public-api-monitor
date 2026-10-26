@@ -6,6 +6,7 @@
 package probe
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -113,6 +114,10 @@ type Observation struct {
 	HTTPStatus  int
 	Body        []byte
 	Latency     time.Duration
+	// RedirectTo: where a 3xx the client did not follow pointed (another host or scheme:
+	// the key is never sent elsewhere), as scheme://host/path with the query dropped and
+	// the key taken out of the path
+	RedirectTo string
 }
 
 // Verdict is the classification of an observation.
@@ -140,6 +145,15 @@ func Classify(o Observation, slowAfter time.Duration) Verdict {
 		return Verdict{Status: StatusClient, Code: code, Reason: httpReason(o.HTTPStatus, code, msg)}
 	case o.HTTPStatus >= 400:
 		return Verdict{Status: StatusError, Code: code, Reason: httpReason(o.HTTPStatus, code, msg)}
+	}
+	if o.HTTPStatus >= 300 && o.HTTPStatus < 400 {
+		// not the API's answer: it sent us elsewhere (a maintenance or error page, a moved
+		// address); say where, or the reason is a bare "empty body"
+		to := o.RedirectTo
+		if to == "" {
+			to = "an unnamed address"
+		}
+		return Verdict{Status: StatusError, Reason: fmt.Sprintf("http %d: redirect to %s (not followed)", o.HTTPStatus, to)}
 	}
 	if strings.TrimSpace(body) == "" {
 		return Verdict{Status: StatusError, Reason: "empty body"}

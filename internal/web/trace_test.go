@@ -72,6 +72,12 @@ targets:
 			nil, nil, "server", []string{"연결을 끊었습니다"}},
 		{"an old record: '연결 대기 중' with TCP measured at 5 s", probe.Result{TargetID: "a", Location: "us", At: at, Status: probe.StatusDown, Reason: "timeout: 연결 대기 중", LatencyMS: 5000, Phases: probe.Phases{DNSMs: 1, ConnectMs: 5000}},
 			[]probe.Result{okPeer("h1"), okPeer("h2"), okPeer("h3")}, nil, "server_edge", []string{"TCP 연결 단계에서 시간 초과", "잘못된 표기"}},
+		{"redirected elsewhere, fast", probe.Result{TargetID: "a", Location: "us", At: at, Status: probe.StatusError, HTTPStatus: 302, LatencyMS: 160,
+			Reason: "http 302: redirect to https://www.data.go.kr/err.html (not followed)", Phases: probe.Phases{WaitMs: 159}},
+			nil, nil, "content", []string{"다른 주소로 돌려보냈습니다", "보낸 곳: https://www.data.go.kr/err.html", "따라가지 않습니다"}},
+		{"a fast wrong answer is not slowness", probe.Result{TargetID: "a", Location: "us", At: at, Status: probe.StatusError, HTTPStatus: 200, LatencyMS: 140,
+			Reason: "empty body", Phases: probe.Phases{WaitMs: 130}},
+			nil, nil, "server", []string{"제때 답했지만 정상 응답이 아니었습니다: empty body"}},
 		{"a waiting-for-the-connection timeout", probe.Result{TargetID: "a", Location: "us", At: at, Status: probe.StatusDown, Reason: "timeout: 연결 대기 중", LatencyMS: 5000},
 			[]probe.Result{okPeer("h1")}, nil, "monitor", []string{"연결을 시작하기도 전에", "근거가 없습니다"}},
 	} {
