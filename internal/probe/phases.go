@@ -31,6 +31,17 @@ type phaseClock struct {
 	tlsStart, tlsDone         time.Time
 	gotConn, wrote, firstByte time.Time
 	reused                    bool
+	// a step that ended in an error (the dialer's or TLS's own 5-second limit): it is
+	// done but failed, and the request stopped there
+	dnsErr, connErr, tlsErr bool
+}
+
+func (c *phaseClock) fail(flag *bool, err error) {
+	if err != nil {
+		c.mu.Lock()
+		*flag = true
+		c.mu.Unlock()
+	}
 }
 
 func (c *phaseClock) mark(t *time.Time) {
@@ -44,11 +55,11 @@ func (c *phaseClock) mark(t *time.Time) {
 func (c *phaseClock) trace() *httptrace.ClientTrace {
 	return &httptrace.ClientTrace{
 		DNSStart:             func(httptrace.DNSStartInfo) { c.mark(&c.dnsStart) },
-		DNSDone:              func(httptrace.DNSDoneInfo) { c.mark(&c.dnsDone) },
+		DNSDone:              func(i httptrace.DNSDoneInfo) { c.fail(&c.dnsErr, i.Err); c.mark(&c.dnsDone) },
 		ConnectStart:         func(string, string) { c.mark(&c.connStart) },
-		ConnectDone:          func(string, string, error) { c.mark(&c.connDone) },
+		ConnectDone:          func(_, _ string, err error) { c.fail(&c.connErr, err); c.mark(&c.connDone) },
 		TLSHandshakeStart:    func() { c.mark(&c.tlsStart) },
-		TLSHandshakeDone:     func(tls.ConnectionState, error) { c.mark(&c.tlsDone) },
+		TLSHandshakeDone:     func(_ tls.ConnectionState, err error) { c.fail(&c.tlsErr, err); c.mark(&c.tlsDone) },
 		GotConn:              func(i httptrace.GotConnInfo) { c.mu.Lock(); c.reused = i.Reused; c.mu.Unlock(); c.mark(&c.gotConn) },
 		WroteRequest:         func(httptrace.WroteRequestInfo) { c.mark(&c.wrote) },
 		GotFirstResponseByte: func() { c.mark(&c.firstByte) },
@@ -112,6 +123,14 @@ func (c *phaseClock) stalled() string {
 		return "wait"
 	case !c.gotConn.IsZero():
 		return "send"
+	// a step that gave up on its own limit (5 s for TCP and TLS) is "done" with an error:
+	// that is where it stopped, not the pool
+	case c.tlsErr:
+		return "tls"
+	case c.connErr:
+		return "connect"
+	case c.dnsErr:
+		return "dns"
 	case !c.tlsStart.IsZero() && c.tlsDone.IsZero():
 		return "tls"
 	case !c.connStart.IsZero() && c.connDone.IsZero():

@@ -65,3 +65,59 @@ func TestStalledPhaseRoundTrip(t *testing.T) {
 		t.Fatal("not a phase")
 	}
 }
+
+// The dialer and the TLS handshake give up after 5 s on their own: the trace then reports
+// that step done, with an error. The timeout is in that step, not "waiting for a
+// connection" (which every such timeout was reported as before).
+func TestStalledInAStepThatGaveUp(t *testing.T) {
+	t0 := time.Now()
+	for _, c := range []struct {
+		name string
+		set  func(c *phaseClock)
+		want string
+	}{
+		{"TCP gave up", func(c *phaseClock) {
+			c.dnsStart, c.dnsDone, c.connStart, c.connDone, c.connErr = t0, t0, t0, t0.Add(5*time.Second), true
+		}, "connect"},
+		{"TLS gave up", func(c *phaseClock) {
+			c.connStart, c.connDone, c.tlsStart, c.tlsDone, c.tlsErr = t0, t0, t0, t0.Add(5*time.Second), true
+		}, "tls"},
+		{"DNS failed", func(c *phaseClock) { c.dnsStart, c.dnsDone, c.dnsErr = t0, t0.Add(time.Second), true }, "dns"},
+		{"TCP still dialing", func(c *phaseClock) { c.connStart = t0 }, "connect"},
+		{"nothing started", func(c *phaseClock) {}, "pool"},
+	} {
+		pc := &phaseClock{now: time.Now}
+		c.set(pc)
+		if got := pc.stalled(); got != c.want {
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// End to end: a server that accepts TCP and never speaks TLS, so the handshake runs out.
+func TestTLSHandshakeTimeoutIsTLS(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close() // hold it open, say nothing
+		}
+	}()
+	cfg, err := config.Parse([]byte("targets:\n  - id: a\n    auth: none\n    classifier: http\n    timeout: 3s\n    url: https://" + ln.Addr().String() + "/\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New("test")
+	p.Client.Transport.(*http.Transport).TLSHandshakeTimeout = 500 * time.Millisecond
+	r := p.Check(context.Background(), &cfg.Targets[0])
+	if r.Reason != "timeout: TLS 연결 중" || r.Phases.TLSMs < 400 {
+		t.Fatalf("%s %q %+v", r.Status, r.Reason, r.Phases)
+	}
+}

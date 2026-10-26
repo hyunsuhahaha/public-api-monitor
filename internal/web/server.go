@@ -49,14 +49,14 @@ type Server struct {
 	// Official holds providers' own status announcements by provider name (official.Fetch).
 	Official map[string]official.Status
 
-	cache      respCache
-	around     aroundCache // checks around a moment, for traces (trace.go)
-	lead       leadCache
-	acc        accuracyCache
-	mu         sync.Mutex
-	cachedView *StatusView
-	cached     []byte
-	cachedAt   time.Time
+	cache       respCache
+	aroundCache aroundCache // the checks around a moment, summed for traces (trace.go)
+	lead        leadCache
+	acc         accuracyCache
+	mu          sync.Mutex
+	cachedView  *StatusView
+	cached      []byte
+	cachedAt    time.Time
 }
 
 // CacheFor: the status JSON is rebuilt at most this often (the page polls it).

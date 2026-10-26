@@ -213,8 +213,8 @@ type checkView struct {
 	LocationName string `json:"locationName,omitempty"`
 }
 
-// tracedChecks: recentChecks with a trace on the failing and slow ones (the most recent
-// maxTraces of them: each looks at every other target's checks of that moment).
+// tracedChecks: recentChecks with a trace on every failing and slow one (the checks of
+// each moment are summed once a minute and shared, so a trace is a few lookups).
 func (s *Server) tracedChecks(ctx context.Context, id string, rs []probe.Result) []checkView {
 	out := recentChecks(rs)
 	for i := range out {
@@ -224,20 +224,12 @@ func (s *Server) tracedChecks(ctx context.Context, id string, rs []probe.Result)
 	if t == nil {
 		return out
 	}
-	const maxTraces = 15
 	var followUps []probe.FollowUp
 	if len(rs) > 0 {
 		followUps, _ = s.Store.FollowUps(ctx, id, rs[len(rs)-1].At.Add(-time.Minute))
 	}
-	n := 0
 	for i, x := range rs {
-		if n == maxTraces {
-			break
-		}
-		if tr := s.traceCheck(ctx, t, x, followUps); tr != nil {
-			out[i].Trace = tr
-			n++
-		}
+		out[i].Trace = s.traceCheck(ctx, t, x, followUps)
 	}
 	return out
 }

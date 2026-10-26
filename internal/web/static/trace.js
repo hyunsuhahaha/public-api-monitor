@@ -128,7 +128,14 @@ function buildTraceCard(c, target) {
     (tr.evidence || []).forEach((t, i) => { const li = el("li", "", t); li.style.animationDelay = (i * 90) + "ms"; ul.append(li); });
     verdict.append(ul);
   } else {
-    verdict.append(el("span", "tc-kind k-ok", "정상"), el("p", "tc-headline", c.status === "ok" ? "모든 단계를 정상으로 마쳤습니다." : "이 확인에는 원인 추정이 없습니다."));
+    // no trace: an ok check (or one in a maintenance window), or a row from a page built
+    // before traces existed. Never call a failure 정상.
+    if (c.status === "ok") verdict.append(el("span", "tc-kind k-ok", "정상"), el("p", "tc-headline", "모든 단계를 정상으로 마쳤습니다."));
+    else {
+      const bad = sev(c.status) >= 2, k = bad ? "k-out" : sev(c.status) === 1 ? "k-deg" : "k-dim";
+      verdict.append(el("span", "tc-kind " + k, LABEL[c.status] || c.status),
+        el("p", "tc-headline", (c.reason ? c.reason + " · " : "") + "이 확인에는 원인 추정 기록이 없습니다. 새로고침하면 생길 수 있습니다."));
+    }
   }
   card.append(verdict);
   return { card, segs, packet, clock, stallNote, verdict, replay, close };

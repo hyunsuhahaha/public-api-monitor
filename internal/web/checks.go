@@ -27,5 +27,5 @@ func (s *Server) checks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, recentChecks(list))
+	writeJSON(w, s.tracedChecks(r.Context(), id, list)) // 더 보기 rows open the trace card too
 }

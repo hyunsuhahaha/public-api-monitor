@@ -70,8 +70,10 @@ targets:
 			[]probe.Result{okPeer("h1"), okPeer("h2"), okPeer("h3")}, nil, "server_edge", []string{"TCP 연결", "connection refused"}},
 		{"the server hung up", probe.Result{TargetID: "a", Location: "us", At: at, Status: probe.StatusDown, Reason: "request failed: Get \"https://a.example/x\": EOF", Phases: probe.Phases{ConnectMs: 100, TLSMs: 100, WaitMs: 30}},
 			nil, nil, "server", []string{"연결을 끊었습니다"}},
+		{"an old record: '연결 대기 중' with TCP measured at 5 s", probe.Result{TargetID: "a", Location: "us", At: at, Status: probe.StatusDown, Reason: "timeout: 연결 대기 중", LatencyMS: 5000, Phases: probe.Phases{DNSMs: 1, ConnectMs: 5000}},
+			[]probe.Result{okPeer("h1"), okPeer("h2"), okPeer("h3")}, nil, "server_edge", []string{"TCP 연결 단계에서 시간 초과", "잘못된 표기"}},
 		{"a waiting-for-the-connection timeout", probe.Result{TargetID: "a", Location: "us", At: at, Status: probe.StatusDown, Reason: "timeout: 연결 대기 중", LatencyMS: 5000},
-			[]probe.Result{okPeer("h1")}, nil, "server_edge", []string{"다른 요청이 맺고 있던 연결"}},
+			[]probe.Result{okPeer("h1")}, nil, "monitor", []string{"연결을 시작하기도 전에", "근거가 없습니다"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))

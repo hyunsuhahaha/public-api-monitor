@@ -50,7 +50,7 @@ var phaseWords = map[string]string{"dns": "DNS 조회", "connect": "TCP 연결",
 
 // stepOf: the step a check stopped in (timeouts name it) or spent most of its time in.
 func stepOf(c probe.Result) string {
-	if p := probe.StalledPhase(c.Reason); p != "" {
+	if p := stalledStep(c); p != "" {
 		return p
 	}
 	if p := failedStep(c); p != "" {
@@ -65,6 +65,26 @@ func stepOf(c probe.Result) string {
 	}{{"dns", ph.DNSMs}, {"connect", ph.ConnectMs}, {"tls", ph.TLSMs}, {"wait", ph.WaitMs}, {"body", rest}} {
 		if x.v > best {
 			best, step = x.v, x.k
+		}
+	}
+	return step
+}
+
+// stalledStep: the step a timeout stopped in. Before 2026-10-26 the probe wrote "연결
+// 대기 중" (pool) for a TCP or TLS step that gave up on its own 5-second limit; a pool
+// wait measures no step at all, so a "pool" with a step of a second or more is that step.
+func stalledStep(c probe.Result) string {
+	p := probe.StalledPhase(c.Reason)
+	if p != "pool" {
+		return p
+	}
+	ph, step, best := c.Phases, "pool", int64(999)
+	for _, x := range []struct {
+		k string
+		v int64
+	}{{"dns", ph.DNSMs}, {"connect", ph.ConnectMs}, {"tls", ph.TLSMs}} {
+		if x.v > best {
+			step, best = x.k, x.v
 		}
 	}
 	return step
@@ -96,7 +116,7 @@ func troubled(c probe.Result) bool { return c.Status.Counts() && c.Status.Severi
 // stuckIn: a peer check was stuck in or slowed by this step: it timed out or failed
 // there, or the step alone took over a second (a handshake across the Pacific is ~0.3 s).
 func stuckIn(c probe.Result, step string) bool {
-	if probe.StalledPhase(c.Reason) == step || failedStep(c) == step {
+	if stalledStep(c) == step || failedStep(c) == step {
 		return true
 	}
 	switch step {
@@ -133,8 +153,9 @@ type aroundCache struct {
 	entries map[string]aroundEntry
 	traces  map[string]traceEntry // one check's trace, asked for by every range's series
 
-	once sync.Once
-	info map[string]peerInfo // target id -> provider and host
+	once       sync.Once
+	info       map[string]peerInfo // target id -> provider and host
+	byProvider map[string][]string // provider -> target ids
 }
 
 type traceEntry struct {
@@ -145,49 +166,95 @@ type traceEntry struct {
 type peerInfo struct{ provider, host string }
 
 func (s *Server) peerInfo(id string) (peerInfo, bool) {
-	s.around.once.Do(func() {
-		s.around.info = map[string]peerInfo{}
+	s.aroundCache.once.Do(func() {
+		s.aroundCache.info, s.aroundCache.byProvider = map[string]peerInfo{}, map[string][]string{}
 		for i := range s.Cfg.Targets {
 			t := &s.Cfg.Targets[i]
-			s.around.info[t.ID] = peerInfo{t.Provider, targetHost(t)}
+			s.aroundCache.info[t.ID] = peerInfo{t.Provider, targetHost(t)}
+			s.aroundCache.byProvider[t.Provider] = append(s.aroundCache.byProvider[t.Provider], t.ID)
 		}
 	})
-	p, ok := s.around.info[id]
+	p, ok := s.aroundCache.info[id]
 	return p, ok
 }
 
 type aroundEntry struct {
-	checks  []probe.Result
+	sum     *window
 	expires time.Time
 }
 
-func (s *Server) checksAround(ctx context.Context, at time.Time) []probe.Result {
-	// one key per minute: a check at 12:03:40 and one at 12:03:10 share it
+// window is what every target's checks of a few minutes say, summed once so each trace
+// only looks things up (an export traces every failing check of every target).
+type window struct {
+	hosts    map[string]map[string]bool            // location -> servers checked
+	stuck    map[string]map[string]map[string]bool // location -> step -> servers stuck or slow in it
+	troubled map[string]map[string]bool            // location -> target -> failed or slow (any check)
+	byTarget map[string][]probe.Result             // target -> its checks from every location
+}
+
+var traceSteps = []string{"dns", "connect", "tls", "wait"}
+
+func (s *Server) summarize(checks []probe.Result) *window {
+	w := &window{hosts: map[string]map[string]bool{}, stuck: map[string]map[string]map[string]bool{},
+		troubled: map[string]map[string]bool{}, byTarget: map[string][]probe.Result{}}
+	for _, p := range checks {
+		w.byTarget[p.TargetID] = append(w.byTarget[p.TargetID], p)
+		info, ok := s.peerInfo(p.TargetID)
+		if !ok {
+			continue
+		}
+		if w.troubled[p.Location] == nil {
+			w.troubled[p.Location] = map[string]bool{}
+			w.hosts[p.Location] = map[string]bool{}
+			w.stuck[p.Location] = map[string]map[string]bool{}
+		}
+		w.troubled[p.Location][p.TargetID] = w.troubled[p.Location][p.TargetID] || troubled(p)
+		if info.host == "" {
+			continue
+		}
+		w.hosts[p.Location][info.host] = true
+		for _, step := range traceSteps {
+			if stuckIn(p, step) {
+				if w.stuck[p.Location][step] == nil {
+					w.stuck[p.Location][step] = map[string]bool{}
+				}
+				w.stuck[p.Location][step][info.host] = true
+			}
+		}
+	}
+	return w
+}
+
+// around: the summary of the minutes around a check, from every location. One key per
+// minute: checks at 12:03:10 and 12:03:40 share it, and a check's window is that
+// minute's -3 to +4 minutes (about ±3 minutes of it).
+func (s *Server) around(ctx context.Context, at time.Time) *window {
 	from := at.Truncate(time.Minute).Add(-traceWindow)
 	to := at.Truncate(time.Minute).Add(traceWindow + time.Minute)
 	key := from.Format(time.RFC3339)
-	s.around.mu.Lock()
-	if s.around.entries == nil {
-		s.around.entries = map[string]aroundEntry{}
+	s.aroundCache.mu.Lock()
+	if s.aroundCache.entries == nil {
+		s.aroundCache.entries = map[string]aroundEntry{}
 	}
-	e, ok := s.around.entries[key]
-	s.around.mu.Unlock()
+	e, ok := s.aroundCache.entries[key]
+	s.aroundCache.mu.Unlock()
 	if ok && time.Now().Before(e.expires) {
-		return e.checks
+		return e.sum
 	}
 	checks, err := s.Store.ChecksAround(ctx, from, to)
 	if err != nil {
-		return nil
+		return s.summarize(nil)
 	}
-	s.around.mu.Lock()
-	for k, old := range s.around.entries {
+	sum := s.summarize(checks)
+	s.aroundCache.mu.Lock()
+	for k, old := range s.aroundCache.entries {
 		if time.Now().After(old.expires) {
-			delete(s.around.entries, k)
+			delete(s.aroundCache.entries, k)
 		}
 	}
-	s.around.entries[key] = aroundEntry{checks, time.Now().Add(time.Minute)}
-	s.around.mu.Unlock()
-	return checks
+	s.aroundCache.entries[key] = aroundEntry{sum, time.Now().Add(time.Minute)}
+	s.aroundCache.mu.Unlock()
+	return sum
 }
 
 // traceCheck concludes on one check of target t (kept for a minute: the dashboard's
@@ -197,19 +264,19 @@ func (s *Server) traceCheck(ctx context.Context, t *config.Target, c probe.Resul
 		return nil
 	}
 	key := c.TargetID + "|" + c.Location + "|" + c.At.Format(time.RFC3339Nano)
-	s.around.mu.Lock()
-	e, ok := s.around.traces[key]
-	s.around.mu.Unlock()
+	s.aroundCache.mu.Lock()
+	e, ok := s.aroundCache.traces[key]
+	s.aroundCache.mu.Unlock()
 	if ok && time.Now().Before(e.expires) {
 		return e.trace
 	}
 	tr := s.buildTrace(ctx, t, c, followUps)
-	s.around.mu.Lock()
-	if s.around.traces == nil || len(s.around.traces) > 20000 {
-		s.around.traces = map[string]traceEntry{}
+	s.aroundCache.mu.Lock()
+	if s.aroundCache.traces == nil || len(s.aroundCache.traces) > 20000 {
+		s.aroundCache.traces = map[string]traceEntry{}
 	}
-	s.around.traces[key] = traceEntry{tr, time.Now().Add(time.Minute)}
-	s.around.mu.Unlock()
+	s.aroundCache.traces[key] = traceEntry{tr, time.Now().Add(time.Minute)}
+	s.aroundCache.mu.Unlock()
 	return tr
 }
 
@@ -224,45 +291,41 @@ func (s *Server) buildTrace(ctx context.Context, t *config.Target, c probe.Resul
 	tr.Phase = step
 	self, _ := s.peerInfo(t.ID)
 	host := self.host
-	latest := map[string]probe.Result{} // this target from the other locations, nearest in time
-	hostStuck := map[string]bool{}      // other servers: one vote per host (data.go.kr's fifty APIs are one server)
-	providerBad := map[string]bool{}    // the same provider's other APIs: one vote per API
-	network := networkStep(step)
-	for _, p := range s.checksAround(ctx, c.At) {
-		if p.At.Sub(c.At).Abs() > traceWindow {
-			continue
+	w := s.around(ctx, c.At)
+	// other servers checked from here: one vote per server (data.go.kr's fifty APIs are
+	// one), this one's own server left out
+	for h := range w.hosts[c.Location] {
+		if h != host {
+			tr.Peers.Hosts++
 		}
-		if p.TargetID == c.TargetID {
-			if l, ok := latest[p.Location]; p.Location != c.Location && (!ok || p.At.Sub(c.At).Abs() < l.At.Sub(c.At).Abs()) {
-				latest[p.Location] = p
+	}
+	if networkStep(step) {
+		key := step
+		if step == "pool" {
+			key = "connect" // waiting for a connection: the others' connects say whether the path was stuck
+		}
+		for h := range w.stuck[c.Location][key] {
+			if h != host {
+				tr.Peers.SameStep++
 			}
-			continue
-		}
-		if p.Location != c.Location {
-			continue
-		}
-		pt, ok := s.peerInfo(p.TargetID)
-		if !ok {
-			continue
-		}
-		if pt.provider == t.Provider {
-			providerBad[p.TargetID] = providerBad[p.TargetID] || troubled(p)
-		}
-		if pt.host == "" || pt.host == host {
-			continue
-		}
-		hostStuck[pt.host] = hostStuck[pt.host] || (network && stuckIn(p, step)) || (step == "pool" && stuckIn(p, "connect"))
-	}
-	tr.Peers.Provider = len(providerBad)
-	for _, bad := range providerBad {
-		if bad {
-			tr.Peers.ProviderBad++
 		}
 	}
-	tr.Peers.Hosts = len(hostStuck)
-	for _, stuck := range hostStuck {
-		if stuck {
-			tr.Peers.SameStep++
+	// the same provider's other APIs: one vote per API
+	for _, id := range s.aroundCache.byProvider[t.Provider] {
+		if bad, ok := w.troubled[c.Location][id]; ok && id != t.ID {
+			tr.Peers.Provider++
+			if bad {
+				tr.Peers.ProviderBad++
+			}
+		}
+	}
+	latest := map[string]probe.Result{} // this target from the other locations, nearest in time
+	for _, p := range w.byTarget[c.TargetID] {
+		if p.Location == c.Location || p.At.Sub(c.At).Abs() > traceWindow {
+			continue
+		}
+		if l, ok := latest[p.Location]; !ok || p.At.Sub(c.At).Abs() < l.At.Sub(c.At).Abs() {
+			latest[p.Location] = p
 		}
 	}
 	// the same target from other locations at that moment
@@ -309,6 +372,8 @@ func (s *Server) buildTrace(ctx context.Context, t *config.Target, c probe.Resul
 		tr.Kind, tr.Headline = "server", "응답은 정상이지만 데이터 갱신이 멈췄거나 값이 이상합니다. 제공 기관의 데이터 쪽 문제입니다."
 	case failedStep(c) == "wait":
 		tr.Kind, tr.Headline = "server", "연결과 요청까지는 됐지만 서버가 답하지 않고 연결을 끊었습니다."
+	case step == "pool":
+		tr.Kind, tr.Headline = "monitor", "감시기가 요청을 내보내지도 못하고 시간이 다 됐습니다. 이 서비스의 문제로 볼 근거가 없습니다."
 	case networkStep(step) && tr.Peers.Hosts >= 3 && tr.Peers.SameStep*3 >= tr.Peers.Hosts:
 		tr.Kind = "monitor_network"
 		tr.Headline = fmt.Sprintf("%s 감시 지점 쪽 네트워크 문제로 보입니다. 같은 시각 다른 서버들도 %s에서 막혔습니다.", where, what)
@@ -337,15 +402,18 @@ func (s *Server) buildTrace(ctx context.Context, t *config.Target, c probe.Resul
 	// the evidence, in the order a reader checks it
 	if step != "" {
 		ev := fmt.Sprintf("이 요청은 %s 단계에서 ", what)
-		if probe.StalledPhase(c.Reason) == step {
+		if stalledStep(c) == step {
 			ev += "시간 초과로 멈췄습니다."
+			if probe.StalledPhase(c.Reason) == "pool" && step != "pool" {
+				ev += " (이 기록의 사유 '연결 대기 중'은 2026-10-26 이전 감시기의 잘못된 표기이고, 측정값으로 보면 이 단계입니다.)"
+			}
 		} else if failedStep(c) == step {
 			ev += "실패했습니다: " + c.Reason
 		} else {
 			ev += "가장 오래 걸렸습니다."
 		}
 		if step == "pool" {
-			ev = "이 요청은 자기 연결을 맺기도 전에, 같은 서버로 다른 요청이 맺고 있던 연결을 기다리다 시간 초과됐습니다. 그 연결이 막혀 있었다는 뜻입니다."
+			ev = "이 요청은 DNS 조회나 연결을 시작하기도 전에 시간 초과됐습니다. 감시기 쪽에서 연결을 내주지 못한 경우입니다."
 		}
 		tr.Evidence = append(tr.Evidence, ev)
 	}
