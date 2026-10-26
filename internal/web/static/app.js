@@ -151,7 +151,8 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("problem
 function budgetCell(t) {
   const w = el("div", "budget"); const tr = el("div", "track"); const f = el("div", "fill");
   const v = t.availability < 0 ? null : t.budgetLeft;
-  f.style.width = (v == null ? 0 : Math.max(0, Math.min(1, v)) * 100) + "%";
+  // overspent: a full red bar, so the worst rows don't read as an empty track
+  f.style.width = (v == null ? 0 : v < 0 ? 100 : Math.min(1, v) * 100) + "%";
   f.style.background = v == null ? C.none : v >= 0.5 ? C.ok : v >= 0 ? C.deg : C.out;
   tr.append(f); w.append(tr, el("span", "n", budgetText(v)));
   w.title = `SLO ${pct(t.slo, 1)} 기준 남은 에러 버짓`;
