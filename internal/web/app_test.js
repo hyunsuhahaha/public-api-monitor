@@ -46,3 +46,29 @@ test("vendor HTTP 400 processing errors are attributed to the provider", () => {
   assert.match(result.detail, /KAKAO:-7/);
   assert.equal(locate([{ status: "client", http: 400, code: "KAKAO:-10" }]).who, "알 수 없음");
 });
+
+// 최근 확인 must render whatever trace.js does: renderLog once referenced a variable of
+// the function it was split from, and the table came up empty in production.
+test("renderLog draws every row and hands each to the trace card with its target", () => {
+  const node = (tag) => ({ tag, children: [], className: "", textContent: "", title: "", style: {}, dataset: {},
+    append(...xs) { this.children.push(...xs); }, prepend(x) { this.children.unshift(x); }, replaceChildren() { this.children = []; },
+    querySelector() { return null; }, classList: { add() {}, remove() {}, toggle() {} } });
+  const log = node("table"), attached = [];
+  const ctx = {
+    $: () => log, document: { createTextNode: (t) => ({ text: t }) },
+    el: (tag, cls, text) => Object.assign(node(tag), { className: cls || "", textContent: text ?? "" }),
+    kst: () => "10. 26. 09:00:00", ms: (v) => v + "ms", LABEL: { ok: "정상", down: "장애" }, PHASE_HELP: "",
+    phaseCell: () => node("td"), state: { target: "a", data: { targets: [{ id: "a", name: "A" }] } },
+    attachTrace: (tr, c, t) => attached.push([c.status, t && t.id]), console,
+  };
+  const renderLog = vm.runInNewContext(source.slice(source.indexOf("function renderLog("), source.indexOf("async function loadMoreChecks(")) + "\nrenderLog", ctx);
+  renderLog([{ at: "2026-10-26T00:00:00Z", status: "ok", latencyMs: 80 }, { at: "2026-10-26T00:05:00Z", status: "down", latencyMs: 5000, reason: "timeout: TLS 연결 중" }]);
+  assert.equal(log.children.length, 3, "header and two rows");
+  assert.deepEqual(attached, [["ok", "a"], ["down", "a"]]);
+  // a trace card that throws costs the card, never the table
+  ctx.attachTrace = () => { throw new Error("boom"); };
+  ctx.console = { error() {} };
+  const again = vm.runInNewContext(source.slice(source.indexOf("function renderLog("), source.indexOf("async function loadMoreChecks(")) + "\nrenderLog", ctx);
+  again([{ at: "2026-10-26T00:00:00Z", status: "ok", latencyMs: 80 }]);
+  assert.equal(log.children.length, 2);
+});

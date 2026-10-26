@@ -690,6 +690,7 @@ async function openDrawer(id) {
 
 function renderLog(list) {
   const log = $("d-log"); log.replaceChildren();
+  const target = (state.data.targets || []).find((x) => x.id === state.target);
   const hr = el("tr"); ["시각", "지역", "판정", "응답", "구간", "HTTP", "코드", "사유"].forEach((h) => { const th = el("th", "", h); if (h === "구간") th.title = PHASE_HELP; hr.append(th); }); log.append(hr);
   for (const c of list) {
     const tr = el("tr");
@@ -697,8 +698,9 @@ function renderLog(list) {
     const rs = el("td", "r", c.reason || ""); rs.title = c.reason || "";
     tr.append(el("td", "mono", kst(c.at, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })), el("td", "", c.location), st,
       el("td", "num", ms(c.latencyMs)), phaseCell(c), el("td", "num", c.http || "–"), el("td", "mono", c.code || ""), rs);
-    if (typeof attachTrace === "function") attachTrace(tr, c, t); // trace.js: hover replays the request
     log.append(tr);
+    // trace.js: hover replays the request. Extra, never a reason to lose the table.
+    if (typeof attachTrace === "function") { try { attachTrace(tr, c, target); } catch (e) { console.error("trace", e); } }
   }
 }
 
