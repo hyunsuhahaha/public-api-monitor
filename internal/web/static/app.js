@@ -699,9 +699,23 @@ function renderLog(list) {
     tr.append(el("td", "mono", kst(c.at, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })), el("td", "", c.location), st,
       el("td", "num", ms(c.latencyMs)), phaseCell(c), el("td", "num", c.http || "–"), el("td", "mono", c.code || ""), rs);
     log.append(tr);
+    tr.onmouseenter = () => markTime(c.at); tr.onmouseleave = () => markTime(null);
     // trace.js: hover replays the request. Extra, never a reason to lose the table.
     if (typeof attachTrace === "function") { try { attachTrace(tr, c, target); } catch (e) { console.error("trace", e); } }
   }
+}
+
+// the response-time chart's cursor on a check's time, so a row of 최근 확인 is seen where
+// it falls on the chart (null: off)
+function markTime(at) {
+  const u = plots[0]; if (!u) return;
+  if (at == null) { u.setCursor({ left: -10, top: -10 }); return; }
+  // the chart's points are bucket starts: a check belongs to the last one at or before it
+  const x = Date.parse(at) / 1000, ts = u.data[0];
+  let i = ts.length - 1;
+  while (i >= 0 && ts[i] > x) i--;
+  if (i < 0 || x - ts[i] > 2 * (ts[1] - ts[0] || 3600)) return; // before the chart, or past its end
+  u.setCursor({ left: u.valToPos(ts[i], "x"), top: u.bbox.height / devicePixelRatio / 2 });
 }
 
 async function loadMoreChecks(id) {
@@ -726,6 +740,9 @@ async function loadMoreChecks(id) {
 const PHASES = [["dnsMs", "DNS", "#b877d9", "도메인 주소를 IP로 찾기"], ["connectMs", "TCP 연결", "#5794f2", "서버에 접속"],
   ["tlsMs", "TLS", "#38b2ac", "보안 연결(HTTPS) 맺기"], ["waitMs", "서버 대기", "#ff9830", "요청을 보내고 첫 바이트까지: 서버의 처리 시간"]];
 const PHASE_REST = ["", "본문 받기", "#5d616b", "응답 본문을 다 받기까지 (그 밖의 시간 포함)"];
+// a timeout reason ("timeout: <where>") -> the step it was stuck in, as a PHASES row
+const TIMEOUT_STEP = { "DNS 조회 중": PHASES[0], "TCP 연결 중": PHASES[1], "TLS 연결 중": PHASES[2], "서버 응답 대기 중 (연결은 됨)": PHASES[3],
+  "본문 받는 중": PHASE_REST, "연결 대기 중": ["", "연결 대기", "#5794f2"], "요청 보내는 중": ["", "요청 보내기", "#5794f2"] };
 const PHASE_HELP = [...PHASES, PHASE_REST].map(([, n, , what]) => `${n}: ${what}`).join("\n") +
   "\n막대 전체가 응답 시간입니다. 조각에 마우스를 올리면 시간이 나옵니다.";
 
@@ -753,8 +770,13 @@ function phaseCell(c) {
     const v = p[k] || 0; if (!v) continue;
     used += v; parts.push(`${name} ${ms(v)}`); seg(v, name, color);
   }
+  // a timeout's unmeasured rest is the step it was stuck in (striped), not a body
   const rest = Math.max(0, total - used);
-  if (rest) { seg(rest, PHASE_REST[1], PHASE_REST[2]); parts.push(`${PHASE_REST[1]} ${ms(rest)}`); }
+  const stuck = TIMEOUT_STEP[(c.reason || "").replace(/^timeout: /, "")];
+  if (rest && stuck) {
+    const [, name, color] = stuck;
+    seg(rest, name + " (시간 초과)", color); bar.lastChild.classList.add("stalled"); parts.push(`${name}에서 멈춤 ${ms(rest)}`);
+  } else if (rest) { seg(rest, PHASE_REST[1], PHASE_REST[2]); parts.push(`${PHASE_REST[1]} ${ms(rest)}`); }
   td.title = parts.join(" · ") + (p.reused ? " (이전 연결을 다시 써서 DNS·TCP·TLS 없음)" : "");
   td.append(bar);
   return td;

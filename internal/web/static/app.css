@@ -120,7 +120,7 @@ canvas.strip { width: 180px; height: 14px; display: block; }
 #d-strips { width: 100%; display: block; }
 .log td, .log th { padding: 4px 6px; border-bottom: 1px solid var(--line2); font-size: 12px; white-space: nowrap; text-align: left; }
 .log th { color: var(--muted); font-weight: 500; }
-.log-wrap { max-height: 520px; overflow-y: auto; }
+.log-wrap { max-height: 300px; overflow-y: auto; } /* ~9 rows: on top of the drawer, the charts stay in view */
 .log-wrap .log tr:first-child th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 .more-btn { margin-top: 8px; width: 100%; padding: 6px; font: inherit; font-size: 12px; color: var(--blue); background: transparent; border: 1px solid var(--line2); border-radius: 4px; cursor: pointer; }
 .more-btn:hover { background: var(--panel2); } .more-btn:disabled { color: var(--muted); cursor: default; }
@@ -198,6 +198,7 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
   white-space: pre-wrap; word-break: break-word; max-height: 70vh; overflow: auto; color: var(--text); }
 .phase { display: flex; height: 8px; min-width: 4px; border-radius: 2px; overflow: hidden; background: var(--none); }
 .phase span { display: block; height: 100%; }
+.phase span.stalled { background-image: repeating-linear-gradient(135deg, rgba(0,0,0,.35) 0 3px, transparent 3px 6px); }
 .phase-legend { flex-wrap: wrap; gap: 4px 14px; margin: 0 0 8px; }
 .phase-legend i { margin-right: 4px; vertical-align: -1px; }
 .phase-legend .tc-cap { color: var(--muted); }
