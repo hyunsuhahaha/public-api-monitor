@@ -740,7 +740,7 @@ function phaseLegend(box) {
 }
 
 function phaseCell(c) {
-  const td = el("td"), bar = el("div", "phase");
+  const td = el("td", "ph"), bar = el("div", "phase"); // .ph: trace.js opens the trace card from here
   const p = c.phases, total = c.latencyMs || 0;
   if (!p || !total) { td.textContent = "–"; return td; }
   let used = 0;

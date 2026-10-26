@@ -259,8 +259,10 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); 
 .problems .pw { margin: 3px 0 0 66px; color: var(--muted); font-size: 12.5px; }
 
 /* ── trace card (trace.js): a hovered row of 최근 확인, replayed ─────────────────── */
-.log tr.traceable { cursor: pointer; }
-.log tr.traceable:hover td, .log tr.traced td { background: rgba(87,148,242,.06); }
+.log td.ph.traceable { cursor: pointer; }
+.log td.ph.traceable:hover { background: rgba(87,148,242,.12); }
+.log tr.traced td { background: rgba(87,148,242,.06); }
+.log tr.traced td.ph { background: rgba(87,148,242,.14); }
 .log tr.has-trace td:first-child { box-shadow: inset 2px 0 0 var(--out); }
 .tc-chip { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 3px; font-size: 10px; line-height: 16px;
   color: var(--blue); border: 1px solid rgba(87,148,242,.45); background: rgba(87,148,242,.08); white-space: nowrap; }

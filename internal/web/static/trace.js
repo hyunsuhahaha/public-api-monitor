@@ -1,10 +1,11 @@
 "use strict";
-// The trace card: hover a row of 최근 확인 and the request is replayed. A packet runs from
+// The trace card: hover the 구간 bar of a row of 최근 확인 and the request is replayed. A packet runs from
 // the probe through DNS, TCP, TLS and the server at the speed the request really went
 // (scaled to a few seconds), lights each step as it passes, stops and pulses where a
 // timeout stopped it, then the conclusion and its evidence come in: the other servers
 // checked at that moment as dots (red: stuck in the same step), the same provider's other
-// APIs, the other locations, the re-sent request. Click pins the card; Esc closes it.
+// APIs, the other locations, the re-sent request. Only the 구간 cell opens it; a click
+// pins it until a click elsewhere, Esc closes it.
 // Uses PHASES, PHASE_REST, el, ms, kst, LABEL and state from app.js.
 
 const TRACE_KIND = {
@@ -16,7 +17,7 @@ const TRACE_SHORT = { dnsMs: "DNS", connectMs: "TCP", tlsMs: "TLS", waitMs: "서
 const STEP_KEY = { dns: "dnsMs", connect: "connectMs", tls: "tlsMs", wait: "waitMs" };
 const reducedMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-let traceCard = null, traceTimer = 0, tracePinned = false, traceRow = null, traceAnim = 0;
+let traceCard = null, traceTimer = 0, tracePinned = false, traceRow = null, traceCell = null, traceAnim = 0;
 
 function locName(id) {
   for (const t of (state.data && state.data.targets) || []) for (const l of t.locations || []) if (l.location === id && l.name) return l.name;
@@ -165,14 +166,14 @@ function playTrace(t, c) {
   traceAnim = requestAnimationFrame(frame);
 }
 
-function placeTrace(card, row) {
-  const r = row.getBoundingClientRect(), w = Math.min(560, innerWidth - 24);
+function placeTrace(card, anchor) {
+  const r = anchor.getBoundingClientRect(), w = Math.min(560, innerWidth - 24);
   card.style.width = w + "px";
   if (innerWidth <= 700) return; // a bottom sheet on phones (app.css)
   const h = card.offsetHeight || 360;
   let top = r.bottom + 6;
   if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 6);
-  const left = Math.min(Math.max(12, r.left + 40), innerWidth - w - 12);
+  const left = Math.min(Math.max(12, r.left - 20), innerWidth - w - 12);
   card.style.top = top + "px"; card.style.left = left + "px";
 }
 
@@ -181,41 +182,61 @@ function hideTrace(force) {
   cancelAnimationFrame(traceAnim);
   if (traceCard) traceCard.remove();
   if (traceRow) traceRow.classList.remove("traced");
-  traceCard = null; traceRow = null; tracePinned = false;
+  traceCard = null; traceRow = null; traceCell = null; tracePinned = false;
 }
 
-function showTrace(row, c, target, pin) {
-  if (traceRow === row && traceCard) { if (pin) { tracePinned = true; traceCard.classList.add("pinned"); } return; }
+function pinTrace() { tracePinned = true; if (traceCard) traceCard.classList.add("pinned"); }
+
+function showTrace(row, cell, c, target, pin) {
+  if (traceCell === cell && traceCard) { if (pin) pinTrace(); return; }
   hideTrace(true);
   const t = buildTraceCard(c, target);
-  traceCard = t.card; traceRow = row; tracePinned = !!pin;
+  traceCard = t.card; traceRow = row; traceCell = cell;
   row.classList.add("traced");
-  if (pin) t.card.classList.add("pinned");
   document.body.append(t.card);
-  placeTrace(t.card, row);
+  placeTrace(t.card, cell);
+  if (pin) pinTrace();
   t.replay.onclick = (e) => { e.stopPropagation(); playTrace(t, c); };
   t.close.onclick = (e) => { e.stopPropagation(); hideTrace(true); };
+  // moving from the bar onto the card keeps it: it can be read, replayed, pinned
   t.card.onmouseenter = () => clearTimeout(traceTimer);
   t.card.onmouseleave = () => { traceTimer = setTimeout(() => hideTrace(false), 200); };
-  t.card.onclick = () => { tracePinned = true; t.card.classList.add("pinned"); };
+  t.card.onclick = pinTrace;
   playTrace(t, c);
 }
 
-// app.js calls this for every row of 최근 확인
+// app.js calls this for every row of 최근 확인. Only the 구간 cell (the bar) opens the
+// card: hovering shows it while the pointer is on the bar or the card, a click pins it
+// until a click anywhere else.
 function attachTrace(row, c, target) {
-  row.classList.add("traceable");
+  const cell = row.querySelector("td.ph");
   if (c.trace) {
     row.classList.add("has-trace");
     const why = row.querySelector("td.r");
     if (why) { const chip = el("span", "tc-chip", "원인 추정"); why.prepend(chip); why.title = c.trace.headline + "\n" + (c.reason || ""); }
   }
-  row.onmouseenter = () => { if (tracePinned) return; clearTimeout(traceTimer); traceTimer = setTimeout(() => showTrace(row, c, target, false), 140); };
-  row.onmouseleave = () => { clearTimeout(traceTimer); traceTimer = setTimeout(() => hideTrace(false), 200); };
-  row.onclick = () => showTrace(row, c, target, true);
+  if (!cell) return;
+  cell.classList.add("traceable");
+  // the card says all the bar's tooltips did; they would only pop up over it
+  cell.removeAttribute("title");
+  for (const x of cell.querySelectorAll("[title]")) x.removeAttribute("title");
+  cell.onmouseenter = () => { if (tracePinned) return; clearTimeout(traceTimer); traceTimer = setTimeout(() => showTrace(row, cell, c, target, false), 120); };
+  cell.onmouseleave = () => { clearTimeout(traceTimer); traceTimer = setTimeout(() => hideTrace(false), 200); };
+  cell.onclick = () => { clearTimeout(traceTimer); showTrace(row, cell, c, target, true); };
 }
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && traceCard) hideTrace(true); });
+// Esc closes the card first; the next Esc closes the drawer (capture: before ops.js)
+addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && traceCard) { hideTrace(true); e.stopImmediatePropagation(); e.preventDefault(); }
+}, true);
+// a pinned card stays until a click anywhere but the card and its own bar
 document.addEventListener("click", (e) => {
-  if (traceCard && tracePinned && !traceCard.contains(e.target) && !(traceRow && traceRow.contains(e.target))) hideTrace(true);
+  if (traceCard && tracePinned && !traceCard.contains(e.target) && !(traceCell && traceCell.contains(e.target))) hideTrace(true);
 });
-addEventListener("scroll", () => { if (!traceCard) return; if (tracePinned) placeTrace(traceCard, traceRow); else hideTrace(true); }, true);
+// a pinned card follows its bar; if the table was redrawn (every refresh) the bar is gone
+// and the card stays where it is
+addEventListener("scroll", () => {
+  if (!traceCard) return;
+  if (!tracePinned) hideTrace(true);
+  else if (traceCell && traceCell.isConnected) placeTrace(traceCard, traceCell);
+}, true);
