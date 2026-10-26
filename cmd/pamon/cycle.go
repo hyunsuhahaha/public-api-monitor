@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -119,6 +120,18 @@ func recordHistory(ctx context.Context, log *slog.Logger, st *store.Store, hist 
 		n++
 	}
 	log.Info("official incidents read", "providers", n)
+}
+
+// removeOldVersions deletes earlier builds' hashed copies of an asset (app.<8 hex>.css)
+// other than keep, so the export directory does not collect one per build.
+func removeOldVersions(dir, f, keep string) {
+	ext := path.Ext(f)
+	old, _ := filepath.Glob(filepath.Join(dir, filepath.FromSlash(strings.TrimSuffix(f, ext)+".????????"+ext)))
+	for _, o := range old {
+		if filepath.ToSlash(o) != filepath.ToSlash(filepath.Join(dir, filepath.FromSlash(keep))) {
+			os.Remove(o)
+		}
+	}
 }
 
 // embedFiles: each target's badges and widget.
@@ -292,9 +305,11 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 		}
 		return put(name, []byte(decorate(s, name)))
 	}
-	// Stylesheets and scripts first: pages ask for them as app.css?v=<content hash>, so a
-	// browser never keeps an old app.css next to a new page (the static host sends no
-	// cache rules, and browsers guessed hours for files that rarely change).
+	// Stylesheets and scripts first: pages ask for them by a name carrying their content
+	// hash (app.3fa2b1c4.css), so a new build is a new address. A query (?v=) is not
+	// enough: the Cloudflare gateway passes no query but ?m= to the origin, and Cloudflare
+	// kept serving the old app.css from its cache for hours (a header fix that never
+	// showed). The plain names are written too, for anything that links them directly.
 	assets := map[string][]byte{}
 	var bust []string
 	for _, f := range []string{"app.css", "app.js", "ops.js", "trace.js", "status.js", "report.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
@@ -306,10 +321,16 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 			b = []byte(linkFixes.Replace(string(b)))
 		}
 		assets[f] = b
+		ext := path.Ext(f)
+		if ext != ".css" && ext != ".js" {
+			continue
+		}
 		sum := sha256.Sum256(b)
-		v := hex.EncodeToString(sum[:4])
+		named := strings.TrimSuffix(f, ext) + "." + hex.EncodeToString(sum[:4]) + ext
+		assets[named] = b
+		removeOldVersions(dir, f, named)
 		for _, attr := range []string{`src="`, `href="`, `src="../`, `href="../`} {
-			bust = append(bust, attr+f+`"`, attr+f+"?v="+v+`"`)
+			bust = append(bust, attr+f+`"`, attr+named+`"`)
 		}
 	}
 	versioned = strings.NewReplacer(bust...)

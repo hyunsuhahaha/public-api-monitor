@@ -174,12 +174,17 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	}
 	// stylesheets and scripts carry a content version, so browsers never mix old and new
 	idx, _ := os.ReadFile(filepath.Join(site, "index.html"))
-	if !regexp.MustCompile(`href="app\.css\?v=[0-9a-f]{8}"`).Match(idx) || !regexp.MustCompile(`src="app\.js\?v=[0-9a-f]{8}"`).Match(idx) {
+	if !regexp.MustCompile(`href="app\.[0-9a-f]{8}\.css"`).Match(idx) || !regexp.MustCompile(`src="app\.[0-9a-f]{8}\.js"`).Match(idx) {
 		t.Errorf("index.html assets not versioned")
 	}
 	ans, _ := os.ReadFile(filepath.Join(site, "s", maps[0].ID+".html"))
-	if !regexp.MustCompile(`src="\.\./report\.js\?v=[0-9a-f]{8}"`).Match(ans) {
+	if !regexp.MustCompile(`src="\.\./report\.[0-9a-f]{8}\.js"`).Match(ans) {
 		t.Errorf("answer page script not versioned")
+	}
+	if css := regexp.MustCompile(`app\.[0-9a-f]{8}\.css`).Find(idx); css == nil {
+		t.Error("no hashed stylesheet")
+	} else if _, err := os.Stat(filepath.Join(site, string(css))); err != nil {
+		t.Errorf("index.html links %s, not exported", css)
 	}
 	for _, page := range []string{"lead-time.html", "maintenance.html", "retry-advice.html"} {
 		if !strings.Contains(string(sm), "<loc>https://pamon.test/"+page+"</loc>") {
@@ -361,6 +366,21 @@ targets:
 		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusNotFound {
 			t.Errorf("%s served by the ingest process: %d", path, w.Code)
+		}
+	}
+}
+
+func TestRemoveOldVersions(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "vendor"), 0o755)
+	for _, f := range []string{"app.css", "app.11111111.css", "app.22222222.css", "app.11111111.js", "vendor/uPlot.min.33333333.css"} {
+		os.WriteFile(filepath.Join(dir, filepath.FromSlash(f)), nil, 0o644)
+	}
+	removeOldVersions(dir, "app.css", "app.22222222.css")
+	removeOldVersions(dir, "vendor/uPlot.min.css", "vendor/uPlot.min.44444444.css")
+	for f, want := range map[string]bool{"app.css": true, "app.11111111.css": false, "app.22222222.css": true, "app.11111111.js": true, "vendor/uPlot.min.33333333.css": false} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f))); (err == nil) != want {
+			t.Errorf("%s: exists=%v, want %v", f, err == nil, want)
 		}
 	}
 }
