@@ -206,7 +206,7 @@ func (s *Server) seriesRollup(ctx context.Context, w http.ResponseWriter, id, na
 		"target": id, "range": name, "stepSec": int64(step.Seconds()), "estimated": true, "slo": s.slo(id),
 		"slowAfterMs": slowAfter, "slowLimitMs": limit, "usualMs": usual, "followUp": s.followUp(id),
 		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states, "counted": counted, "bad": bad,
-		"byLocation": byLoc, "locationStates": locStates, "recent": recentChecks(recent),
+		"byLocation": byLoc, "locationStates": locStates, "recent": s.tracedChecks(ctx, id, recent),
 	})
 }
 

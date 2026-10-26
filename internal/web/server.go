@@ -50,6 +50,7 @@ type Server struct {
 	Official map[string]official.Status
 
 	cache      respCache
+	around     aroundCache // checks around a moment, for traces (trace.go)
 	lead       leadCache
 	acc        accuracyCache
 	mu         sync.Mutex

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net/http/httptrace"
+	"strings"
 	"sync"
 	"time"
 )
@@ -85,13 +86,20 @@ var stalledText = map[string]string{
 
 // StalledPhase is the phase code in a timeout reason ("timeout: <text>"), or "".
 func StalledPhase(reason string) string {
-	for code, text := range stalledText {
-		if reason == "timeout: "+text {
-			return code
-		}
+	text, ok := strings.CutPrefix(reason, "timeout: ")
+	if !ok {
+		return ""
 	}
-	return ""
+	return stalledCode[text]
 }
+
+var stalledCode = func() map[string]string {
+	m := map[string]string{}
+	for code, text := range stalledText {
+		m[text] = code
+	}
+	return m
+}()
 
 // stalled names the phase a request that ran out of time was stuck in.
 func (c *phaseClock) stalled() string {

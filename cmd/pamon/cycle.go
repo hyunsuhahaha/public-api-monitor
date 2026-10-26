@@ -297,7 +297,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 	// cache rules, and browsers guessed hours for files that rarely change).
 	assets := map[string][]byte{}
 	var bust []string
-	for _, f := range []string{"app.css", "app.js", "ops.js", "status.js", "report.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
+	for _, f := range []string{"app.css", "app.js", "ops.js", "trace.js", "status.js", "report.js", "vendor/uPlot.min.css", "vendor/uPlot.iife.min.js", "vendor/uPlot.LICENSE"} {
 		b, err := get("/" + f)
 		if err != nil {
 			return spent, err

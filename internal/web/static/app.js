@@ -697,6 +697,7 @@ function renderLog(list) {
     const rs = el("td", "r", c.reason || ""); rs.title = c.reason || "";
     tr.append(el("td", "mono", kst(c.at, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })), el("td", "", c.location), st,
       el("td", "num", ms(c.latencyMs)), phaseCell(c), el("td", "num", c.http || "–"), el("td", "mono", c.code || ""), rs);
+    if (typeof attachTrace === "function") attachTrace(tr, c, t); // trace.js: hover replays the request
     log.append(tr);
   }
 }
@@ -733,7 +734,7 @@ function phaseLegend(box) {
     const item = el("span", "", name), chip = el("i");
     chip.style.background = color; item.prepend(chip); item.title = what; box.append(item);
   }
-  box.append(el("span", "sub", "· 막대 = 응답 시간 전체, 조각에 마우스를 올리면 단계별 시간"));
+  box.append(el("span", "tc-cap", "· 막대 = 응답 시간 전체, 조각에 마우스를 올리면 단계별 시간"));
 }
 
 function phaseCell(c) {

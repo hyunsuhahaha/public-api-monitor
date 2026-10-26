@@ -208,12 +208,44 @@ type checkView struct {
 	Code      string        `json:"code,omitempty"`
 	Reason    string        `json:"reason,omitempty"`
 	Phases    *probe.Phases `json:"phases,omitempty"`
+	Trace     *CheckTrace   `json:"trace,omitempty"` // why it failed or was slow (trace.go)
+	// LocationName: the location as readers see it (미국 서부), for the trace card
+	LocationName string `json:"locationName,omitempty"`
+}
+
+// tracedChecks: recentChecks with a trace on the failing and slow ones (the most recent
+// maxTraces of them: each looks at every other target's checks of that moment).
+func (s *Server) tracedChecks(ctx context.Context, id string, rs []probe.Result) []checkView {
+	out := recentChecks(rs)
+	for i := range out {
+		out[i].LocationName = s.Cfg.LocationName(out[i].Location)
+	}
+	t := s.target(id)
+	if t == nil {
+		return out
+	}
+	const maxTraces = 15
+	var followUps []probe.FollowUp
+	if len(rs) > 0 {
+		followUps, _ = s.Store.FollowUps(ctx, id, rs[len(rs)-1].At.Add(-time.Minute))
+	}
+	n := 0
+	for i, x := range rs {
+		if n == maxTraces {
+			break
+		}
+		if tr := s.traceCheck(ctx, t, x, followUps); tr != nil {
+			out[i].Trace = tr
+			n++
+		}
+	}
+	return out
 }
 
 func recentChecks(rs []probe.Result) []checkView {
 	out := make([]checkView, 0, len(rs))
 	for _, x := range rs {
-		v := checkView{x.At, x.Location, string(x.Status), x.LatencyMS, x.HTTPStatus, x.Code, x.Reason, nil}
+		v := checkView{x.At, x.Location, string(x.Status), x.LatencyMS, x.HTTPStatus, x.Code, x.Reason, nil, nil, ""}
 		if x.Phases != (probe.Phases{}) {
 			ph := x.Phases
 			v.Phases = &ph
@@ -428,7 +460,7 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 		"target": id, "range": name, "stepSec": int64(step.Seconds()), "slo": s.slo(id),
 		"slowAfterMs": slowAfter, "slowLimitMs": limit, "usualMs": usual, "followUp": s.followUp(id),
 		"t": ts, "p50": p50, "p95": p95, "max": mx, "states": states, "counted": counted, "bad": bad,
-		"byLocation": byLoc, "locationStates": fails, "recent": recentChecks(recent),
+		"byLocation": byLoc, "locationStates": fails, "recent": s.tracedChecks(ctx, id, recent),
 	})
 }
 

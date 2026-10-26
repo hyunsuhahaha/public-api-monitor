@@ -715,6 +715,32 @@ func (s *Store) ChecksBetween(ctx context.Context, target string, from, to time.
 	return out, rows.Err()
 }
 
+// ChecksAround: every target's checks from every location in [from, to], for what else
+// went wrong at the moment one check failed (checks_at index).
+func (s *Store) ChecksAround(ctx context.Context, from, to time.Time) ([]probe.Result, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused FROM checks
+		WHERE at>=? AND at<=? LIMIT 10000`, ms(from), ms(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []probe.Result
+	for rows.Next() {
+		var r probe.Result
+		var at int64
+		var status string
+		ph := &r.Phases
+		if err := rows.Scan(&r.TargetID, &r.Location, &at, &status, &r.LatencyMS, &r.HTTPStatus, &r.Code, &r.Reason,
+			&ph.DNSMs, &ph.ConnectMs, &ph.TLSMs, &ph.WaitMs, &ph.Reused); err != nil {
+			return nil, err
+		}
+		r.At, r.Status = fromMS(at), probe.Status(status)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // VerdictsBetween: a target's verdicts in [from, to], oldest first.
 func (s *Store) VerdictsBetween(ctx context.Context, target string, from, to time.Time, limit int) ([]Verdict, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT target, at, status, reason, voters FROM verdicts
