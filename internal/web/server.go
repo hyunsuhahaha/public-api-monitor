@@ -82,6 +82,8 @@ func (s *Server) Handler() http.Handler {
 	// answer pages: "is X down?" in plain words (answer.go)
 	mux.HandleFunc("GET /s/{$}", s.answer)
 	mux.HandleFunc("GET /s/{id}", s.answer)
+	mux.HandleFunc("GET /i/{$}", s.incidentPage) // dated outage pages (incident_page.go)
+	mux.HandleFunc("GET /i/{slug}", s.incidentPage)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("POST /api/v1/ingest", s.ingest)
 	mux.HandleFunc("GET /api/v1/overview", s.cache.wrap(s.overview))

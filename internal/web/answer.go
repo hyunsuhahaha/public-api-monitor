@@ -254,7 +254,7 @@ func compareOfficial(st official.Status, ours string) *officialView {
 
 type dayCell struct{ Date, Tone, Title string }
 
-type incidentRow struct{ Start, Duration, Status, Reason string }
+type incidentRow struct{ Start, Duration, Status, Reason, Href string }
 
 type answerCategory struct {
 	Name     string
@@ -366,7 +366,7 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 	list, _ := s.Store.Incidents(ctx, id, now.Add(-30*24*time.Hour), 10)
 	for _, in := range list {
 		p.Incidents = append(p.Incidents, incidentRow{Start: kst(in.Started), Duration: incidentLength(in, now),
-			Status: map[bool]string{true: "장애", false: "저하"}[in.Severity >= 2], Reason: plainReason(in.Reason)})
+			Status: map[bool]string{true: "장애", false: "저하"}[in.Severity >= 2], Reason: plainReason(in.Reason), Href: incidentHref(in, now)})
 	}
 	return p, nil
 }
@@ -567,8 +567,9 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 
 <h2>최근 장애 (30일)</h2>
 {{if .Incidents}}<table><tr><th>시작 (KST)</th><th>길이</th><th>내용</th></tr>
-{{range .Incidents}}<tr><td>{{.Start}}</td><td>{{.Duration}}</td><td><b>{{.Status}}</b> {{.Reason}}</td></tr>{{end}}</table>
+{{range .Incidents}}<tr><td>{{if .Href}}<a href="{{.Href}}">{{.Start}}</a>{{else}}{{.Start}}{{end}}</td><td>{{.Duration}}</td><td><b>{{.Status}}</b> {{.Reason}}</td></tr>{{end}}</table>
 {{else}}<p>지난 30일 동안 기록된 장애가 없습니다.</p>{{end}}
+<p class="sub"><a href="../i/">모든 서비스의 최근 장애 기록</a></p>
 {{template "more" .More}}
 
 <h2>이 API에 의존한다면: {{.Advice.Title}}</h2>
@@ -597,6 +598,6 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 {{range .Categories}}<section class="cat"><h2>{{.Name}}</h2>
 {{range .Services}}<div class="svc"><a href="{{.ID}}.html">{{.Name}} <span class="sub">{{.Provider}}</span></a><span class="h {{.Tone}}">{{.Headline}}<span class="sub" data-report="{{.ID}}" hidden></span></span></div>{{end}}
 </section>{{end}}
-<footer><a href="../">운영자 대시보드</a> · <a href="../status.html">공개 상태 요약</a> · <a href="../lead-time.html">공식 발표보다 얼마나 빨랐나</a> · <a href="../llms.txt">AI용 안내</a></footer>
+<footer><a href="../i/">최근 장애 기록</a> · <a href="../">운영자 대시보드</a> · <a href="../status.html">공개 상태 요약</a> · <a href="../lead-time.html">공식 발표보다 얼마나 빨랐나</a> · <a href="../llms.txt">AI용 안내</a></footer>
 </main><script src="../report.js"></script></body></html>{{end}}
 `))

@@ -236,6 +236,37 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 			t.Errorf("sitemap lacks the Markdown twins")
 		}
 	}
+	// an outage after this export: its dated page is written, listed, put in the sitemap
+	// and announced to IndexNow once, not on every later export
+	var announced [][]string
+	defer func(orig func(string, []string)) { announce = orig }(announce)
+	announce = func(base string, paths []string) { announced = append(announced, paths) }
+	st, err := store.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := &incident.Incident{TargetID: maps[0].ID, Started: time.Now().Add(-time.Hour), Ended: time.Now().Add(-30 * time.Minute), Severity: 2, Status: probe.StatusDown, Reason: "http 503"}
+	if err := st.SaveIncident(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	web2 := &web.Server{Cfg: cfg, Store: st, LastCheck: time.Now, PublicURL: "https://pamon.test"}
+	for range 2 {
+		if _, err := exportSite(web2.Handler(), cfg, site); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st.Close()
+	name := "i/" + web.IncidentSlug(in)
+	if b, err := os.ReadFile(filepath.Join(site, name)); err != nil || !strings.Contains(string(b), maps[0].Name+" 장애") {
+		t.Errorf("%s: %v", name, err)
+	}
+	sm, _ = os.ReadFile(filepath.Join(site, "sitemap.xml"))
+	if !strings.Contains(string(sm), "<loc>https://pamon.test/"+name+"</loc>") || !strings.Contains(string(sm), "<loc>https://pamon.test/i/</loc>") {
+		t.Errorf("sitemap lacks the incident pages")
+	}
+	if len(announced) != 1 || len(announced[0]) != 1 || announced[0][0] != name {
+		t.Errorf("announced %v, want [[%s]] once", announced, name)
+	}
 	if err := filepath.WalkDir(site, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err

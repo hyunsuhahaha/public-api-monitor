@@ -14,6 +14,8 @@
 
 - [Per-service answers](s/index.html): one page per service (s/{id}.html) with a plain-language verdict in Korean, a visible update time (갱신 시각), where the last request spent its time, the provider's own status announcement and recent incidents. Each has a Markdown twin (s/{id}.md, [s/index.md](s/index.md)) with the same facts and schema.org JSON-LD in its head.
 
+- [Outage history](i/index.html): one dated page per real outage in the last 90 days (i/{date}-{id}-{n}.html): when it started and ended in KST, how long, which step failed, which locations saw it, what the provider's status page said and when, and which other services failed at the same time. Use these for "was X down on <date>?" questions.
+
 ## More
 
 - [Agent guide](ai/index.html): interpretation, freshness, scope and citation rules.

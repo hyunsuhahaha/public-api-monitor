@@ -200,6 +200,8 @@ var (
 	unsafeChars  = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 )
 
+var incidentLink = regexp.MustCompile(`href="(\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*-\d+\.html)"`)
+
 // dataFile is where a GET of u is stored; the fetch shim in the pages maps the same way.
 func dataFile(u string) string {
 	p, q, _ := strings.Cut(strings.TrimPrefix(u, "/"), "?")
@@ -406,6 +408,28 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 			return spent, err
 		}
 		indexed = append(indexed, "s/"+id+".md")
+	}
+	// dated outage pages, the ones that match "2026년 10월 27일 카카오 로그인 장애"; the
+	// listing names them. New ones are announced to IndexNow at once (indexnow.go).
+	var fresh []string
+	if b, err := get("/i/"); err == nil {
+		if err := page("/i/", "i/index.html"); err != nil {
+			return spent, err
+		}
+		indexed = append(indexed, "i/index.html")
+		for _, m := range incidentLink.FindAllStringSubmatch(string(b), -1) {
+			name := "i/" + m[1]
+			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name))); err != nil {
+				fresh = append(fresh, name)
+			}
+			if err := page("/"+name, name); err != nil {
+				return spent, err
+			}
+			indexed = append(indexed, name)
+		}
+	}
+	if base := siteURL(); base != "" && len(fresh) > 0 {
+		announce(base, fresh)
 	}
 	if err := page("/lead-time", "lead-time.html"); err != nil {
 		return spent, err
