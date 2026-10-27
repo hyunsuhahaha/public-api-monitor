@@ -143,6 +143,14 @@ func embedFiles(cfg *config.Config) []string {
 	return out
 }
 
+func targetIDs(cfg *config.Config) []string {
+	ids := make([]string, len(cfg.Targets))
+	for i, t := range cfg.Targets {
+		ids[i] = t.ID
+	}
+	return ids
+}
+
 // exportKind groups an exported URL for the timing log: the path, plus the range for series.
 func exportKind(u string) string {
 	p, q, _ := strings.Cut(u, "?")
@@ -387,6 +395,17 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 			return spent, err
 		}
 		indexed = append(indexed, "s/"+t.ID+".html")
+	}
+	// their Markdown twins, for assistants that read text (linked rel=alternate)
+	for _, id := range append([]string{"index"}, targetIDs(cfg)...) {
+		b, err := get("/s/" + id + ".md")
+		if err != nil {
+			return spent, err
+		}
+		if err := put("s/"+id+".md", b); err != nil {
+			return spent, err
+		}
+		indexed = append(indexed, "s/"+id+".md")
 	}
 	if err := page("/lead-time", "lead-time.html"); err != nil {
 		return spent, err

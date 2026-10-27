@@ -139,6 +139,10 @@ type answerPage struct {
 	Locations  []locationRow // by location, when more than one checks the service
 	LocNote    string        // how the verdict comes from them
 	Where      string        // who checks: 미국 서부·한국 서울
+	// for machines (answer_md.go): absolute site address, generation time, check interval
+	Site        string
+	GeneratedAt time.Time
+	interval    time.Duration
 }
 
 // locationRow is one location's latest check of the service, in the reader's terms.
@@ -276,7 +280,8 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 		return nil, err
 	}
 	now := time.Now()
-	p := &answerPage{Base: strings.TrimSuffix(s.PublicURL, "/"), Generated: kst(v.GeneratedAt), Every: koDuration(s.Cfg.Interval.Duration)}
+	p := &answerPage{Base: strings.TrimSuffix(s.PublicURL, "/"), Generated: kst(v.GeneratedAt), Every: koDuration(s.Cfg.Interval.Duration),
+		Site: s.siteBase(), GeneratedAt: v.GeneratedAt}
 	if id == "" {
 		byCat := map[string][]answerItem{}
 		for _, t := range v.Targets {
@@ -320,6 +325,9 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 		return nil, nil
 	}
 	p.V = Explain(p.T.Status, p.T.Reason, p.T.CheckedAt, now, s.Cfg.Interval.Duration)
+	if t := s.target(id); t != nil {
+		p.interval = t.Interval.Duration
+	}
 	p.Advice = AdviceFor(p.T.Category)
 	s.locationRows(ctx, p, now)
 	if st, ok := s.Official[p.T.Provider]; ok {
@@ -456,6 +464,10 @@ func incidentLength(in *incident.Incident, now time.Time) string {
 }
 
 func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
+	if md, ok := strings.CutSuffix(r.PathValue("id"), ".md"); ok {
+		s.answerMarkdown(w, r, md)
+		return
+	}
 	id := strings.TrimSuffix(r.PathValue("id"), ".html")
 	if id == "index" {
 		id = ""
@@ -511,6 +523,8 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 <title>{{.T.Name}} 지금 되나요? 장애·접속 상태 | pamon</title>
 <meta name="description" content="{{.T.Name}}({{.T.Provider}}) 지금 상태: {{.V.Headline}}. {{.V.Detail}} 5분마다 외부에서 직접 확인한 기록입니다.">
 <link rel="alternate" type="application/atom+xml" title="{{.T.Name}} 장애·변경 알림" href="../feed/{{.T.ID}}.xml">
+<link rel="alternate" type="text/markdown" title="{{.T.Name}} 상태 (Markdown)" href="{{.T.ID}}.md">
+<script type="application/ld+json">{{.LD}}</script>
 </head><body><main>
 <nav><a href="index.html">서비스별 상태</a> › {{.T.Category}}</nav>
 <h1>{{.T.Name}} 지금 되나요?</h1>
@@ -519,7 +533,7 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 <section class="verdict {{.V.Tone}}">
   <b class="h">{{.V.Headline}}</b>
   <p>{{.V.Detail}}</p>
-  <p class="sub">마지막 확인: {{if .Checked}}{{.Checked}} (KST){{else}}없음{{end}} · {{.Every}}마다 확인</p>
+  <p class="sub">마지막 확인: {{if .Checked}}{{.Checked}} (KST){{else}}없음{{end}} · {{.Every}}마다 확인 · 갱신 시각 <time datetime="{{.GeneratedAt.UTC.Format "2006-01-02T15:04:05Z"}}">{{.Generated}}</time> (KST)</p>
 </section>
 
 <section class="you"><b>나만 안 되나요?</b><p style="margin:6px 0 0">{{.V.YourSide}}</p></section>
@@ -570,9 +584,11 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
 {{define "index"}}{{template "head" .}}
 <title>지금 안 되는 서비스가 있나요? 서비스별 장애·접속 상태 | pamon</title>
 <meta name="description" content="카카오·네이버 로그인, 홈택스, 정부24, 은행, AWS·네이버클라우드, Slack·Discord, 공공 API가 지금 되는지 5분마다 외부에서 확인한 기록입니다.">
+<link rel="alternate" type="text/markdown" title="서비스별 상태 (Markdown)" href="index.md">
+<script type="application/ld+json">{{.LD}}</script>
 </head><body><main>
 <h1>지금 안 되는 서비스가 있나요?</h1>
-<p class="sub">{{.Every}}마다 외부에서 직접 확인한 결과입니다. 데이터 생성 {{.Generated}} (KST) · 공식 발표가 아닙니다.</p>
+<p class="sub">{{.Every}}마다 외부에서 직접 확인한 결과입니다. 갱신 시각 <time datetime="{{.GeneratedAt.UTC.Format "2006-01-02T15:04:05Z"}}">{{.Generated}}</time> (KST) · 공식 발표가 아닙니다.</p>
 <section class="verdict {{if .Problems}}bad{{else}}ok{{end}}">
 {{if .Problems}}<b class="h">지금 문제가 보이는 곳 {{len .Problems}}개</b>
 {{range .Problems}}<div class="svc"><a href="{{.ID}}.html">{{.Name}} <span class="sub">{{.Provider}}</span></a><span class="h {{.Tone}}">{{.Headline}}</span></div>{{end}}

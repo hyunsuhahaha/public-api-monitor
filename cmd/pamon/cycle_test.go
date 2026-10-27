@@ -229,6 +229,12 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 		if !strings.Contains(string(sm), "<loc>https://pamon.test/s/"+target.ID+".html</loc>") {
 			t.Errorf("sitemap lacks s/%s.html", target.ID)
 		}
+		if md, err := os.ReadFile(filepath.Join(site, "s", target.ID+".md")); err != nil || !strings.HasPrefix(string(md), "# "+target.Name+" 지금 되나요?") {
+			t.Errorf("s/%s.md: %v %.60q", target.ID, err, md)
+		}
+		if !strings.Contains(string(sm), "<loc>https://pamon.test/s/"+target.ID+".md</loc>") || !strings.Contains(string(sm), "<loc>https://pamon.test/s/index.md</loc>") {
+			t.Errorf("sitemap lacks the Markdown twins")
+		}
 	}
 	if err := filepath.WalkDir(site, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
