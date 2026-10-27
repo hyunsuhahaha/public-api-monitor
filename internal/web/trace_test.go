@@ -112,3 +112,11 @@ targets:
 		t.Error("an ok check needs no trace")
 	}
 }
+
+// A followed redirect that took most of the time is its own step, not "본문 받기".
+func TestStepOfRedirect(t *testing.T) {
+	c := probe.Result{Status: probe.StatusOK, LatencyMS: 1000, Phases: probe.Phases{RedirectMs: 700, DNSMs: 10, ConnectMs: 40, TLSMs: 50, WaitMs: 150}}
+	if got := stepOf(c); got != "redirect" {
+		t.Fatalf("step %q, want redirect", got)
+	}
+}

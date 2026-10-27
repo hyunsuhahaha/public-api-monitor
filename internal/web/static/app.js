@@ -738,11 +738,11 @@ async function loadMoreChecks(id) {
 // where one request's time went: DNS, connect, TLS, server wait, then the body, as shares
 // of that request (its total is in the column before)
 // [field, name, color, what it is]; the last row is what is left of the total
-const PHASES = [["dnsMs", "DNS", "#b877d9", "도메인 주소를 IP로 찾기"], ["connectMs", "TCP 연결", "#5794f2", "서버에 접속"],
+const PHASES = [["redirectMs", "리다이렉트", "#e05c8a", "서버가 다른 주소로 보내서 다시 요청하기까지"], ["dnsMs", "DNS", "#b877d9", "도메인 주소를 IP로 찾기"], ["connectMs", "TCP 연결", "#5794f2", "서버에 접속"],
   ["tlsMs", "TLS", "#38b2ac", "보안 연결(HTTPS) 맺기"], ["waitMs", "서버 대기", "#ff9830", "요청을 보내고 첫 바이트까지: 서버의 처리 시간"]];
 const PHASE_REST = ["", "본문 받기", "#5d616b", "응답 본문을 다 받기까지 (그 밖의 시간 포함)"];
 // a timeout reason ("timeout: <where>") -> the step it was stuck in, as a PHASES row
-const TIMEOUT_STEP = { "DNS 조회 중": PHASES[0], "TCP 연결 중": PHASES[1], "TLS 연결 중": PHASES[2], "서버 응답 대기 중 (연결은 됨)": PHASES[3],
+const TIMEOUT_STEP = { "DNS 조회 중": PHASES[1], "TCP 연결 중": PHASES[2], "TLS 연결 중": PHASES[3], "서버 응답 대기 중 (연결은 됨)": PHASES[4],
   "본문 받는 중": PHASE_REST, "연결 대기 중": ["", "연결 대기", "#5794f2"], "요청 보내는 중": ["", "요청 보내기", "#5794f2"] };
 const PHASE_HELP = [...PHASES, PHASE_REST].map(([, n, , what]) => `${n}: ${what}`).join("\n") +
   "\n막대 전체가 응답 시간입니다. 조각에 마우스를 올리면 시간이 나옵니다.";

@@ -61,7 +61,7 @@ func tryTarget(cfg *config.Config, arg string, samples int, specPath string, w i
 		}
 		last = p.Check(context.Background(), t)
 		ph := last.Phases
-		fmt.Fprintf(w, "#%d %-6s HTTP %d  %dms (DNS %d · TCP %d · TLS %d · 서버 대기 %d)", i+1, last.Status, last.HTTPStatus, last.LatencyMS, ph.DNSMs, ph.ConnectMs, ph.TLSMs, ph.WaitMs)
+		fmt.Fprintf(w, "#%d %-6s HTTP %d  %dms (리다이렉트 %d · DNS %d · TCP %d · TLS %d · 서버 대기 %d)", i+1, last.Status, last.HTTPStatus, last.LatencyMS, ph.RedirectMs, ph.DNSMs, ph.ConnectMs, ph.TLSMs, ph.WaitMs)
 		if last.Reason != "" {
 			fmt.Fprintf(w, "  %s", last.Reason)
 		}

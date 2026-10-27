@@ -14,12 +14,15 @@ import (
 // A timeout says little by itself; "timed out waiting for the first byte, connected in
 // 30 ms" points at the provider's server, "timed out connecting" at the network.
 // Milliseconds; 0 for a phase that did not happen (a reused connection skips the first three).
+// A redirect the probe followed (same host, up to 3) is RedirectMs: every earlier request,
+// whole. The other phases are the last request's, the one whose answer was judged.
 type Phases struct {
-	DNSMs     int64 `json:"dnsMs,omitempty"`
-	ConnectMs int64 `json:"connectMs,omitempty"`
-	TLSMs     int64 `json:"tlsMs,omitempty"`
-	WaitMs    int64 `json:"waitMs,omitempty"`
-	Reused    bool  `json:"reused,omitempty"`
+	RedirectMs int64 `json:"redirectMs,omitempty"`
+	DNSMs      int64 `json:"dnsMs,omitempty"`
+	ConnectMs  int64 `json:"connectMs,omitempty"`
+	TLSMs      int64 `json:"tlsMs,omitempty"`
+	WaitMs     int64 `json:"waitMs,omitempty"`
+	Reused     bool  `json:"reused,omitempty"`
 }
 
 // phaseClock collects httptrace events; the transport may call it from several goroutines.
@@ -31,6 +34,8 @@ type phaseClock struct {
 	tlsStart, tlsDone         time.Time
 	gotConn, wrote, firstByte time.Time
 	reused                    bool
+	// the first request's start and, once a redirect was followed, when the last began
+	firstStart, hopStart time.Time
 	// a step that ended in an error (the dialer's or TLS's own 5-second limit): it is
 	// done but failed, and the request stopped there
 	dnsErr, connErr, tlsErr bool
@@ -44,6 +49,22 @@ func (c *phaseClock) fail(flag *bool, err error) {
 	}
 }
 
+// hop starts a request: the first, or the next one after a redirect. The steps measured
+// so far belong to an earlier request; they are cleared so the phases are the last one's.
+func (c *phaseClock) hop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.now()
+	if c.firstStart.IsZero() {
+		c.firstStart = now
+		return
+	}
+	c.hopStart = now
+	c.dnsStart, c.dnsDone, c.connStart, c.connDone, c.tlsStart, c.tlsDone = time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}
+	c.gotConn, c.wrote, c.firstByte = time.Time{}, time.Time{}, time.Time{}
+	c.reused, c.dnsErr, c.connErr, c.tlsErr = false, false, false, false
+}
+
 func (c *phaseClock) mark(t *time.Time) {
 	c.mu.Lock()
 	if t.IsZero() {
@@ -54,6 +75,7 @@ func (c *phaseClock) mark(t *time.Time) {
 
 func (c *phaseClock) trace() *httptrace.ClientTrace {
 	return &httptrace.ClientTrace{
+		GetConn:              func(string) { c.hop() },
 		DNSStart:             func(httptrace.DNSStartInfo) { c.mark(&c.dnsStart) },
 		DNSDone:              func(i httptrace.DNSDoneInfo) { c.fail(&c.dnsErr, i.Err); c.mark(&c.dnsDone) },
 		ConnectStart:         func(string, string) { c.mark(&c.connStart) },
@@ -83,9 +105,9 @@ func (c *phaseClock) phases() Phases {
 	if c.reused {
 		// the transport may dial a spare connection while a pooled one frees up and is
 		// used instead: that dial's DNS/connect/TLS are not this request's
-		return Phases{WaitMs: span(c.wrote, c.firstByte), Reused: true}
+		return Phases{RedirectMs: span(c.firstStart, c.hopStart), WaitMs: span(c.wrote, c.firstByte), Reused: true}
 	}
-	return Phases{DNSMs: span(c.dnsStart, c.dnsDone), ConnectMs: span(c.connStart, c.connDone),
+	return Phases{RedirectMs: span(c.firstStart, c.hopStart), DNSMs: span(c.dnsStart, c.dnsDone), ConnectMs: span(c.connStart, c.connDone),
 		TLSMs: span(c.tlsStart, c.tlsDone), WaitMs: span(c.wrote, c.firstByte), Reused: c.reused}
 }
 

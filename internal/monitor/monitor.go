@@ -63,7 +63,7 @@ func observe(r probe.Result) {
 	for _, x := range []struct {
 		name string
 		ms   int64
-	}{{"dns", p.DNSMs}, {"connect", p.ConnectMs}, {"tls", p.TLSMs}, {"wait", p.WaitMs}} {
+	}{{"redirect", p.RedirectMs}, {"dns", p.DNSMs}, {"connect", p.ConnectMs}, {"tls", p.TLSMs}, {"wait", p.WaitMs}} {
 		if x.ms > 0 {
 			mPhase.WithLabelValues(r.TargetID, x.name).Observe(float64(x.ms) / 1000)
 		}

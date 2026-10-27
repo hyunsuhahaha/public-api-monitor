@@ -13,8 +13,8 @@ const TRACE_KIND = {
   server: ["서버", "warn"], provider: ["제공자 전체", "out"], dns: ["DNS", "purple"], content: ["응답 내용", "deg"],
   monitor: ["감시 쪽 설정", "dim"], unknown: ["판단 보류", "dim"],
 };
-const TRACE_SHORT = { dnsMs: "DNS", connectMs: "TCP", tlsMs: "TLS", waitMs: "서버" };
-const STEP_KEY = { dns: "dnsMs", connect: "connectMs", tls: "tlsMs", wait: "waitMs" };
+const TRACE_SHORT = { redirectMs: "리다이렉트", dnsMs: "DNS", connectMs: "TCP", tlsMs: "TLS", waitMs: "서버" };
+const STEP_KEY = { redirect: "redirectMs", dns: "dnsMs", connect: "connectMs", tls: "tlsMs", wait: "waitMs" };
 const reducedMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let traceCard = null, traceTimer = 0, tracePinned = false, traceRow = null, traceCell = null, traceAnim = 0;

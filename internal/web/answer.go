@@ -337,6 +337,9 @@ func (s *Server) answerData(ctx context.Context, id string) (*answerPage, error)
 		ph := recent[0].Phases
 		rows := []phaseRow{{"DNS 조회", "도메인 주소를 IP로 찾기", ph.DNSMs, 0}, {"TCP 연결", "서버에 접속", ph.ConnectMs, 0},
 			{"TLS 연결", "보안 연결(HTTPS) 맺기", ph.TLSMs, 0}, {"응답 대기", "요청을 보내고 첫 응답까지 (서버 처리 시간)", ph.WaitMs, 0}}
+		if ph.RedirectMs > 0 {
+			rows = append([]phaseRow{{"리다이렉트", "서버가 다른 주소로 보내서 다시 요청하기까지", ph.RedirectMs, 0}}, rows...)
+		}
 		var max int64 = 1
 		for _, r := range rows {
 			if r.Ms > max {

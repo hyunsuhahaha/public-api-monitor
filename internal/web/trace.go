@@ -46,7 +46,7 @@ type traceLoc struct {
 const traceWindow = 3 * time.Minute
 
 var phaseWords = map[string]string{"dns": "DNS 조회", "connect": "TCP 연결", "tls": "TLS 연결", "wait": "서버 대기", "body": "본문 받기",
-	"pool": "연결 대기", "send": "요청 보내기"}
+	"redirect": "리다이렉트", "pool": "연결 대기", "send": "요청 보내기"}
 
 // stepOf: the step a check stopped in (timeouts name it) or spent most of its time in.
 func stepOf(c probe.Result) string {
@@ -57,12 +57,12 @@ func stepOf(c probe.Result) string {
 		return p
 	}
 	ph := c.Phases
-	rest := c.LatencyMS - ph.DNSMs - ph.ConnectMs - ph.TLSMs - ph.WaitMs
+	rest := c.LatencyMS - ph.RedirectMs - ph.DNSMs - ph.ConnectMs - ph.TLSMs - ph.WaitMs
 	best, step := int64(-1), ""
 	for _, x := range []struct {
 		k string
 		v int64
-	}{{"dns", ph.DNSMs}, {"connect", ph.ConnectMs}, {"tls", ph.TLSMs}, {"wait", ph.WaitMs}, {"body", rest}} {
+	}{{"redirect", ph.RedirectMs}, {"dns", ph.DNSMs}, {"connect", ph.ConnectMs}, {"tls", ph.TLSMs}, {"wait", ph.WaitMs}, {"body", rest}} {
 		if x.v > best {
 			best, step = x.v, x.k
 		}
@@ -407,6 +407,10 @@ func (s *Server) buildTrace(ctx context.Context, t *config.Target, c probe.Resul
 	case step == "body":
 		tr.Kind = "server"
 		tr.Headline = "서버는 답을 시작했지만 본문을 다 보내는 데 오래 걸렸습니다. 응답이 크거나 전송 구간이 느렸습니다."
+	case step == "redirect":
+		// the earlier requests of a redirect the server asked for took most of the time
+		tr.Kind = "server"
+		tr.Headline = "서버가 다른 주소로 보내(리다이렉트) 다시 요청하는 데 대부분의 시간이 걸렸습니다."
 	}
 	if tr.Headline == "" {
 		tr.Headline = "원인을 좁힐 근거가 부족합니다."

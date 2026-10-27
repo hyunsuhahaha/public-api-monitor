@@ -43,6 +43,31 @@ func TestPhases(t *testing.T) {
 	}
 }
 
+// A followed redirect is its own phase: the first request's 80 ms lands in RedirectMs,
+// not in the body, and the server wait is the last request's.
+func TestPhasesRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/old" {
+			time.Sleep(80 * time.Millisecond)
+			http.Redirect(w, r, "/new", http.StatusFound)
+			return
+		}
+		time.Sleep(30 * time.Millisecond)
+		fmt.Fprint(w, "ok")
+	}))
+	defer srv.Close()
+	cfg, err := config.Parse([]byte("targets:\n  - id: a\n    auth: none\n    classifier: http\n    url: " + srv.URL + "/old\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := New("test").Check(context.Background(), &cfg.Targets[0])
+	ph := r.Phases
+	if r.HTTPStatus != 200 || ph.RedirectMs < 80 || ph.WaitMs < 30 || ph.WaitMs >= 80 || ph.ConnectMs > ph.RedirectMs ||
+		ph.RedirectMs+ph.WaitMs > r.LatencyMS {
+		t.Fatalf("%+v (latency %d, http %d)", ph, r.LatencyMS, r.HTTPStatus)
+	}
+}
+
 // A reused connection reports no DNS/connect/TLS even if the transport dialed a spare.
 func TestPhasesReusedDropsSpareDial(t *testing.T) {
 	t0 := time.Unix(0, 0)

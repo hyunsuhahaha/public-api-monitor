@@ -137,7 +137,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	// request phases came later (milliseconds; 0 when the phase did not happen)
-	for _, col := range []string{"dns_ms", "connect_ms", "tls_ms", "wait_ms", "reused"} {
+	for _, col := range []string{"dns_ms", "connect_ms", "tls_ms", "wait_ms", "reused", "redirect_ms"} {
 		db.Exec(`ALTER TABLE checks ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`)
 	}
 	// incident_notes.kind came later: "note", or "ack" (someone took the incident)
@@ -236,10 +236,10 @@ func (s *Store) SaveCheck(ctx context.Context, r probe.Result) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO checks(target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO checks(target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused, redirect_ms)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.TargetID, r.Location, ms(r.At), string(r.Status), r.LatencyMS, r.HTTPStatus, r.Code, r.Reason,
-		r.Phases.DNSMs, r.Phases.ConnectMs, r.Phases.TLSMs, r.Phases.WaitMs, r.Phases.Reused); err != nil {
+		r.Phases.DNSMs, r.Phases.ConnectMs, r.Phases.TLSMs, r.Phases.WaitMs, r.Phases.Reused, r.Phases.RedirectMs); err != nil {
 		return err
 	}
 	// (a remote probe's result can arrive after a newer one: keep the newest)
@@ -693,7 +693,7 @@ func (s *Store) Incident(ctx context.Context, id int64) (*incident.Incident, err
 // ChecksBetween: a target's raw checks in [from, to], oldest first.
 func (s *Store) ChecksBetween(ctx context.Context, target string, from, to time.Time, limit int) ([]probe.Result, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused FROM checks
+		SELECT target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused, redirect_ms FROM checks
 		WHERE target=? AND at>=? AND at<=? ORDER BY at LIMIT ?`, target, ms(from), ms(to), limit)
 	if err != nil {
 		return nil, err
@@ -706,7 +706,7 @@ func (s *Store) ChecksBetween(ctx context.Context, target string, from, to time.
 		var status string
 		ph := &r.Phases
 		if err := rows.Scan(&r.TargetID, &r.Location, &at, &status, &r.LatencyMS, &r.HTTPStatus, &r.Code, &r.Reason,
-			&ph.DNSMs, &ph.ConnectMs, &ph.TLSMs, &ph.WaitMs, &ph.Reused); err != nil {
+			&ph.DNSMs, &ph.ConnectMs, &ph.TLSMs, &ph.WaitMs, &ph.Reused, &ph.RedirectMs); err != nil {
 			return nil, err
 		}
 		r.At, r.Status = fromMS(at), probe.Status(status)
@@ -719,7 +719,7 @@ func (s *Store) ChecksBetween(ctx context.Context, target string, from, to time.
 // went wrong at the moment one check failed (checks_at index).
 func (s *Store) ChecksAround(ctx context.Context, from, to time.Time) ([]probe.Result, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused FROM checks
+		SELECT target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused, redirect_ms FROM checks
 		WHERE at>=? AND at<=? LIMIT 10000`, ms(from), ms(to))
 	if err != nil {
 		return nil, err
@@ -732,7 +732,7 @@ func (s *Store) ChecksAround(ctx context.Context, from, to time.Time) ([]probe.R
 		var status string
 		ph := &r.Phases
 		if err := rows.Scan(&r.TargetID, &r.Location, &at, &status, &r.LatencyMS, &r.HTTPStatus, &r.Code, &r.Reason,
-			&ph.DNSMs, &ph.ConnectMs, &ph.TLSMs, &ph.WaitMs, &ph.Reused); err != nil {
+			&ph.DNSMs, &ph.ConnectMs, &ph.TLSMs, &ph.WaitMs, &ph.Reused, &ph.RedirectMs); err != nil {
 			return nil, err
 		}
 		r.At, r.Status = fromMS(at), probe.Status(status)
@@ -766,7 +766,7 @@ func (s *Store) VerdictsBetween(ctx context.Context, target string, from, to tim
 // RecentChecks: a target's newest raw checks, newest first.
 func (s *Store) RecentChecks(ctx context.Context, target string, limit int) ([]probe.Result, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused FROM checks
+		SELECT target, location, at, status, latency_ms, http_status, code, reason, dns_ms, connect_ms, tls_ms, wait_ms, reused, redirect_ms FROM checks
 		WHERE target=? ORDER BY at DESC LIMIT ?`, target, limit)
 	if err != nil {
 		return nil, err
@@ -779,7 +779,7 @@ func (s *Store) RecentChecks(ctx context.Context, target string, limit int) ([]p
 		var status string
 		ph := &r.Phases
 		if err := rows.Scan(&r.TargetID, &r.Location, &at, &status, &r.LatencyMS, &r.HTTPStatus, &r.Code, &r.Reason,
-			&ph.DNSMs, &ph.ConnectMs, &ph.TLSMs, &ph.WaitMs, &ph.Reused); err != nil {
+			&ph.DNSMs, &ph.ConnectMs, &ph.TLSMs, &ph.WaitMs, &ph.Reused, &ph.RedirectMs); err != nil {
 			return nil, err
 		}
 		r.At, r.Status = fromMS(at), probe.Status(status)
