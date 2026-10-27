@@ -36,6 +36,18 @@ curl 'https://<배포주소>/__access/logs?kind=ai_claimed&limit=50' \
 - 매일 UTC 03시에 30일 초과 기록을 지웁니다. 로그는 공개 정적 내보내기에 넣지 않습니다. 저장 실패 시 공개 조회는 유지하고 Worker 콘솔에 access_log_write_failed를 남기므로 저장소 장애 동안 기록이 누락될 수 있습니다.
 - Worker 응답은 no-store로 반환합니다. 브라우저 캐시만으로 끝나 Worker까지 오지 않은 조회는 기록할 수 없습니다. 고정 원본만 조회하며 방문자의 인증 헤더와 쿠키는 원본에 전달하지 않습니다.
 
+## MCP 서버 (/mcp)
+
+`mcp.mjs`가 같은 Worker의 `/mcp`에서 원격 MCP 서버(Streamable HTTP, JSON 응답, 상태 없음, 인증 없음, 읽기 전용)를 엽니다. 도구는 `check_service(query)`(이름·제공자·id·호스트나 URL로 찾아 판정, 유효 기한, 실패 단계, 공식 발표, 24시간 장애, 근거 링크), `list_problems()`, `list_services(category?)` 세 개입니다. 데이터는 공개 파일(`/ai/diagnostics.json`, `/ai/targets/{id}.json`)을 프록시와 같은 방식(ORIGIN_URL·게이트웨이 헤더)으로 원본에서 읽어 1분 동안 메모리에 둡니다. 판정은 읽는 시점에 freshUntil과 비교하므로 만료된 관측은 unknown입니다.
+
+접속 기록에는 resource `mcp`, kind `ai_claimed`, agent `mcp:<initialize의 clientInfo.name>`, 경로 `/mcp tools/call check_service kakao-login`처럼 남습니다. 클라이언트 이름은 Mcp-Session-Id에 담아 돌려주므로(비밀 아님) 이후 호출도 같은 이름으로 기록됩니다. 사용자가 보낸 검색어 자체는 저장하지 않고 일치한 대상 id만 남깁니다. 관리자 화면의 "MCP로 물어본 AI"가 이 기록입니다.
+
+```sh
+npx wrangler deploy        # deploy/access에서. 새 Secret·D1 변경 없음
+npx @modelcontextprotocol/inspector   # URL: https://pamon.hyunsuhahaha.workers.dev/mcp
+claude mcp add --transport http pamon https://pamon.hyunsuhahaha.workers.dev/mcp
+```
+
 ## 검색엔진 알림 (IndexNow)
 
 `INDEXNOW_KEY`와 `PUBLIC_URL`이 있으면 Worker가 `/<key>.txt`로 키를 보여 주고, 매일 UTC 03시 cron에서 원본 sitemap의 URL(PUBLIC_URL 호스트만)을 Bing(IndexNow 공용 엔드포인트, Yandex 등과 공유)과 네이버 서치어드바이저에 제출합니다. 키는 소유 확인용 공개 값이라 Secret이 아닙니다. 실패하면 콘솔에 indexnow_failed / indexnow_rejected를 남깁니다. Google은 IndexNow를 받지 않으므로 Search Console에서 sitemap.xml을 직접 제출합니다.

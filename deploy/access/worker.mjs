@@ -1,4 +1,5 @@
 import { adminHTML } from './admin.mjs';
+import { createMCP } from './mcp.mjs';
 
 const ORIGIN = 'https://hyunsuhahaha.github.io';
 const PREFIX = '/public-api-monitor/';
@@ -26,6 +27,7 @@ export function classify(ua) {
 }
 
 function resource(path) {
+  if (path==='/mcp' || path==='/mcp/') return 'mcp';
   if (/\/ai\/.*\.json$/.test(path)) return 'ai_json';
   if (path.endsWith('/llms.txt')) return 'discovery';
   if (/\/data\/.*\.json$/.test(path)) return 'data_json';
@@ -33,17 +35,18 @@ function resource(path) {
   return 'asset_or_other';
 }
 
-async function record(request, env, response, start) {
+// mcp: what mcp.mjs says the call was; the client's self-declared name is its agent.
+async function record(request, env, response, start, mcp) {
   const url = new URL(request.url);
   const ua = (request.headers.get('user-agent') || '').slice(0,512);
   // The owner's own browsing (signed-in admin cookie), the deploy self-test and the
   // freshness watchdog are not traffic.
   if (ua === 'pamon-selftest' || ua === 'pamon-watchdog' || await hasSession(request, env.ACCESS_ADMIN_TOKEN)) return;
-  const who = classify(ua);
+  const who = mcp ? {kind:'ai_claimed', agent:('mcp:'+(mcp.client||classify(ua).agent)).toLowerCase().slice(0,80)} : classify(ua);
   let referrer = '';
   try { referrer = new URL(request.headers.get('referer')).origin; } catch {}
   await env.DB.prepare(`INSERT INTO access_logs (at, method, path, status, duration_ms, kind, agent, user_agent, country, referrer, resource) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(new Date().toISOString(), request.method, url.pathname.slice(0,512), response.status, Date.now()-start,
+    .bind(new Date().toISOString(), request.method, (mcp?.op ? url.pathname+' '+mcp.op : url.pathname).slice(0,512), response.status, Date.now()-start,
       who.kind, who.agent, ua, request.cf?.country || '', referrer, resource(url.pathname)).run();
 }
 
@@ -112,7 +115,7 @@ async function stats(request, env) {
   const range=RANGES[name], now=Date.now();
   const since=new Date(now-range.ms).toISOString(), prev=new Date(now-2*range.ms).toISOString(), end=new Date(now).toISOString();
   const q=(sql,...args)=>env.DB.prepare(sql).bind(...args).all().then(r=>r.results||[]);
-  const [current, previous, series, agents, targets, pages, countries, referrers] = await Promise.all([
+  const [current, previous, series, agents, targets, pages, countries, referrers, mcp] = await Promise.all([
     q(`SELECT ${GROUPS} FROM access_logs WHERE at >= ? AND at < ?`, since, end),
     q(`SELECT ${GROUPS} FROM access_logs WHERE at >= ? AND at < ?`, prev, since),
     q(`SELECT strftime(?, at, '+9 hours') AS bucket, ${GROUPS} FROM access_logs WHERE at >= ? GROUP BY bucket ORDER BY bucket`, range.bucket, since),
@@ -121,9 +124,10 @@ async function stats(request, env) {
     q(`SELECT path, COUNT(*) AS requests, SUM(kind='ai_claimed') AS ai FROM access_logs WHERE at >= ? AND resource IN ('page','ai_json','discovery') GROUP BY path ORDER BY requests DESC LIMIT 15`, since),
     q(`SELECT country, COUNT(*) AS requests FROM access_logs WHERE at >= ? AND country <> '' GROUP BY country ORDER BY requests DESC LIMIT 10`, since),
     q(`SELECT referrer, COUNT(*) AS requests FROM access_logs WHERE at >= ? AND referrer <> '' AND referrer <> ? GROUP BY referrer ORDER BY requests DESC LIMIT 10`, since, u.origin),
+    q(`SELECT agent, COUNT(*) AS requests, SUM(path LIKE '/mcp tools/call%') AS calls FROM access_logs WHERE at >= ? AND resource='mcp' GROUP BY agent ORDER BY requests DESC LIMIT 10`, since),
   ]);
   return json({range:name, since, bucket:name==='24h'?'hour':'day', timezone:'Asia/Seoul',
-    current:current[0]||{}, previous:previous[0]||{}, series, agents, targets, pages, countries, referrers});
+    current:current[0]||{}, previous:previous[0]||{}, series, agents, targets, pages, countries, referrers, mcp});
 }
 
 const ADMIN_HEADERS = {'content-type':'text/html; charset=utf-8','cache-control':'no-store',
@@ -208,11 +212,31 @@ export async function submitIndexNow(env,originFetch=fetch,send=fetch) {
   }));
 }
 
+// AI crawlers and assistants' fetchers, named so a robots.txt reader sees them invited.
+const AI_AGENTS = ['GPTBot','OAI-SearchBot','ChatGPT-User','ClaudeBot','Claude-User','Claude-SearchBot','PerplexityBot','Perplexity-User','Google-Extended'];
+export const robots = origin => AI_AGENTS.map(a=>`User-agent: ${a}\nDisallow: /__access\nAllow: /\n`).join('\n')+
+  `\nUser-agent: *\nDisallow: /__access\nAllow: /\n\nSitemap: ${origin}/sitemap.xml\n`;
+
+// originGet reads a public file from the origin the way the proxy below does (MCP tools).
+function originGet(originFetch) {
+  return (path,env) => {
+    const origin=env.ORIGIN_URL||ORIGIN, prefix=env.ORIGIN_URL?'/':PREFIX, pass=new Headers({accept:'application/json'});
+    if (env.ORIGIN_URL && env.GATEWAY_SECRET) pass.set('x-pamon-gateway',env.GATEWAY_SECRET);
+    return originFetch(origin+prefix+path,{headers:pass,redirect:'manual'});
+  };
+}
+
 export function createWorker(originFetch=fetch) {
+  const mcp=createMCP(originGet(originFetch));
   return {
     async fetch(request,env,ctx) {
       const start=Date.now(), u=new URL(request.url);
       if (u.pathname==='/__access' || u.pathname.startsWith('/__access/')) return admin(request,env);
+      if (u.pathname==='/mcp' || u.pathname==='/mcp/') {
+        const {response,log}=await mcp.handle(request,env);
+        if (log) ctx.waitUntil(record(request,env,response,start,log).catch(()=>console.error('access_log_write_failed')));
+        return response;
+      }
       if (u.pathname==='/__report' || u.pathname.startsWith('/__report/')) {
         try { return await reports(request,env); } catch { return json({error:'report storage unavailable'},503); }
       }
@@ -228,7 +252,7 @@ export function createWorker(originFetch=fetch) {
       }
       else if (u.pathname==='/robots.txt') {
         // Crawlers and AI fetchers are welcome everywhere but the private log screen.
-        response=new Response(`User-agent: *\nDisallow: /__access\nAllow: /\n\nSitemap: ${u.origin}/sitemap.xml\n`,
+        response=new Response(robots(u.origin),
           {headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});
       }
       // The gateway serves the site at its root; old /public-api-monitor/ links move there.
@@ -258,6 +282,8 @@ export function createWorker(originFetch=fetch) {
           // A gateway hit must reach the Worker to be counted, including conditional 304s.
           response.headers.set('cache-control','no-store');
           response.headers.delete('set-cookie');
+          // Markdown twins of the answer pages (s/{id}.md): the static host may not know the type.
+          if (u.pathname.endsWith('.md') && result.ok) response.headers.set('content-type','text/markdown; charset=utf-8');
         } catch { response=json({error:'origin unavailable'},502); }
       }
       ctx.waitUntil(record(request,env,response,start).catch(()=>console.error('access_log_write_failed')));

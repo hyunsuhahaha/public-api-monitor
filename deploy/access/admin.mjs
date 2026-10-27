@@ -50,6 +50,7 @@ svg text{fill:var(--muted);font-size:11px}
     <div class="legend"><span><span class="dot" style="background:var(--ai)"></span>AI</span><span><span class="dot" style="background:var(--pv)"></span>사람 페이지뷰</span><span><span class="dot" style="background:var(--auto)"></span>스크립트·도구</span><span><span class="dot" style="background:var(--crawl)"></span>크롤러</span></div></section>
   <section class="panel half"><h2>AI가 가장 많이 읽은 API</h2><div id="targets"></div></section>
   <section class="panel half"><h2>찾아온 AI</h2><div id="agents"></div></section>
+  <section class="panel wide"><h2>MCP로 물어본 AI (/mcp, 클라이언트 자기 신고 이름)</h2><div id="mcp"></div></section>
   <section class="panel half"><h2>많이 열린 페이지</h2><div id="pages"></div></section>
   <section class="panel half"><h2>국가 · 유입 출처</h2><div id="countries"></div><div id="referrers"></div></section>
   <section class="panel wide"><h2>최근 접속</h2>
@@ -94,6 +95,7 @@ function render(s){last=s;$('since').textContent='· '+kst(s.since).slice(0,16)+
   list('targets',s.targets,function(r){return targetName(r.path)},function(r){return Number(r.requests)},'아직 AI가 읽어 간 API 진단 파일이 없습니다.',function(r){return 'AI '+num(r.ai)+'회'});
   list('agents',s.agents,function(r){return r.agent},function(r){return Number(r.requests)},'아직 AI 방문이 없습니다.');
   list('pages',s.pages,function(r){return r.path},function(r){return Number(r.requests)},'기록 없음',function(r){return Number(r.ai)?'그중 AI '+num(r.ai)+'회':''});
+  list('mcp',s.mcp||[],function(r){return r.agent.replace('mcp:','')},function(r){return Number(r.requests)},'아직 MCP 연결이 없습니다.',function(r){return '도구 호출 '+num(r.calls)+'회'});
   list('countries',s.countries,function(r){return r.country},function(r){return Number(r.requests)},'기록 없음');
   var rf=$('referrers');rf.replaceChildren();if(s.referrers.length){rf.append(el('h2','유입 출처'));var t=el('table');s.referrers.forEach(function(r){var tr=el('tr');tr.append(el('td',r.referrer),el('td',num(r.requests),'n'));t.append(tr)});rf.append(t)}}
 function loadStats(){return api('/__access/stats?range='+range).then(function(s){showApp();render(s)})}
