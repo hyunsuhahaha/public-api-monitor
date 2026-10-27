@@ -10,12 +10,16 @@ AI에게 장애 진단을 맡길 때: **https://pamon.hyunsuhahaha.workers.dev/l
 
 AI가 사용자 로그와 외부 관측을 비교할 수 있도록 공개 읽기 전용 데이터를 제공합니다. 시작 주소: **https://pamon.hyunsuhahaha.workers.dev/llms.txt**
 
+- **MCP 서버** `https://pamon.hyunsuhahaha.workers.dev/mcp` (Streamable HTTP, 인증 없음, 읽기 전용): `check_service(query)`, `list_problems()`, `list_services(category?)`. Claude Code: `claude mcp add --transport http pamon https://pamon.hyunsuhahaha.workers.dev/mcp`. 코드는 [deploy/access/mcp.mjs](deploy/access/mcp.mjs)
+- **OpenAPI 3.1** `openapi.json`: ChatGPT GPT Actions 등 HTTP 도구용
+- 답 페이지 `s/{id}.html`의 Markdown 판 `s/{id}.md`와 schema.org JSON-LD
+
 - `llms.txt`: 조회 안내와 해석 규칙
 - `ai/index.html`: 필드 설명·AI 요청 예시
 - `ai/diagnostics.json`: 서비스명·공급자·호스트로 찾는 전체 카탈로그
 - `ai/targets/{id}.json`: 대상 하나의 관측 상태·위치·최근 장애·근거 링크
 
-AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) 링크를 전달하고 오류 시각·호스트·기능을 비교하도록 요청하세요. JSON 링크는 해당 JSON URL 기준으로 해석합니다. `freshUntil`을 현재 시각과 비교해야 하며 `freshAtGeneration`만으로 최신성을 판단하면 안 됩니다. 감시용 인증·쿼터 문제는 공급자 장애와 구분합니다. MCP 서버나 모든 AI의 자동 발견 기능은 포함하지 않습니다.
+AI에 [`ai/index.html`](https://pamon.hyunsuhahaha.workers.dev/ai/index.html) 링크를 전달하고 오류 시각·호스트·기능을 비교하도록 요청하세요. JSON 링크는 해당 JSON URL 기준으로 해석합니다. `freshUntil`을 현재 시각과 비교해야 하며 `freshAtGeneration`만으로 최신성을 판단하면 안 됩니다. 감시용 인증·쿼터 문제는 공급자 장애와 구분합니다. 게시만으로 모든 AI가 자동으로 찾아오지는 않으므로 MCP나 OpenAPI를 연결하세요. 외부 게시용 초안은 [docs/outreach](docs/outreach/README.md)에 있습니다.
 
 ### 👉 [실시간 상태판 열기](https://pamon.hyunsuhahaha.workers.dev/)
 

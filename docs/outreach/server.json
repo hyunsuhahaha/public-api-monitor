@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.hyunsuhahaha/pamon",
+  "title": "pamon: is this API down?",
+  "description": "Is an API down? Live outside checks of 160 services: Korean public APIs, logins, banks, AI, cloud",
+  "websiteUrl": "https://pamon.hyunsuhahaha.workers.dev/",
+  "repository": {
+    "url": "https://github.com/hyunsuhahaha/public-api-monitor",
+    "source": "github",
+    "subfolder": "deploy/access"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://pamon.hyunsuhahaha.workers.dev/mcp"
+    }
+  ]
+}
