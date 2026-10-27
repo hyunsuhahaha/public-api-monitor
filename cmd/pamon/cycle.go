@@ -346,7 +346,7 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 		return spent, err
 	}
 	// Keep agent-facing URLs identical on the live server and GitHub Pages.
-	for _, path := range []string{"llms.txt", "ai/index.html", "ai/diagnostics.json"} {
+	for _, path := range []string{"llms.txt", "ai/index.html", "ai/diagnostics.json", "openapi.json"} {
 		requestPath := "/" + path
 		if path == "ai/index.html" {
 			requestPath = "/ai/"

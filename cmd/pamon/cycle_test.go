@@ -159,6 +159,24 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 			}
 		}
 	}
+	// every path the OpenAPI spec (GPT Actions) names is a file in the export
+	spec, err := os.ReadFile(filepath.Join(site, "openapi.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var openapi struct {
+		OpenAPI string                     `json:"openapi"`
+		Paths   map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(spec, &openapi); err != nil || openapi.OpenAPI != "3.1.0" || len(openapi.Paths) < 4 {
+		t.Fatalf("openapi.json: %v %+v", err, openapi)
+	}
+	for p := range openapi.Paths {
+		f := strings.TrimPrefix(strings.ReplaceAll(p, "{id}", maps[0].ID), "/")
+		if _, err := os.Stat(filepath.Join(site, f)); err != nil {
+			t.Errorf("openapi.json names %s, not exported", p)
+		}
+	}
 	for _, target := range status.Targets {
 		if target.Status != "ok" {
 			t.Errorf("%s exported %s", target.ID, target.Status)
