@@ -261,6 +261,11 @@ func siteURL() string {
 	return strings.TrimSuffix(u, "/") + "/"
 }
 
+// indexNowKey proves to IndexNow engines (Bing, Naver, Yandex) that sitemap
+// submissions come from this site's owner. Public by design; it must match
+// INDEXNOW_KEY in deploy/access/wrangler.jsonc.
+const indexNowKey = "d3ac14bfae636add48647c052865b44a"
+
 // sitemap lists the pages a search engine should index.
 func sitemap(base string, pages []string) []byte {
 	var b strings.Builder
@@ -481,6 +486,9 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 	}
 	if base := siteURL(); base != "" {
 		if err := put("sitemap.xml", sitemap(base, indexed)); err != nil {
+			return spent, err
+		}
+		if err := put(indexNowKey+".txt", []byte(indexNowKey)); err != nil {
 			return spent, err
 		}
 	}

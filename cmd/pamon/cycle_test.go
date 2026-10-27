@@ -172,6 +172,9 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	if !strings.Contains(string(sm), "<loc>https://pamon.test/s/</loc>") {
 		t.Errorf("sitemap lacks s/: %s", sm)
 	}
+	if k, _ := os.ReadFile(filepath.Join(site, indexNowKey+".txt")); string(k) != indexNowKey {
+		t.Errorf("IndexNow key file = %q", k)
+	}
 	// stylesheets and scripts carry a content version, so browsers never mix old and new
 	idx, _ := os.ReadFile(filepath.Join(site, "index.html"))
 	if !regexp.MustCompile(`href="app\.[0-9a-f]{8}\.css"`).Match(idx) || !regexp.MustCompile(`src="app\.[0-9a-f]{8}\.js"`).Match(idx) {

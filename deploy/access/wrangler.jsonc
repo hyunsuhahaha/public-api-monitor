@@ -9,6 +9,11 @@
     "database_id": "478cc99a-c3d0-4985-8a78-46bdc65babbf"
   }],
   // the site comes from the GCP host (deploy/gcp); GATEWAY_SECRET is a Worker secret
-  "vars": {"ORIGIN_URL": "https://34-82-180-182.sslip.io"},
+  // INDEXNOW_KEY is public (served at /<key>.txt), not a secret
+  "vars": {
+    "ORIGIN_URL": "https://34-82-180-182.sslip.io",
+    "PUBLIC_URL": "https://pamon.hyunsuhahaha.workers.dev",
+    "INDEXNOW_KEY": "d3ac14bfae636add48647c052865b44a"
+  },
   "triggers": {"crons": ["0 3 * * *"]}
 }

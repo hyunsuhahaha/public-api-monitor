@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorker, classify } from './worker.mjs';
+import { createWorker, classify, submitIndexNow } from './worker.mjs';
 
 function harness(origin=async()=>new Response('hello',{headers:{'content-type':'text/plain'}})) {
   const writes=[], tasks=[], calls=[];
@@ -157,4 +157,23 @@ test('log storage failure does not break public reads; scheduled retention remov
   const retention=harness();
   await retention.worker.scheduled({},retention.env,retention.ctx);
   assert.equal(retention.writes[0].sql,'DELETE FROM access_logs WHERE at < ?');
+});
+
+test('IndexNow: key file is served, and the daily run submits only this host\'s sitemap URLs',async()=>{
+  const h=harness();
+  h.env.INDEXNOW_KEY='abc123';
+  const key=await h.get('/abc123.txt');
+  assert.equal(await key.text(),'abc123');
+  assert.equal(h.calls.length,0);
+  const sent=[];
+  const sitemap=async(url,opts)=>{sent.push(['origin',url,opts.headers.get('x-pamon-gateway')]);
+    return new Response('<url><loc>https://pub.test/</loc></url><url><loc>https://pub.test/s/a.html</loc></url><url><loc>https://elsewhere.test/x</loc></url>')};
+  const env={ORIGIN_URL:'https://host.test',GATEWAY_SECRET:'g',PUBLIC_URL:'https://pub.test',INDEXNOW_KEY:'abc123'};
+  const result=await submitIndexNow(env,sitemap,async(url,opts)=>{sent.push([url,JSON.parse(opts.body)]);return new Response(null,{status:202})});
+  assert.deepEqual(sent[0],['origin','https://host.test/sitemap.xml','g']);
+  assert.equal(result.length,2);
+  const body=sent[1][1];
+  assert.equal(body.host,'pub.test');
+  assert.equal(body.keyLocation,'https://pub.test/abc123.txt');
+  assert.deepEqual(body.urlList,['https://pub.test/','https://pub.test/s/a.html']);
 });

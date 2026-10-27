@@ -36,6 +36,10 @@ curl 'https://<배포주소>/__access/logs?kind=ai_claimed&limit=50' \
 - 매일 UTC 03시에 30일 초과 기록을 지웁니다. 로그는 공개 정적 내보내기에 넣지 않습니다. 저장 실패 시 공개 조회는 유지하고 Worker 콘솔에 access_log_write_failed를 남기므로 저장소 장애 동안 기록이 누락될 수 있습니다.
 - Worker 응답은 no-store로 반환합니다. 브라우저 캐시만으로 끝나 Worker까지 오지 않은 조회는 기록할 수 없습니다. 고정 원본만 조회하며 방문자의 인증 헤더와 쿠키는 원본에 전달하지 않습니다.
 
+## 검색엔진 알림 (IndexNow)
+
+`INDEXNOW_KEY`와 `PUBLIC_URL`이 있으면 Worker가 `/<key>.txt`로 키를 보여 주고, 매일 UTC 03시 cron에서 원본 sitemap의 URL(PUBLIC_URL 호스트만)을 Bing(IndexNow 공용 엔드포인트, Yandex 등과 공유)과 네이버 서치어드바이저에 제출합니다. 키는 소유 확인용 공개 값이라 Secret이 아닙니다. 실패하면 콘솔에 indexnow_failed / indexnow_rejected를 남깁니다. Google은 IndexNow를 받지 않으므로 Search Console에서 sitemap.xml을 직접 제출합니다.
+
 관리자 로그에서 응답 코드 404가 많으면 Pages 반영 여부를 먼저 확인하세요. 모니터 자체의 API 검사 로그와 이 웹 접속 로그는 별개입니다.
 
 검증: `node --test deploy/access/worker.test.mjs`. 테스트는 프록시·인증·보존 정책의 로컬 검증입니다. 실제 Cloudflare 배포와 D1 연동은 배포 후 위 두 요청으로 확인해야 합니다.

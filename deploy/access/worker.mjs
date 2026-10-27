@@ -6,6 +6,10 @@ const PREFIX = '/public-api-monitor/';
 const VERIFY_FILES = {
   '/google63ebdd653ecf9466.html': 'google-site-verification: google63ebdd653ecf9466.html',
 };
+// IndexNow tells Bing (and the AI search built on it), Naver and Yandex which pages changed,
+// instead of waiting for a crawler to find a new site. The key is public by design: the
+// engines fetch /<key>.txt to check the submitter owns the host.
+const INDEXNOW_ENDPOINTS = ['https://api.indexnow.org/indexnow', 'https://searchadvisor.naver.com/indexnow'];
 const SESSION = 'pamon_admin';
 const SESSION_DAYS = 30;
 const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
@@ -184,6 +188,26 @@ async function reports(request, env) {
   return json({error:'not found'},404);
 }
 
+// Once a day the status pages have new verdicts, so every sitemap URL is resubmitted.
+// The sitemap comes from the origin; only URLs on PUBLIC_URL's host are sent.
+export async function submitIndexNow(env,originFetch=fetch,send=fetch) {
+  const origin=env.ORIGIN_URL||ORIGIN, prefix=env.ORIGIN_URL?'/':PREFIX;
+  const pass=new Headers();
+  if (env.ORIGIN_URL && env.GATEWAY_SECRET) pass.set('x-pamon-gateway',env.GATEWAY_SECRET);
+  const res=await originFetch(origin+prefix+'sitemap.xml',{headers:pass});
+  if (!res.ok) throw Error(`sitemap ${res.status}`);
+  const host=new URL(env.PUBLIC_URL).host;
+  const urlList=[...(await res.text()).matchAll(/<loc>([^<]+)<\/loc>/g)].map(m=>m[1])
+    .filter(x=>{try{return new URL(x).host===host}catch{return false}}).slice(0,10000);
+  if (!urlList.length) return [];
+  const body=JSON.stringify({host,key:env.INDEXNOW_KEY,keyLocation:`https://${host}/${env.INDEXNOW_KEY}.txt`,urlList});
+  return Promise.all(INDEXNOW_ENDPOINTS.map(async endpoint=>{
+    const r=await send(endpoint,{method:'POST',headers:{'content-type':'application/json; charset=utf-8'},body});
+    if (!r.ok) console.error('indexnow_rejected',endpoint,r.status);
+    return {endpoint,status:r.status,urls:urlList.length};
+  }));
+}
+
 export function createWorker(originFetch=fetch) {
   return {
     async fetch(request,env,ctx) {
@@ -198,6 +222,9 @@ export function createWorker(originFetch=fetch) {
       if (!['GET','HEAD'].includes(request.method)) response=json({error:'method not allowed'},405);
       else if (Object.hasOwn(VERIFY_FILES,u.pathname)) {
         response=new Response(VERIFY_FILES[u.pathname],{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});
+      }
+      else if (env.INDEXNOW_KEY && u.pathname===`/${env.INDEXNOW_KEY}.txt`) {
+        response=new Response(env.INDEXNOW_KEY,{headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});
       }
       else if (u.pathname==='/robots.txt') {
         // Crawlers and AI fetchers are welcome everywhere but the private log screen.
@@ -240,6 +267,7 @@ export function createWorker(originFetch=fetch) {
       const cutoff=new Date(Date.now()-30*86400000).toISOString();
       ctx.waitUntil(env.DB.prepare('DELETE FROM access_logs WHERE at < ?').bind(cutoff).run());
       ctx.waitUntil(env.DB.prepare('DELETE FROM reports WHERE at < ?').bind(cutoff).run());
+      if (env.INDEXNOW_KEY && env.PUBLIC_URL) ctx.waitUntil(submitIndexNow(env,originFetch).catch(e=>console.error('indexnow_failed',e.message)));
     }
   };
 }
