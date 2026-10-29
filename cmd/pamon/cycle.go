@@ -534,6 +534,19 @@ func exportSite(h http.Handler, cfg *config.Config, dir string) (map[string]time
 		if err := put(indexNowKey+".txt", []byte(indexNowKey)); err != nil {
 			return spent, err
 		}
+		// Once a UTC day every indexed page goes to IndexNow too: verdicts change all the
+		// time, and this runs on the host, so it needs no gateway (Worker) deploy.
+		day := time.Now().UTC().Format("2006-01-02")
+		if b, _ := os.ReadFile(filepath.Join(dir, ".indexnow-day")); string(b) != day {
+			all := make([]string, len(indexed))
+			for i, p := range indexed {
+				all[i] = strings.TrimSuffix(p, "index.html")
+			}
+			announce(base, all)
+			if err := put(".indexnow-day", []byte(day)); err != nil {
+				return spent, err
+			}
+		}
 	}
 	return spent, put(".nojekyll", nil)
 }
