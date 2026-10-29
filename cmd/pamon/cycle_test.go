@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -78,6 +79,9 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 	t.Setenv("NAVER_MAPS_CLIENT_SECRET", "cycle-naver-secret")
 	t.Setenv("PAMON_WEBHOOK_URL", "")
 	t.Setenv("PAMON_SITE_URL", "https://pamon.test")
+	var announced [][]string
+	defer func(orig func(string, []string)) { announce = orig }(announce)
+	announce = func(base string, paths []string) { announced = append(announced, paths) }
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v2/local") {
 			if r.Header.Get("Authorization") != "KakaoAK cycle-kakao-secret" {
@@ -236,11 +240,13 @@ func TestMapCycleExportsVerifiedResults(t *testing.T) {
 			t.Errorf("sitemap lacks the Markdown twins")
 		}
 	}
+	// the first export of the day announced every indexed page
+	if len(announced) != 1 || !slices.Contains(announced[0], "s/") || !slices.Contains(announced[0], "") {
+		t.Fatalf("daily announcement = %v", announced)
+	}
+	announced = nil
 	// an outage after this export: its dated page is written, listed, put in the sitemap
-	// and announced to IndexNow once, not on every later export
-	var announced [][]string
-	defer func(orig func(string, []string)) { announce = orig }(announce)
-	announce = func(base string, paths []string) { announced = append(announced, paths) }
+	// and announced to IndexNow once, not on every later export (nor the daily list again)
 	st, err := store.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatal(err)
